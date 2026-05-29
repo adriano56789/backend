@@ -1,5 +1,4 @@
 import mongoose from 'mongoose';
-import type { Document } from 'mongodb';
 import { ENV } from './env';
 
 export const connectDB = async (): Promise<typeof mongoose> => {
@@ -35,6 +34,6 @@ export const getDb = () => {
   return mongoose.connection.db;
 };
 
-export const getCollection = <T extends Document = Document>(name: string) => {
-  return getDb().collection<T>(name);
+export const getCollection = (name: string) => {
+  return getDb().collection(name);
 };

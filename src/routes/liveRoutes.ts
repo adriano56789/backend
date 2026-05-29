@@ -3583,7 +3583,7 @@ router.get('/streams/:id/online-users', async (req, res) => {
 
                 { $sort: { totalValue: -1 } }
 
-            ]);
+            ]).toArray();
 
             
 
@@ -3593,7 +3593,7 @@ router.get('/streams/:id/online-users', async (req, res) => {
 
             // Buscar dados completos desses usuários
 
-            const senderIds = giftSenders.map((s: { _id: string }) => s._id);
+            const senderIds = giftSenders.map(s => s._id);
 
             if (senderIds.length > 0) {
 
@@ -3611,7 +3611,7 @@ router.get('/streams/:id/online-users', async (req, res) => {
 
                 const usersWithGiftData = senderUsers.map(u => {
 
-                    const senderData = giftSenders.find((s: { _id: string; totalValue: number }) => s._id === u.id);    
+                    const senderData = giftSenders.find(s => s._id === u.id);
 
                     return {
 
@@ -7929,9 +7929,7 @@ router.post('/streams/:id/end', async (req, res) => {
 
                 endTime: stream.endTime,
 
-                duration: stream.startTime && stream.endTime
-                    ? new Date(stream.endTime.getTime() - stream.startTime.getTime()).toISOString().slice(11, 19)
-                    : '00:00:00'
+                duration: stream.getDuration ? stream.getDuration() : '00:00:00'
 
             }
 

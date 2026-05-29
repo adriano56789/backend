@@ -858,10 +858,10 @@ router.post('/photos/upload/:id', async (req, res) => {
         // Retornar no formato esperado pelo frontend
         res.json({ 
             success: true, 
-            url: newPhoto.photoUrl,
+            url: newPhoto.url,
             photo: {
                 id: newPhoto.id,
-                url: newPhoto.photoUrl
+                url: newPhoto.url
             }
         });
     } catch (error: any) {
