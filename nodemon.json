@@ -1,0 +1,26 @@
+{
+  "watch": ["src"],
+  "ext": "ts,json",
+  "ignore": [
+    "node_modules/**/*",
+    "dist/**/*",
+    "uploads/**/*",
+    "data/**/*",
+    "logs/**/*",
+    ".git/**/*",
+    "coverage/**/*",
+    "scripts/**/*",
+    "*.test.ts",
+    "*.spec.ts",
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    "**/*.tmp",
+    "**/*.temp",
+    "**/*.js",
+    "**/*.map",
+    "*.log",
+    ".env*",
+    "*.md"
+  ],
+  "exec": "ts-node --transpile-only src/server.ts"
+}

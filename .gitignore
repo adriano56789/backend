@@ -1,0 +1,34 @@
+# Dependências
+node_modules/
+
+# Build
+dist/
+
+# Ambiente
+.env
+.env.local
+.env.production
+
+# Certificados
+*.pem
+*.crt
+*.key
+
+# Logs
+*.log
+logs/
+
+# Dados locais
+data/
+uploads/
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# PM2
+.pm2/

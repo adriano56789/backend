@@ -1,0 +1,24 @@
+{
+    "compilerOptions": {
+        "target": "ES2020",
+        "module": "CommonJS",
+        "rootDir": "./src",
+        "outDir": "./dist",
+        "esModuleInterop": true,
+        "allowSyntheticDefaultImports": true,
+        "forceConsistentCasingInFileNames": true,
+        "strict": true,
+        "skipLibCheck": true,
+        "resolveJsonModule": true,
+        "typeRoots": ["./node_modules/@types"]
+    },
+    "include": [
+        "src/**/*"
+    ],
+    "ts-node": {
+        "esm": false,
+        "compilerOptions": {
+            "module": "CommonJS"
+        }
+    }
+}

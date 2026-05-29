@@ -1,0 +1,6 @@
+// Substituir a linha 432:
+// DE:
+{ $match: { tags: { $ne: null, $ne: '' } } },
+
+// POR:
+{ $match: { $and: [{ tags: { $ne: null } }, { tags: { $ne: '' } }] } },
