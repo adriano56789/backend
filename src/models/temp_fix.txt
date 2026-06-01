@@ -1,5 +1,0 @@
-// Método estático para estatísticas de tags
-UserPhotoSchema.statics.getTagStats = function() {
-    return this.aggregate([
-        { $unwind: '$tags' },
-        { $match: { $and: [{ tags: { $ne: null } }, { tags: { $ne: '' } }] } },

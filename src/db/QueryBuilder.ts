@@ -1,16 +1,15 @@
-import { Collection, Filter, Document, Sort, FindOptions } from 'mongodb';
 import { DocumentProxy } from './DocumentProxy';
 
 export class QueryBuilder<T extends Record<string, any> = any, R = DocumentProxy<T>[]> {
-  private _collection: Collection;
-  private _filter: Filter<Document>;
+  private _collection: any;
+  private _filter: any;
   private _projection: Record<string, 1 | 0> = {};
-  private _sort: Sort = {};
+  private _sort: any = {};
   private _limitValue: number = 0;
   private _skipValue: number = 0;
   private _mode: 'findOne' | 'find';
 
-  constructor(collection: Collection, filter: Filter<Document>, mode: 'findOne' | 'find') {
+  constructor(collection: any, filter: any, mode: 'findOne' | 'find') {
     this._collection = collection;
     this._filter = filter;
     this._mode = mode;
@@ -32,7 +31,7 @@ export class QueryBuilder<T extends Record<string, any> = any, R = DocumentProxy
     return this;
   }
 
-  sort(sort: Sort): this {
+  sort(sort: any): this {
     this._sort = sort;
     return this;
   }
@@ -55,8 +54,8 @@ export class QueryBuilder<T extends Record<string, any> = any, R = DocumentProxy
     return this;
   }
 
-  private _buildOptions(): FindOptions {
-    const opts: FindOptions = {};
+  private _buildOptions(): any {
+    const opts: any = {};
     if (Object.keys(this._projection).length > 0) opts.projection = this._projection;
     if (Object.keys(this._sort).length > 0) opts.sort = this._sort;
     if (this._limitValue > 0) opts.limit = this._limitValue;
@@ -66,7 +65,7 @@ export class QueryBuilder<T extends Record<string, any> = any, R = DocumentProxy
 
   private _execFindOne(): Promise<DocumentProxy<T> | null> {
     const opts = this._buildOptions();
-    return this._collection.findOne(this._filter, opts).then(doc => {
+    return this._collection.findOne(this._filter, opts).then((doc: any) => {
       if (!doc) return null;
       return new DocumentProxy<T>(this._collection, { _id: doc._id } as any, doc as any, false);
     });
@@ -74,8 +73,8 @@ export class QueryBuilder<T extends Record<string, any> = any, R = DocumentProxy
 
   private _execFind(): Promise<DocumentProxy<T>[]> {
     const opts = this._buildOptions();
-    return this._collection.find(this._filter, opts).toArray().then(docs =>
-      docs.map(d => new DocumentProxy<T>(this._collection, { _id: d._id } as any, d as any, false))
+    return this._collection.find(this._filter, opts).toArray().then((docs: any[]) =>
+      docs.map((d: any) => new DocumentProxy<T>(this._collection, { _id: d._id } as any, d as any, false))
     );
   }
 
