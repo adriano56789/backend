@@ -34,11 +34,7 @@ export const getDb = () => {
   return mongoose.connection.db;
 };
 
-<<<<<<< Updated upstream
-export const getCollection = (name: string) => {
-=======
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const getCollection = <T = any>(name: string): any => {
->>>>>>> Stashed changes
   return getDb().collection(name);
 };
