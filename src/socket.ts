@@ -40,6 +40,10 @@ export const initSocket = (server: any) => {
     io.on('connection', (socket) => {
         console.log(` [SOCKET] Client connected: ${socket.id} (user: ${socket.data.userId})`);
         console.log(` [SOCKET] Transport: ${socket.conn.transport.name}`);
+
+        // Auto-join user to their personal room for targeted events (chat, notifications, etc.)
+        socket.join(`user_${socket.data.userId}`);
+        console.log(` [SOCKET] User ${socket.data.userId} joined room user_${socket.data.userId}`);
         
         socket.on('disconnect', (reason) => {
             console.log(` [SOCKET] Client disconnected: ${socket.id} - Reason: ${reason}`);
