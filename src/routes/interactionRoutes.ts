@@ -841,12 +841,13 @@ router.post('/photos/upload/:id', async (req, res) => {
         console.log('✅ Foto salva com URL:', processedUrl);
 
         // Retornar no formato esperado pelo frontend
+        const savedPhoto = newPhoto as any;
         res.json({ 
             success: true, 
-            url: newPhoto.url,
+            url: savedPhoto.url,
             photo: {
-                id: newPhoto.id,
-                url: newPhoto.url
+                id: savedPhoto.id,
+                url: savedPhoto.url
             }
         });
     } catch (error: any) {

@@ -1,4 +1,3 @@
-import { Collection } from 'mongodb';
 import { BaseModel } from '../db/BaseModel';
 import { getDb } from '../config/db';
 
@@ -32,7 +31,7 @@ function compareVersions(v1: string, v2: string): number {
     return 0;
 }
 
-export async function getLatestVersion(collection: Collection<any>, appName: string) {
+export async function getLatestVersion(collection: any, appName: string) {
     return collection.findOne(
         { app: appName },
         {
@@ -52,7 +51,7 @@ export async function getLatestVersion(collection: Collection<any>, appName: str
     );
 }
 
-export async function needsUpdate(collection: Collection<any>, appName: string, currentVersion: string) {
+export async function needsUpdate(collection: any, appName: string, currentVersion: string) {
     const latest = await collection.findOne(
         { app: appName },
         {
@@ -68,7 +67,7 @@ export async function needsUpdate(collection: Collection<any>, appName: string, 
     return compareVersions(currentVersion, latest.latestVersion) < 0;
 }
 
-export async function upsertVersion(collection: Collection<any>, versionData: Partial<IAppVersion>) {
+export async function upsertVersion(collection: any, versionData: Partial<IAppVersion>) {
     const { app, ...updateData } = versionData;
 
     return collection.findOneAndUpdate(
@@ -93,7 +92,7 @@ export async function upsertVersion(collection: Collection<any>, versionData: Pa
     );
 }
 
-export async function getVersionInfo(collection: Collection<any>, appName: string) {
+export async function getVersionInfo(collection: any, appName: string) {
     return collection.findOne(
         { app: appName },
         {
@@ -107,7 +106,7 @@ export async function getVersionInfo(collection: Collection<any>, appName: strin
     );
 }
 
-export async function getDownloadUrls(collection: Collection<any>, appName: string) {
+export async function getDownloadUrls(collection: any, appName: string) {
     return collection.findOne(
         { app: appName },
         {
@@ -120,7 +119,7 @@ export async function getDownloadUrls(collection: Collection<any>, appName: stri
     );
 }
 
-export async function getChangelog(collection: Collection<any>, appName: string) {
+export async function getChangelog(collection: any, appName: string) {
     return collection.findOne(
         { app: appName },
         {

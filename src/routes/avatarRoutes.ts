@@ -267,8 +267,8 @@ router.post('/users/:id/avatar-upload', async (req, res) => {
     
     // Emitir evento WebSocket para atualização em tempo real do avatar
     try {
-      const { default: socketInit } = await import('./socket');
-      const io = socketInit.getIO();
+      const { getIO } = await import('../socket');
+      const io = getIO();
       if (io) {
         io.to(`user_${id}`).emit('user_avatar_updated', {
           userId: id,

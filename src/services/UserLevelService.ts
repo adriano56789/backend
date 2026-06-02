@@ -171,7 +171,7 @@ export class UserLevelService {
         expGains,
         newLevel: finalLevel,
         currentExp: userLevel.currentExp,
-        expRequired: userLevel.expRequired,
+        expForNextLevel: userLevel.expForNextLevel,
         leveledUp,
         totalExp: userLevel.totalExp
       };
@@ -330,7 +330,7 @@ export class UserLevelService {
         return false;
       }
       
-      const canLevelUp = userLevel.currentExp >= userLevel.expRequired;
+      const canLevelUp = userLevel.currentExp >= userLevel.expForNextLevel;
       
       console.log(`⭐ [LEVEL] Level up check for ${userId}: ${canLevelUp}`);
       return canLevelUp;
@@ -348,13 +348,13 @@ export class UserLevelService {
       const totalUsers = await UserLevel.countDocuments();
       const averageLevelResult = await UserLevel.aggregate([
         { $group: { _id: null, avgLevel: { $avg: '$currentLevel' } } }
-      ]).toArray();
+      ]);
       const averageLevel = averageLevelResult;
       
       const topLevel = await UserLevel.findOne({}).sort({ currentLevel: -1 });
       const totalExpDistributedResult = await UserLevel.aggregate([
         { $group: { _id: null, totalExp: { $sum: '$totalExp' } } }
-      ]).toArray();
+      ]);
       const totalExpDistributed = totalExpDistributedResult;
       
       console.log(`⭐ [LEVEL] System stats retrieved`);

@@ -1,7 +1,7 @@
 import express from 'express';
 import { User, Gift, GiftTransaction, Streamer, Followers, Battle } from '../models';
 import { getDb } from '../config/db';
-import { isFollowing, createFollow } from '../models/Followers';
+import { isFollowing, createFollow } from '../models/Follow';
 import { ComboService } from '../services/ComboService';
 import { GiftRankingService } from '../services/GiftRankingService';
 
@@ -260,7 +260,7 @@ async function processGiftSend(fromUserId: string, toUserId: string, giftId: str
         // Auto-follow se o gift tiver triggersAutoFollow: true
         if (gift.triggersAutoFollow && streamId && streamId !== 'unknown' && fromUserId !== toUserId) {
           try {
-            const coll = getDb().collection(Followers.collectionName);
+            const coll = getDb().collection('follows');
             const alreadyFollows = await isFollowing(coll, fromUserId, toUserId);
             if (!alreadyFollows) {
               await createFollow(coll, fromUserId, toUserId);

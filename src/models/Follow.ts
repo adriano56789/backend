@@ -1,4 +1,4 @@
-import { Collection } from 'mongodb';
+
 import { BaseModel } from '../db/BaseModel';
 
 export interface IFollow {
@@ -11,7 +11,7 @@ export interface IFollow {
 
 export const COLLECTION = 'follows';
 
-export function findFollow(collection: Collection<any>, followerId: string, followingId: string) {
+export function findFollow(collection: any, followerId: string, followingId: string) {
     return collection.findOne(
         {
             followerId,
@@ -31,7 +31,7 @@ export function findFollow(collection: Collection<any>, followerId: string, foll
     );
 }
 
-export function findFollowers(collection: Collection<any>, userId: string) {
+export function findFollowers(collection: any, userId: string) {
     return collection.find(
         {
             followingId: userId,
@@ -51,7 +51,7 @@ export function findFollowers(collection: Collection<any>, userId: string) {
     .toArray();
 }
 
-export function findFollowing(collection: Collection<any>, userId: string) {
+export function findFollowing(collection: any, userId: string) {
     return collection.find(
         {
             followerId: userId,
@@ -71,13 +71,13 @@ export function findFollowing(collection: Collection<any>, userId: string) {
     .toArray();
 }
 
-export async function createFollow(collection: Collection<any>, followerId: string, followingId: string) {
+export async function createFollow(collection: any, followerId: string, followingId: string) {
     if (!followerId || !followingId) {
-        throw new Error('followerId e followingId são obrigatórios');
+        throw new Error('followerId e followingId sï¿½o obrigatï¿½rios');
     }
 
     if (followerId === followingId) {
-        throw new Error('Usuário não pode seguir a si mesmo');
+        throw new Error('Usuï¿½rio nï¿½o pode seguir a si mesmo');
     }
 
     const existingFollow = await collection.findOne(
@@ -96,7 +96,7 @@ export async function createFollow(collection: Collection<any>, followerId: stri
     );
 
     if (existingFollow) {
-        throw new Error('Já existe um relacionamento de follow entre estes usuários');
+        throw new Error('Jï¿½ existe um relacionamento de follow entre estes usuï¿½rios');
     }
 
     const doc = {
@@ -111,7 +111,7 @@ export async function createFollow(collection: Collection<any>, followerId: stri
     return { ...doc, _id: result.insertedId };
 }
 
-export async function isFollowing(collection: Collection<any>, followerId: string, followingId: string) {
+export async function isFollowing(collection: any, followerId: string, followingId: string) {
     const result = await collection.findOne(
         {
             followerId,
@@ -123,7 +123,7 @@ export async function isFollowing(collection: Collection<any>, followerId: strin
     return !!result;
 }
 
-export async function unfollowUser(collection: Collection<any>, followerId: string, followingId: string) {
+export async function unfollowUser(collection: any, followerId: string, followingId: string) {
     return collection.findOneAndUpdate(
         {
             followerId,
@@ -149,21 +149,21 @@ export async function unfollowUser(collection: Collection<any>, followerId: stri
     );
 }
 
-export function countFollowers(collection: Collection<any>, userId: string) {
+export function countFollowers(collection: any, userId: string) {
     return collection.countDocuments({
         followingId: userId,
         isActive: true
     });
 }
 
-export function countFollowing(collection: Collection<any>, userId: string) {
+export function countFollowing(collection: any, userId: string) {
     return collection.countDocuments({
         followerId: userId,
         isActive: true
     });
 }
 
-export function findRecentFollows(collection: Collection<any>, limit = 50) {
+export function findRecentFollows(collection: any, limit = 50) {
     return collection.find(
         {
             isActive: true
@@ -182,7 +182,7 @@ export function findRecentFollows(collection: Collection<any>, limit = 50) {
     .toArray();
 }
 
-export function findMutualFollows(collection: Collection<any>, userId: string, otherUserId: string) {
+export function findMutualFollows(collection: any, userId: string, otherUserId: string) {
     return collection.find(
         {
             $or: [
@@ -202,7 +202,7 @@ export function findMutualFollows(collection: Collection<any>, userId: string, o
     ).toArray();
 }
 
-export async function unfollow(collection: Collection<any>, follow: IFollow & { _id: any }) {
+export async function unfollow(collection: any, follow: IFollow & { _id: any }) {
     return collection.findOneAndUpdate(
         { _id: follow._id },
         {
