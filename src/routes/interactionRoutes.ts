@@ -1,5 +1,5 @@
 import express from 'express';
-import { User, Streamer, Gift, GiftTransaction, Followers, UserStatus, Visitor, ChatMessage, Chat, Conversation, Friendship, Invitation, Message, Photo, UserPhoto, ProfilePhoto, UserVideo, Frame } from '../models';
+import { User, Streamer, Gift, GiftTransaction, Followers, UserStatus, Visitor, ChatMessage, Chat, Conversation, Friendship, Invitation, Message, Photo, UserPhoto, ProfilePhoto, UserVideo } from '../models';
 import { kickProtection } from '../middleware/appOwnerProtection';
 import { getUserIdFromToken } from '../middleware/auth';
 import { BeautyEffect } from '../models/BeautyEffect';
@@ -628,15 +628,14 @@ router.get('/feed/photos', async (req, res) => {
         const userFilter = userId ? { userId } : {};
         
         // Buscar conteúdo de múltiplos modelos
-        const [photoFeed, userPhotoFeed, profilePhotoFeed, videoFeed, framesFeed] = await Promise.all([
+        const [photoFeed, userPhotoFeed, profilePhotoFeed, videoFeed] = await Promise.all([
             Photo.find(userId ? userFilter : {}).sort({ createdAt: -1 }).limit(15).lean(),
             UserPhoto.find({ ...userFilter, isPublic: true }).sort({ postedAt: -1 }).limit(15).lean(),
             ProfilePhoto.find({ ...userFilter, isActive: true, photoType: { $ne: 'avatar' } }).sort({ createdAt: -1 }).limit(10).lean(),
-            UserVideo.find({ ...userFilter, isPublic: true }).sort({ postedAt: -1 }).limit(15).lean(),
-            Frame.find({ isActive: true }).sort({ createdAt: -1 }).limit(10).lean()
+            UserVideo.find({ ...userFilter, isPublic: true }).sort({ postedAt: -1 }).limit(15).lean()
         ]);
 
-        console.log(`📸 [CONTENT FEED] Encontrados: ${photoFeed.length} Photo, ${userPhotoFeed.length} UserPhoto, ${profilePhotoFeed.length} ProfilePhoto, ${videoFeed.length} UserVideo, ${framesFeed.length} Frames`);
+        console.log(`📸 [CONTENT FEED] Encontrados: ${photoFeed.length} Photo, ${userPhotoFeed.length} UserPhoto, ${profilePhotoFeed.length} ProfilePhoto, ${videoFeed.length} UserVideo`);
 
         // Combinar todos os feeds
         const allContent = [
@@ -672,16 +671,6 @@ router.get('/feed/photos', async (req, res) => {
                 mediaUrl: v.videoUrl,
                 thumbnailUrl: v.thumbnailUrl,
                 duration: v.duration
-            })),
-            // Frames/Ícones
-            ...framesFeed.map((f: any) => ({ 
-                ...f, 
-                source: 'Frame',
-                contentType: 'frame',
-                mediaUrl: f.imageUrl,
-                thumbnailUrl: f.thumbnailUrl || f.imageUrl,
-                price: f.price,
-                category: f.category
             }))
         ];
 
@@ -710,16 +699,13 @@ router.get('/feed/photos', async (req, res) => {
             return acc;
         }, {} as Record<string, any>);
 
-        // Mapear conteúdo com dados do usuário
-        const contentWithUsers = limitedContent.map((content: any) => {
-            const user = userMap[content.userId] || { 
-                id: content.userId, 
-                name: 'UnknownUser', 
-                displayName: 'UnknownUser',
-                avatarUrl: '' 
-            };
+        // Filtrar apenas conteúdo com usuário válido no banco - sem dados fake
+        const validContent = limitedContent.filter((content: any) => content.userId && userMap[content.userId]);
 
-            // Normalizar campos para frontend
+        // Mapear conteúdo com dados reais do usuário
+        const contentWithUsers = validContent.map((content: any) => {
+            const user = userMap[content.userId];
+
             return {
                 id: content.id || content._id,
                 contentType: content.contentType,
@@ -731,7 +717,6 @@ router.get('/feed/photos', async (req, res) => {
                 postedAt: content.postedAt || content.createdAt,
                 userId: content.userId,
                 source: content.source,
-                // Campos específicos por tipo
                 duration: content.duration,
                 price: content.price,
                 category: content.category,

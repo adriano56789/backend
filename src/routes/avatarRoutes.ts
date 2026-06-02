@@ -255,12 +255,29 @@ router.post('/users/:id/avatar-upload', async (req, res) => {
     }
     user.photos.push(avatarUrl);
     
+    // Atualizar avatarUrl (campo usado pelo feed /video e outras telas)
+    user.avatarUrl = avatarUrl;
+    
     // Definir como avatar principal se for o primeiro
     if (!user.avatar || user.avatar.trim() === '') {
       user.avatar = avatarUrl;
     }
     
     await user.save();
+    
+    // Emitir evento WebSocket para atualização em tempo real do avatar
+    try {
+      const { default: socketInit } = await import('./socket');
+      const io = socketInit.getIO();
+      if (io) {
+        io.to(`user_${id}`).emit('user_avatar_updated', {
+          userId: id,
+          avatarUrl
+        });
+      }
+    } catch (err) {
+      console.error('Erro ao emitir evento de avatar:', err);
+    }
     
     res.json({ 
       success: true, 

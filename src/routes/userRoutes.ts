@@ -1364,20 +1364,19 @@ UserRoutes.get('/:id/photos', async (req, res) => {
 
         ).select('id name avatarUrl level fans following isLive isOnline lastSeen').lean();
 
-        if (user) {
-            // Usar standardizeUserResponse que já faz o mapeamento seguro dos campos
-            const publicUser = standardizeUserResponse(user);
+        if (!user) return res.status(404).json({ error: 'Usuário não encontrado' });
 
-            const formattedPhotos = photos.map(photo => {
-                const photoJson = photo instanceof (Photo as any) ? photo.toJSON() : photo;
-                return {
-                    ...photoJson,
-                    photoUrl: (photoJson as any).url || (photoJson as any).photoUrl,
-                    user: publicUser
-                };
-            });
-            res.json(formattedPhotos);
-        }
+        const publicUser = standardizeUserResponse(user);
+
+        const formattedPhotos = photos.map(photo => {
+            const photoJson = photo instanceof (Photo as any) ? photo.toJSON() : photo;
+            return {
+                ...photoJson,
+                photoUrl: (photoJson as any).url || (photoJson as any).photoUrl,
+                user: publicUser
+            };
+        });
+        res.json(formattedPhotos);
 
     } catch (error: any) {
 
@@ -1417,15 +1416,24 @@ UserRoutes.get('/:id/liked-photos', async (req, res) => {
 
 
 
-        const formattedPhotos = photos.map(photo => {
-            const photoJson = photo.toJSON();
-            return {
-                ...photoJson,
-                photoUrl: photoJson.photoUrl,
-                isLiked: true, // Force true for display
-                user: userMap[photoJson.userId] || { id: photoJson.userId, name: 'UnknownUser', avatarUrl: '' }
-            };
-        });
+        const formattedPhotos = photos
+            .map(photo => {
+                const photoJson = photo.toJSON();
+                const user = userMap[photoJson.userId];
+                if (!user) return null;
+                return {
+                    ...photoJson,
+                    photoUrl: photoJson.photoUrl,
+                    isLiked: true,
+                    user: {
+                        id: user.id,
+                        name: user.name || user.displayName,
+                        displayName: user.displayName || user.name,
+                        avatarUrl: user.avatarUrl || ''
+                    }
+                };
+            })
+            .filter(Boolean);
 
         res.json(formattedPhotos);
 

@@ -841,6 +841,7 @@ io.on('connection', (socket) => {
 
             // Buscar detalhes do remetente
             const sender = await User.findOne({ id: senderId }).select('id name avatarUrl');
+            if (!sender) return;
 
             // Formatar mensagem para envio
             const formattedMessage = {
@@ -852,7 +853,7 @@ io.on('connection', (socket) => {
                 messageType: message.messageType,
                 isRead: message.isRead,
                 sentAt: message.sentAt,
-                sender: sender || { id: senderId, name: 'Usuário', avatarUrl: '' }
+                sender: { id: sender.id, name: sender.name, avatarUrl: sender.avatarUrl || '' }
             };
 
             // Enviar para todos os participantes do chat
@@ -1331,11 +1332,12 @@ io.on('connection', (socket) => {
         try {
             const { streamId, userId, text } = data;
             const user = await User.findOne({ id: userId }).select('name displayName avatarUrl level activeFrameId').lean();
-            if (!user) return;
+            const userName = (user as any)?.name || (user as any)?.displayName;
+            if (!user || !userName) return;
 
             const messagePayload = {
                 userId,
-                userName: (user as any).name || (user as any).displayName || 'Usuário',
+                userName,
                 avatarUrl: (user as any).avatarUrl || '',
                 level: (user as any).level || 1,
                 activeFrameId: (user as any).activeFrameId || null,

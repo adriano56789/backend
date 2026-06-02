@@ -1,0 +1,122 @@
+syntax = "proto3";
+
+package livego;
+
+// Mensagem base para todos os eventos
+message BaseEvent {
+  string type = 1;
+  int64 timestamp = 2;
+  string stream_id = 3;
+}
+
+// Mensagem de chat
+message ChatMessage {
+  string user_id = 1;
+  string user_name = 2;
+  string user_avatar = 3;
+  string message = 4;
+  int64 timestamp = 5;
+}
+
+// Evento de chat
+message ChatEvent {
+  BaseEvent base = 1;
+  ChatMessage chat = 2;
+}
+
+// Presente
+message Gift {
+  string gift_id = 1;
+  string gift_name = 2;
+  string gift_icon = 3;
+  int32 gift_price = 4;
+  int32 quantity = 5;
+  int32 total_value = 6;
+}
+
+// Usuário
+message User {
+  string user_id = 1;
+  string user_name = 2;
+  string user_avatar = 3;
+  int32 user_level = 4;
+}
+
+// Evento de presente
+message GiftEvent {
+  BaseEvent base = 1;
+  User from_user = 2;
+  User to_user = 3;
+  Gift gift = 4;
+  int64 timestamp = 5;
+}
+
+// Evento de entrada de usuário
+message UserJoinedEvent {
+  BaseEvent base = 1;
+  User user = 2;
+  int64 timestamp = 3;
+}
+
+// Evento de join na stream
+message JoinStreamEvent {
+  BaseEvent base = 1;
+  string user_id = 2;
+  int64 timestamp = 3;
+}
+
+// Evento de saída de usuário
+message UserLeftEvent {
+  BaseEvent base = 1;
+  User user = 2;
+  int64 timestamp = 3;
+}
+
+// Status da stream
+message StreamStatus {
+  string status = 1;
+  int32 viewers = 2;
+  string host_id = 3;
+  string host_name = 4;
+}
+
+// Evento de status da stream
+message StreamStatusEvent {
+  BaseEvent base = 1;
+  StreamStatus status = 2;
+  int64 timestamp = 3;
+}
+
+// Informações da stream
+message StreamInfo {
+  string stream_id = 1;
+  string stream_title = 2;
+  string stream_description = 3;
+  string host_id = 4;
+  string host_name = 5;
+  string host_avatar = 6;
+  int32 viewers = 7;
+  int32 coins = 8;
+  string status = 9;
+  int64 start_time = 10;
+}
+
+// Evento de informações da stream
+message StreamInfoEvent {
+  BaseEvent base = 1;
+  StreamInfo info = 2;
+  int64 timestamp = 3;
+}
+
+// Evento wrapper principal - pode conter qualquer tipo de evento
+message LiveEvent {
+  oneof event {
+    ChatEvent chat = 1;
+    GiftEvent gift = 2;
+    UserJoinedEvent user_joined = 3;
+    UserLeftEvent user_left = 4;
+    StreamStatusEvent stream_status = 5;
+    StreamInfoEvent stream_info = 6;
+    JoinStreamEvent join_stream = 7;
+  }
+}

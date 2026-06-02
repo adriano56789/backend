@@ -116,7 +116,7 @@ router.post('/register', async (req, res) => {
         };
 
         
-        userData.avatarUrl = avatarUrl?.trim() ? avatarUrl.trim() : `https://api.livego.store/avatars/default.png`;
+        userData.avatarUrl = avatarUrl?.trim() ? avatarUrl.trim() : '';
         if (coverUrl && coverUrl.trim()) {
             userData.coverUrl = coverUrl.trim();
         }
