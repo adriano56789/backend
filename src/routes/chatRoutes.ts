@@ -239,60 +239,41 @@ router.post('/', async (req, res) => {
 // POST /api/chats/send - Enviar mensagem (rota simplificada)
 router.post('/send', async (req, res) => {
     try {
-        console.log('🔍 Body recebido:', JSON.stringify(req.body, null, 2));
-        console.log('📏 Tamanho do payload:', JSON.stringify(req.body).length, 'bytes');
-
         const { from, to, text, imageUrl, tempId } = req.body;
 
-        // Validações detalhadas
         if (!from) {
-            console.log('❌ Campo "from" faltando');
             return res.status(400).json({ error: 'Campo "from" é obrigatório' });
         }
         
         if (!to) {
-            console.log('❌ Campo "to" faltando');
             return res.status(400).json({ error: 'Campo "to" é obrigatório' });
         }
         
         if (!text && !imageUrl) {
-            console.log('❌ Campos "text" e "imageUrl" faltando');
             return res.status(400).json({ error: 'Campo "text" ou "imageUrl" é obrigatório' });
         }
 
-        // Validar tamanho do conteúdo
         if (text && text.length > 10000) {
-            console.log('❌ Texto muito longo:', text.length, 'caracteres');
             return res.status(400).json({ error: 'Texto muito longo (máximo 10.000 caracteres)' });
         }
 
-        // Se for imagem Base64 muito grande, tentar reduzir
-        if (imageUrl && imageUrl.length > 50000) {
-            console.log('⚠️ Imagem Base64 muito grande, detectando tipo:', imageUrl.length, 'caracteres');
-            
-            // Verificar se é uma imagem colada (data:image)
+        if (imageUrl && imageUrl.length > 50000) {            
             if (imageUrl.startsWith('data:image')) {
-                console.log('🔄 Imagem colada detectada, sugerindo upload correto');
                 return res.status(400).json({ 
                     error: 'Imagem muito grande para colar no chat. Use o botão de upload 📤 para enviar imagens corretamente.',
                     suggestion: 'Clique no botão de imagem ao lado do campo de texto para enviar arquivos.',
                     code: 'IMAGE_TOO_LARGE_PASTE'
                 });
             } else {
-                console.log('❌ Imagem muito grande:', imageUrl.length, 'caracteres');
                 return res.status(400).json({ error: 'Imagem muito grande (máximo 50.000 caracteres)' });
             }
         }
 
-        console.log(`📨 Enviando mensagem de ${from} para ${to}: ${text ? text.substring(0, 50) + '...' : '[imagem]'}`);
-
-        // Criar ID da conversa (ordenado para manter consistência)
         const conversationId = `chat_private_${[from, to].sort().join('_')}`;
         const messageType = imageUrl ? 'image' : 'text';
         const content = imageUrl || text;
-
-        // Criar nova mensagem com upsert automático + persistir atividade
         const messageId = tempId || `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
         const newMessage = (await ChatMessage.findOneAndUpdate(
             { id: messageId },
             {
@@ -306,13 +287,12 @@ router.post('/send', async (req, res) => {
                 sentAt: new Date()
             },
             { 
-                upsert: true, // Criar se não existir
+                upsert: true,
                 new: true
             }
         ))!;
 
-        // Persistir atividade de envio de mensagem
-        await User.findOneAndUpdate(
+        User.findOneAndUpdate(
             { id: from },
             { 
                 $push: { 
@@ -324,12 +304,8 @@ router.post('/send', async (req, res) => {
                     }
                 }
             }
-        ).catch(console.error);
+        ).catch(() => {});
 
-        // Buscar detalhes do remetente
-        const sender = await User.findOne({ id: from }).select('id name avatarUrl');
-
-        // Formatar resposta no formato Message esperado pelo frontend
         const frontendMessage = {
             id: newMessage.id,
             chatId: conversationId,
@@ -341,27 +317,18 @@ router.post('/send', async (req, res) => {
             status: 'sent',
         };
 
-        // Enviar via WebSocket em tempo real
         const io = req.app.get('io');
 
-        // Notificar receptor
-        io.to(`user_${to}`).emit('newMessage', {
-            ...frontendMessage,
-            sender: sender || { id: from, name: 'Usuário', avatarUrl: '' }
-        });
+        io.to(`user_${to}`).emit('newMessage', frontendMessage);
 
-        // Adicionar notificação ao histórico do receptor
         io.to(`user_${to}`).emit('chat_notification', {
             type: 'new_message',
             from: from,
-            fromName: sender?.name || 'Usuário',
-            fromAvatar: sender?.avatarUrl || '',
             message: messageType === 'image' ? '[Imagem]' : (text || ''),
             timestamp: new Date().toISOString(),
             conversationId
         });
 
-        // Notificar remetente sobre sucesso
         io.to(`user_${from}`).emit('message_sent', {
             tempId,
             messageId: newMessage.id,

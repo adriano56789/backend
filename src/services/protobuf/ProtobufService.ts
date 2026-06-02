@@ -14,7 +14,7 @@ let JoinStreamEvent: protobuf.Type;
 // Inicializar o Protobuf
 async function initProtobuf() {
   try {
-    const protoPath = path.join(__dirname, '../../../../protobuf/livego.proto');
+    const protoPath = path.join(__dirname, '../../../protobuf/livego.proto');
     root = await protobuf.load(protoPath);
     LiveEvent = root.lookupType('livego.LiveEvent');
     ChatEvent = root.lookupType('livego.ChatEvent');

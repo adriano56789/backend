@@ -44,7 +44,6 @@ export function standardizeUserResponse(user: any): any {
         name: user.name || "",
         displayName: user.displayName || user.name || "",
         identification: user.identification || "",
-        email: user.email,
         avatar: user.avatar,
         avatarUrl: user.avatarUrl || "",
         coverUrl: user.coverUrl || "",

@@ -232,13 +232,12 @@ router.post('/login', async (req, res) => {
         
         // Login tradicional com email e senha
         console.log('[LOGIN-DEBUG] Tentativa de login:', { 
-            email, 
             passwordProvided: !!password,
             timestamp: new Date().toISOString()
         });
 
         if (!email || !password) {
-            console.log('[LOGIN-DEBUG] Falha: campos ausentes', { email: !!email, password: !!password });
+            console.log('[LOGIN-DEBUG] Falha: campos ausentes');
             return res.status(400).json({ error: 'Email e senha são obrigatórios' });
         }
 
@@ -397,7 +396,6 @@ const JWT_SECRET = process.env.JWT_SECRET;
         // Retorna no formato GoogleAccount esperado pelo frontend
         const connectedAccounts = [{
             id: user.id,
-            email: user.email || '',
             name: user.name,
             avatarUrl: user.avatarUrl || '',
             isConnected: true,
@@ -437,7 +435,6 @@ const JWT_SECRET = process.env.JWT_SECRET;
 
         const accounts = [{
             id: user.id,
-            email: user.email || '',
             name: user.name,
             avatarUrl: user.avatarUrl || '',
             isConnected: true,

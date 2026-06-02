@@ -1,4 +1,5 @@
 import express from 'express';
+import { Streamer, User } from '../models';
 
 const router = express.Router();
 
@@ -33,9 +34,7 @@ router.post('/publish', async (req, res) => {
             stream_id
         } = req.body;
 
-        console.log('[SRS-PUBLISH]', JSON.stringify({
-            server_id, action, client_id, ip, vhost, app, tcUrl, stream, param, stream_url, stream_id
-        }));
+        console.log(`[SRS-PUBLISH] stream=${stream} client=${client_id}`);
 
         if (client_id && isDuplicate(client_id, 'on_publish')) {
             return res.status(200).json({ code: 0 });
@@ -76,9 +75,7 @@ router.post('/unpublish', async (req, res) => {
             stream_id
         } = req.body;
 
-        console.log('[SRS-UNPUBLISH]', JSON.stringify({
-            server_id, action, client_id, ip, vhost, app, tcUrl, stream, param, stream_url, stream_id
-        }));
+        console.log(`[SRS-UNPUBLISH] stream=${stream} client=${client_id}`);
 
         if (client_id && isDuplicate(client_id, 'on_unpublish')) {
             return res.status(200).json({ code: 0 });
@@ -90,7 +87,18 @@ router.post('/unpublish', async (req, res) => {
             return res.status(200).json({ code: 0 });
         }
 
-        console.log(`[SRS-UNPUBLISH] OK server=${server_id} stream=${stream} client=${client_id}`);
+        // Atualizar status da stream para offline
+        const updated = await Streamer.findOneAndUpdate(
+            { id: realStreamKey, isLive: true },
+            { $set: { isLive: false, streamStatus: 'ended', endTime: new Date() } }
+        );
+
+        if (updated) {
+            await User.findOneAndUpdate(
+                { id: updated.hostId },
+                { $set: { isLive: false, currentStreamId: null } }
+            );
+        }
 
         res.status(200).json({ code: 0 });
     } catch (error: any) {
@@ -116,9 +124,7 @@ router.post('/play', async (req, res) => {
             stream_id
         } = req.body;
 
-        console.log('[SRS-PLAY]', JSON.stringify({
-            server_id, action, client_id, ip, vhost, app, stream, param, pageUrl, stream_url, stream_id
-        }));
+        console.log(`[SRS-PLAY] stream=${stream} client=${client_id}`);
 
         res.status(200).json({ code: 0 });
     } catch (error: any) {
@@ -143,9 +149,7 @@ router.post('/stop', async (req, res) => {
             stream_id
         } = req.body;
 
-        console.log('[SRS-STOP]', JSON.stringify({
-            server_id, action, client_id, ip, vhost, app, stream, param, stream_url, stream_id
-        }));
+        console.log(`[SRS-STOP] stream=${stream} client=${client_id}`);
 
         res.status(200).json({ code: 0 });
     } catch (error: any) {
@@ -177,9 +181,7 @@ router.post('/hls', async (req, res) => {
             stream_id
         } = req.body;
 
-        console.log('[SRS-HLS]', JSON.stringify({
-            server_id, action, client_id, stream, duration, file, url, m3u8, m3u8_url, seq_no
-        }));
+        console.log(`[SRS-HLS] stream=${stream} seq=${seq_no}`);
 
         res.status(200).json({ code: 0 });
     } catch (error: any) {

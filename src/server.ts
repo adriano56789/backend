@@ -214,19 +214,6 @@ connectDB().then(async () => {
 
     console.log('✅ [DB] Sistema pronto - banco conectado!');
 
-    // Resetar streams fantasmas no startup
-    try {
-        const result = await Streamer.updateMany(
-            { $or: [{ isLive: true }, { streamStatus: { $in: ['active', 'live'] } }] },
-            { $set: { isLive: false, streamStatus: 'ended', endTime: new Date() } }
-        );
-        if (result.modifiedCount > 0) {
-            console.log(`🧹 [STARTUP] ${result.modifiedCount} stream(s) fantasma(s) resetada(s) para offline`);
-        }
-    } catch (err: any) {
-        console.error(`❌ [STARTUP] Erro ao resetar streams fantasmas: ${err.message}`);
-    }
-
     // REMOVIDO: Sistema de automação que pode criar dados
     // const verification = await quickAutomationCheck();
     // console.log(`🔍 [VERIFY] Status: ${verification.successRate}% automático (${verification.errorsCount} erros)`);
@@ -681,7 +668,7 @@ io.on('connection', (socket) => {
 
             // VALIDAÇÃO CRÍTICA: Se não há usuário associado, apenas limpar
             if (!userId) {
-                console.log(`🔌 Socket ${socket.id} desconectado sem usuário associado`);
+                socketToUser.delete(socket.id);
                 return;
             }
 
@@ -696,7 +683,7 @@ io.on('connection', (socket) => {
 
             // VALIDAÇÃO: Se este socket não está na lista do usuário, apenas limpar
             if (!userEntry.socketIds.has(socket.id)) {
-                console.log(`🔌 Socket ${socket.id} não encontrado na lista do usuário ${userId}`);
+                console.log(`🔌 Socket ${socket.id} desconectado (não encontrado na lista do usuário ${userId})`);
                 socketToUser.delete(socket.id);
                 return;
             }
@@ -704,17 +691,11 @@ io.on('connection', (socket) => {
             // Remover este socket da lista
             userEntry.socketIds.delete(socket.id);
 
-            console.log(`🔌 Socket ${socket.id} desconectado (usuário ${userId}, sockets restantes: ${userEntry.socketIds.size})`);
-
-            // Se ainda tiver sockets ativos, não marcar como offline nem emitir eventos
+            // Se ainda tiver sockets ativos, não marcar como offline
             if (userEntry.socketIds.size > 0) {
-                console.log(`🔄 Usuário ${userId} ainda tem ${userEntry.socketIds.size} conexões ativas - mantendo online`);
                 socketToUser.delete(socket.id);
                 return;
             }
-
-            // Se não tiver mais sockets, remover usuário completamente
-            console.log(`👋 Usuário ${userId} não tem mais conexões - marcando como offline`);
             onlineUsers.delete(userId);
 
             // Marcar como offline no banco se não estiver em live
@@ -725,12 +706,7 @@ io.on('connection', (socket) => {
             });
 
             if (!activeStreams || activeStreams.length === 0) {
-                await models.User.findOneAndUpdate(
-                    { id: userId },
-                    { $set: { isOnline: false, currentStreamId: null, lastSeen: new Date().toISOString() } }
-                );
-
-                // Notificar outros usuários na stream sobre saída
+                // Notificar outros usuários na stream sobre saída (antes do DB)
                 if (userEntry.streamId) {
                     io.to(userEntry.streamId).emit('user_left', {
                         userId: userId,
@@ -754,16 +730,17 @@ io.on('connection', (socket) => {
 
                     // Persistir viewer count no banco
                     const count = onlineUsersInStream.length;
-                    try {
-                        const { Streamer } = await import('./models/Streamer');
-                        await Streamer.findOneAndUpdate(
-                            { id: userEntry.streamId },
-                            { $set: { viewers: count } }
-                        ).catch(() => {});
-                    } catch (e) {
-                        // Falha silenciosa
-                    }
+                    models.Streamer.findOneAndUpdate(
+                        { id: userEntry.streamId },
+                        { $set: { viewers: count } }
+                    ).catch(() => {});
                 }
+
+                // Marcar como offline no banco (assíncrono, não bloqueia os eventos)
+                models.User.findOneAndUpdate(
+                    { id: userId },
+                    { $set: { isOnline: false, currentStreamId: null, lastSeen: new Date().toISOString() } }
+                ).catch(err => console.error('❌ Erro ao persistir offline:', err));
             }
 
             // Limpar mapeamento de socket
@@ -1241,19 +1218,19 @@ io.on('connection', (socket) => {
             socketToUser.set(socket.id, userId);
             socket.join(`user_${userId}`);
 
-            // Atualizar status no banco
-            const { User } = await import('./models/index');
-            await User.findOneAndUpdate(
-                { id: userId },
-                { $set: { isOnline: true, lastSeen: new Date().toISOString() } }
-            );
-
-            // Notificar todos sobre mudança de status
+            // Notificar todos sobre mudança de status em tempo real (antes do DB)
             io.emit('user_status_changed', {
                 userId,
                 isOnline: true,
                 lastSeen: new Date().toISOString()
             });
+
+            // Atualizar status no banco (assíncrono, não bloqueia o evento)
+            const { User } = await import('./models/index');
+            User.findOneAndUpdate(
+                { id: userId },
+                { $set: { isOnline: true, lastSeen: new Date().toISOString() } }
+            ).catch(err => console.error('❌ Erro ao persistir status online:', err));
 
             console.log(`🟢 Usuário ${userId} online (socket: ${socket.id})`);
         } catch (error) {

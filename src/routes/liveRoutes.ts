@@ -1398,13 +1398,11 @@ router.post('/srs/start', async (req, res) => {
 
     try {
 
-        console.log('[SRS-START] Iniciando preparação da transmissão...');
+        console.log('[SRS-START] Iniciando preparação...');
 
         
 
         const userId = getUserIdFromToken(req);
-
-        console.log('[SRS-START] UserID extraído:', userId);
 
         
 
@@ -1430,11 +1428,7 @@ router.post('/srs/start', async (req, res) => {
 
         const streamKey = streamId; // Stream key simples = streamId
 
-        console.log('[SRS-START] IDs gerados:', { liveId, streamId, streamKey });
 
-
-
-        console.log('[SRS-START] Gerando token JWT...');
 
         // GERAR TOKEN JWT para autenticação SRS
 
@@ -2462,8 +2456,7 @@ router.post('/live/start', async (req, res) => {
     try {
         console.log('[LIVE-START] Iniciando live no backend...');
         console.log('[LIVE-START] Headers:', req.headers.authorization ? 'Token presente' : 'Token ausente');
-        console.log('[LIVE-START] Payload recebido:', JSON.stringify(req.body, null, 2));
-        
+
         const userId = getUserIdFromToken(req);
         console.log('[LIVE-START] User ID extraído do token:', userId);
 
@@ -2615,8 +2608,6 @@ router.post('/live/end', async (req, res) => {
 
     try {
 
-        console.log('[LIVE-END] Encerrando live no backend...');
-
         
 
         const userId = getUserIdFromToken(req);
@@ -2735,42 +2726,49 @@ router.post('/live/end', async (req, res) => {
 
 
         // Notificar viewers via Socket.IO
-        const io = req.app.get('io');
-        if (io) {
-            io.to(activeStream.id).emit('stream_ended', {
-                streamId: activeStream.id,
-                hostId: userId,
-                timestamp: new Date()
-            });
-            io.emit('stream_ended', {
-                streamId: activeStream.id,
-                hostId: userId
-            });
+        try {
+            const io = req.app.get('io');
+            if (io) {
+                io.to(activeStream.id).emit('stream_ended', {
+                    streamId: activeStream.id,
+                    hostId: userId,
+                    timestamp: new Date()
+                });
+                io.emit('stream_ended', {
+                    streamId: activeStream.id,
+                    hostId: userId
+                });
+            }
+        } catch (e) {
+            console.error('[LIVE-END] Erro ao notificar via Socket:', e);
         }
 
         // Encerrar PK battle ativa se existir
-        const activeBattle = await Battle.findOne({
-            $or: [
-                { streamerA: userId },
-                { streamerB: userId }
-            ],
-            status: 'active'
-        });
-        if (activeBattle) {
-            const now = new Date();
-            await Battle.findOneAndUpdate({ _id: activeBattle._id }, {
-                status: 'finished',
-                endedAt: now,
-                winner: null
+        try {
+            const activeBattle = await Battle.findOne({
+                $or: [
+                    { streamerA: userId },
+                    { streamerB: userId }
+                ],
+                status: 'active'
             });
-            if (io) {
-                io.emit('pk_battle_end', {
-                    battleId: activeBattle._id.toString(),
-                    winner: null,
-                    reason: 'streamer_ended_live'
+            if (activeBattle) {
+                await Battle.findOneAndUpdate({ _id: activeBattle._id }, {
+                    status: 'finished',
+                    endedAt: new Date(),
+                    winner: null
                 });
+                const io = req.app.get('io');
+                if (io) {
+                    io.emit('pk_battle_end', {
+                        battleId: activeBattle._id.toString(),
+                        winner: null,
+                        reason: 'streamer_ended_live'
+                    });
+                }
             }
-            console.log(`[LIVE-END] PK Battle ${activeBattle._id} encerrada por fim da live`);
+        } catch (e) {
+            console.error('[LIVE-END] Erro ao encerrar PK battle:', e);
         }
 
         console.log(`[LIVE-END] Live encerrada: ${activeStream.id} para usuário ${userId}`);
@@ -7775,19 +7773,10 @@ router.post('/streams/:id/end', async (req, res) => {
 
     try {
 
-        console.log('[STREAM-END] Finalizando stream...');
-
-        console.log('[STREAM-END] Request body:', JSON.stringify(req.body, null, 2));
-
-        console.log('[STREAM-END] Request params:', JSON.stringify(req.params, null, 2));
-
-        
+        const { id } = req.params;
+        console.log('[STREAM-END] Finalizando stream:', id);
 
         const userId = getUserIdFromToken(req);
-
-        console.log('[STREAM-END] User ID from token:', userId);
-
-        
 
         if (!userId) {
 
@@ -7803,41 +7792,21 @@ router.post('/streams/:id/end', async (req, res) => {
 
         }
 
-
-
-        const { id } = req.params;
-
-        console.log('[STREAM-END] Stream ID to end:', id);
-
-
+        
 
         // Buscar stream - primeiro tentar com hostId, depois só com ID
 
         let stream = await Streamer.findOne({ id, hostId: userId });
 
-        console.log('[STREAM-END] Stream found (with hostId):', stream ? 'YES' : 'NO');
-
         
-
-        // Se não encontrar com hostId, tentar só com ID (fallback)
 
         if (!stream) {
 
-            console.log('[STREAM-END] Tentando busca só por ID (fallback)...');
-
             stream = await Streamer.findOne({ id });
-
-            console.log('[STREAM-END] Stream found (ID only):', stream ? 'YES' : 'NO');
-
-            
 
             if (stream) {
 
-                console.log('[STREAM-END] Stream encontrada - HostId:', stream.hostId);
-
-                console.log('[STREAM-END] Expected userId:', userId);
-
-                console.log('[STREAM-END] Actual hostId:', stream.hostId);
+                console.log('[STREAM-END] Stream encontrada por ID, hostId:', stream.hostId);
 
                 
 

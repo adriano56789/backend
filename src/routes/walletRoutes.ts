@@ -554,7 +554,6 @@ router.get('/user/data/:id', async (req, res) => {
         const completeUserData = {
             id: user.id,
             name: user.name,
-            email: user.email,
             diamonds: user.diamonds || 0,
             earnings: user.earnings || 0,
             available_diamonds,

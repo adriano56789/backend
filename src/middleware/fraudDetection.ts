@@ -95,7 +95,7 @@ export class FraudDetectionMiddleware {
                     });
 
                     if (emailBanned) {
-                        console.log(`🚫 [FRAUD] Email banido detectado: ${user.email} - Motivo: ${emailBanned.reason}`);
+                        console.log(`🚫 [FRAUD] Email banido detectado para usuário ${user.id || user._id} - Motivo: ${emailBanned.reason}`);
                         return res.status(403).json({
                             error: 'Acesso bloqueado',
                             reason: 'Email restrito',

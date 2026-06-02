@@ -164,12 +164,11 @@ singleValueRoutes.forEach(({ route, field }) => {
             }
             
             const { value } = req.body;
-            console.log(`📝 [PROFILE_UPDATE] Atualizando campo ${field} para usuário ${userId} com valor: "${value}"`);
             
             const user = await User.findOneAndUpdate(
                 { id: userId }, 
                 { 
-                    [field]: value,
+                    $set: { [field]: value },
                     $push: { 
                         recentActivities: {
                             action: 'profile_update',
@@ -185,63 +184,42 @@ singleValueRoutes.forEach(({ route, field }) => {
             if (!user) {
                 return res.status(404).json({ error: 'User not found' });
             }
-            
-            console.log(`✅ [PROFILE_UPDATE] Usuário atualizado no banco:`, {
-                id: user.id,
-                [field]: (user as any)[field],
-                allFields: Object.keys(user.toObject())
-            });
 
             // Se for aniversário, salvar também no modelo Birthday
             if (field === 'birthday' && value) {
-                // Converter data do formato brasileiro (dd/mm/yyyy) para Date
                 const parts = value.split('/');
                 if (parts.length === 3) {
                     const [day, month, year] = parts.map(Number);
-                    const birthDate = new Date(year, month - 1, day); // mês-1 porque JS usa 0-1
+                    const birthDate = new Date(year, month - 1, day);
                     const age = new Date().getFullYear() - birthDate.getFullYear();
                     const zodiacSign = calculateZodiacSign(birthDate);
                     
                     await Birthday.findOneAndUpdate(
                         { userId },
-                        {
+                        { $set: {
                             userId,
                             birthDate,
                             age,
                             zodiacSign,
                             isActive: true,
                             updatedAt: new Date()
-                        },
+                        }},
                     { upsert: true, new: true }
                 );
                 
-                // Atualizar idade e signo no usuário principal também
                 await User.findOneAndUpdate(
                     { id: userId },
-                    {
-                        age: age,
-                        zodiacSign: zodiacSign,
-                        birthDate: birthDate
-                    }
+                    { $set: { age, zodiacSign, birthDate } }
                 );
                 
-                // Enviar atualização em tempo real via WebSocket
-                const io = require('../server').getIO();
+                const io = (req as any).app.get('io');
                 if (io) {
                     io.emit('user_profile_updated', {
-                        userId: userId,
-                        profile: {
-                            age: age,
-                            birthDate: birthDate,
-                            zodiacSign: zodiacSign,
-                            birthday: value
-                        },
+                        userId,
+                        profile: { age, birthDate, zodiacSign, birthday: value },
                         timestamp: new Date()
                     });
-                    console.log(`🔄 [WEBSOCKET] Perfil atualizado em tempo real para usuário ${userId}`);
                 }
-                
-                console.log(`✅ Aniversário salvo para usuário ${userId}: ${value} (idade: ${age})`);
                 }
             }
             

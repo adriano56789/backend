@@ -12,9 +12,6 @@ router.get('/', async (req, res) => {
             return res.status(400).json({ error: 'userId é obrigatório' });
         }
 
-        console.log(`🔍 Buscando mensagens para usuário ${userId}`);
-
-        // Buscar todas as mensagens onde o usuário participa
         const messages = await ChatMessage.find({
             $or: [
                 { senderId: userId },
@@ -25,12 +22,10 @@ router.get('/', async (req, res) => {
             .limit(parseInt(limit as string))
             .skip(parseInt(offset as string));
 
-        // Buscar dados únicos dos remetentes
         const senderIds = [...new Set(messages.map(msg => msg.senderId))];
         const senders = await User.find({ id: { $in: senderIds } }).select('id name avatarUrl age level identification birthday');
         const senderMap = new Map(senders.map(sender => [sender.id, sender]));
 
-        // Mapear para o formato Message esperado pelo frontend com dados do remetente
         const mappedMessages = messages.reverse().map((msg: any) => {
             const sender = senderMap.get(msg.senderId);
             const senderData = sender ? {
@@ -74,30 +69,24 @@ router.get('/chats/:userId/messages', async (req, res) => {
         const { currentUserId } = req.query;
         const { limit = 50, offset = 0 } = req.query;
 
-        // Validar se o userId do usuário logado foi fornecido
         if (!currentUserId) {
             return res.status(400).json({ error: 'currentUserId é obrigatório' });
         }
 
-        console.log(`🔍 Buscando mensagens entre usuários ${currentUserId} e ${userId}`);
-
-        // Buscar todas as mensagens onde os usuários participam
         const messages = await ChatMessage.find({
             $or: [
                 { senderId: currentUserId, receiverId: userId },
                 { senderId: userId, receiverId: currentUserId }
             ]
         })
-            .sort({ sentAt: 1 }) // Ordem cronológica ascendente
+            .sort({ sentAt: 1 })
             .limit(parseInt(limit as string))
             .skip(parseInt(offset as string));
 
-        // Buscar dados únicos dos remetentes
         const senderIds = [...new Set(messages.map(msg => msg.senderId))];
         const senders = await User.find({ id: { $in: senderIds } }).select('id name avatarUrl age level identification');
         const senderMap = new Map(senders.map(sender => [sender.id, sender]));
 
-        // Mapear para o formato Message esperado pelo frontend com dados do remetente
         const mappedMessages = messages.map((msg: any) => {
             const sender = senderMap.get(msg.senderId);
             const senderData = sender ? {
@@ -122,9 +111,6 @@ router.get('/chats/:userId/messages', async (req, res) => {
             };
         });
 
-        console.log(`📊 Encontradas ${mappedMessages.length} mensagens`);
-
-        // Marcar mensagens recebidas como lidas (em segundo plano)
         ChatMessage.updateMany(
             {
                 senderId: userId,
@@ -132,9 +118,8 @@ router.get('/chats/:userId/messages', async (req, res) => {
                 isRead: false
             },
             { isRead: true }
-        ).catch(console.error);
+        ).catch(() => {});
 
-        // Notificar sobre mensagens lidas via WebSocket
         const io = req.app.get('io');
         if (io) {
             io.to(`user_${currentUserId}`).emit('messages_read', {
@@ -164,9 +149,6 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ error: 'Dados incompletos' });
         }
 
-        console.log(`? Nova mensagem de ${senderId} para ${receiverId} - Tipo: ${messageType}`);
-
-        // Verificar se há bloqueio entre os usuários
         const existingBlock = await Block.findOne({
             $or: [
                 { blockerId: senderId, blockedId: receiverId, isActive: true },
@@ -175,14 +157,12 @@ router.post('/', async (req, res) => {
         });
 
         if (existingBlock) {
-            console.log(`? Mensagem bloqueada: ${senderId} e ${receiverId} têm bloqueio ativo`);
             return res.status(403).json({ 
                 error: 'Não é possível enviar mensagem',
                 message: 'Usuários bloqueados não podem enviar mensagens entre si'
             });
         }
 
-        // Criar mensagem
         const message = await ChatMessage.create({
             id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             conversationId,
@@ -194,8 +174,7 @@ router.post('/', async (req, res) => {
             sentAt: new Date()
         });
 
-        // Persistir atividade do usuário que enviou mensagem
-        await User.findOneAndUpdate(
+        User.findOneAndUpdate(
             { id: senderId },
             { 
                 $inc: { messagesSent: 1 },
@@ -208,12 +187,10 @@ router.post('/', async (req, res) => {
                     }
                 }
             }
-        );
+        ).catch(() => {});
 
-        // Buscar detalhes do remetente
         const sender = await User.findOne({ id: senderId }).select('id name avatarUrl age level identification birthday');
 
-        // Preparar mensagem para frontend
         const messageData = {
             id: message.id,
             chatId: conversationId,
@@ -231,13 +208,10 @@ router.post('/', async (req, res) => {
             senderBirthday: sender?.birthday
         };
 
-        // Enviar via WebSocket em tempo real
         const io = req.app.get('io');
         if (io) {
-            // Notificar receptor
             io.to(`user_${receiverId}`).emit('new_message', messageData);
 
-            // Notificar todos na conversa
             io.to(`conversation_${conversationId}`).emit('conversation_update', {
                 conversationId,
                 lastMessage: {
@@ -247,7 +221,6 @@ router.post('/', async (req, res) => {
                 }
             });
 
-            // Adicionar notificação ao histórico do receptor
             io.to(`user_${receiverId}`).emit('chat_notification', {
                 type: 'new_message',
                 from: senderId,
@@ -280,24 +253,28 @@ router.delete('/:messageId', async (req, res) => {
             return res.status(400).json({ error: 'messageId é obrigatório' });
         }
 
-        console.log(`🗑️ Apagando mensagem ${messageId} pelo usuário ${userId}`);
-
-        // Buscar a mensagem para verificar se o usuário tem permissão
         const message = await ChatMessage.findOne({ id: messageId });
 
         if (!message) {
             return res.status(404).json({ error: 'Mensagem não encontrada' });
         }
 
-        // Verificar se o usuário é o remetente ou o destinatário da mensagem
         if (message.senderId !== userId && message.receiverId !== userId) {
             return res.status(403).json({ error: 'Sem permissão para apagar esta mensagem' });
         }
 
-        // Apagar a mensagem
+        const conversationId = message.conversationId || `chat_private_${[message.senderId, message.receiverId].sort().join('_')}`;
+        const otherUserId = message.senderId === userId ? message.receiverId : message.senderId;
+
         await ChatMessage.deleteOne({ id: messageId });
 
-        console.log(`✅ Mensagem ${messageId} apagada com sucesso`);
+        const io = req.app.get('io');
+        if (io) {
+            io.to(`user_${otherUserId}`).emit('message_deleted', {
+                messageId,
+                chatId: conversationId
+            });
+        }
 
         res.json({
             success: true,

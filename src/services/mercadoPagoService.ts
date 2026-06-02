@@ -56,7 +56,6 @@ class MercadoPagoService {
     try {
       console.log(`💸 [MERCADO_PAGO] Iniciando saque:`);
       console.log(`   Valor: R$ ${request.amount.toFixed(2)}`);
-      console.log(`   Email: ${request.payer_email}`);
       console.log(`   Ref: ${request.external_reference}`);
 
       const payment = await paymentClient.create({
