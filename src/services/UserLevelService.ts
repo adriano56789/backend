@@ -70,13 +70,14 @@ export class UserLevelService {
       }
       
       const result = await (userLevel as any).addExp(amount, reason || 'EXP gained');
-      
+
       // Atualizar nível no usuário principal também
       await User.findOneAndUpdate(
         { id: userId },
         { 
           $set: {
-            level: result.newLevel,
+            level: result.currentLevel,
+            xp: result.currentExp,
             totalExp: result.totalExp
           }
         }
@@ -87,22 +88,24 @@ export class UserLevelService {
         await this.recordStreamActivity(userId, streamId, 'exp_gained', {
           amount,
           reason,
-          newLevel: result.newLevel,
+          newLevel: result.currentLevel,
           leveledUp: result.leveledUp
         });
       }
-      
-      console.log(`⭐ [LEVEL] EXP added for ${userId}: +${amount} (Level ${result.newLevel})`);
-      
+
+      console.log(`⭐ [LEVEL] EXP added for ${userId}: +${amount} (Level ${result.currentLevel})`);
+
       return {
         userId,
         amount,
         reason,
-        newLevel: result.newLevel,
+        currentLevel: result.currentLevel,
         currentExp: result.currentExp,
-        expRequired: result.expRequired,
+        expForNextLevel: result.expForNextLevel,
         leveledUp: result.leveledUp,
-        totalExp: result.totalExp
+        totalExp: result.totalExp,
+        progress: result.progress,
+        newLevels: result.newLevels
       };
     } catch (error) {
       console.error('❌ [LEVEL] Error adding EXP:', error);
@@ -151,7 +154,7 @@ export class UserLevelService {
           
           if (result.leveledUp) {
             leveledUp = true;
-            finalLevel = result.newLevel;
+            finalLevel = result.currentLevel;
           }
         }
       }
@@ -162,6 +165,7 @@ export class UserLevelService {
         { 
           $set: {
             level: finalLevel,
+            xp: userLevel.currentExp,
             totalExp: userLevel.totalExp
           }
         }
@@ -173,7 +177,7 @@ export class UserLevelService {
         userId,
         totalGained,
         expGains,
-        newLevel: finalLevel,
+        currentLevel: finalLevel,
         currentExp: userLevel.currentExp,
         expForNextLevel: userLevel.expForNextLevel,
         leveledUp,

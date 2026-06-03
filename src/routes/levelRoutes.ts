@@ -44,14 +44,10 @@ router.get('/:userId', async (req, res) => {
       levelHistory: levelInfo.levelHistory
     };
     
-    res.json({
-      success: true,
-      data: cleanLevelInfo
-    });
+    res.json(cleanLevelInfo);
   } catch (error) {
     console.error('Erro ao obter nível do usuário:', error);
     res.status(500).json({
-      success: false,
       error: 'Erro ao obter informações do nível'
     });
   }
@@ -87,7 +83,8 @@ router.post('/:userId/add-exp', async (req, res) => {
     // Atualizar o nível no usuário principal também + persistir atividade
     await updateUserByRealId(User, userId, { 
       level: result.currentLevel,
-      xp: result.totalExp,
+      xp: result.currentExp,
+      totalExp: result.totalExp,
       $push: { 
         recentActivities: {
           action: result.leveledUp ? 'level_up' : 'exp_gain',
@@ -101,14 +98,14 @@ router.post('/:userId/add-exp', async (req, res) => {
     // Emitir evento WebSocket se disponível
     const io = req.app.get('io');
     if (io) {
-      io.to(userId).emit('level_updated', {
+      io.to(`user_${userId}`).emit('level_updated', {
         userId,
         ...result,
         timestamp: new Date()
       });
       
       if (result.leveledUp) {
-        io.to(userId).emit('level_up', {
+        io.to(`user_${userId}`).emit('level_up', {
           userId,
           newLevel: result.currentLevel,
           newLevels: result.newLevels,
@@ -176,21 +173,23 @@ router.post('/:userId/multi-add', async (req, res) => {
     // Atualizar o nível no usuário principal
     if (finalResult) {
       await updateUserByRealId(User, userId, { 
-        level: finalResult.currentLevel 
+        level: finalResult.currentLevel,
+        xp: finalResult.currentExp,
+        totalExp: finalResult.totalExp
       });
     }
     
     // Emitir eventos WebSocket
     const io = req.app.get('io');
     if (io && finalResult) {
-      io.to(userId).emit('level_updated', {
+      io.to(`user_${userId}`).emit('level_updated', {
         userId,
         ...finalResult,
         timestamp: new Date()
       });
       
       if (allLevelUps.length > 0) {
-        io.to(userId).emit('level_up', {
+        io.to(`user_${userId}`).emit('level_up', {
           userId,
           newLevel: finalResult.currentLevel,
           newLevels: allLevelUps,
