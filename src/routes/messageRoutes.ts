@@ -117,7 +117,7 @@ router.get('/chats/:userId/messages', async (req, res) => {
                 receiverId: currentUserId,
                 isRead: false
             },
-            { isRead: true }
+            { $set: { isRead: true } }
         ).catch(() => {});
 
         const io = req.app.get('io');

@@ -40,8 +40,10 @@ export class FollowersService {
         follow = await Followers.findOneAndUpdate(
           { _id: inactiveFollow._id },
           {
-            isActive: true,
-            followedAt: new Date()
+            $set: {
+              isActive: true,
+              followedAt: new Date()
+            }
           },
           { new: true }
         );
@@ -60,9 +62,9 @@ export class FollowersService {
       await User.findOneAndUpdate(
         { id: followingId },
         {
+          $set: { isFollowed: true },
           $inc: { fans: 1 },
-          $push: { followersList: followerId },
-          isFollowed: true
+          $push: { followersList: followerId }
         }
       );
 
@@ -135,8 +137,10 @@ export class FollowersService {
       const follow = await Followers.findOneAndUpdate(
         { followerId, followingId, isActive: true },
         {
-          isActive: false,
-          unfollowedAt: new Date()
+          $set: {
+            isActive: false,
+            unfollowedAt: new Date()
+          }
         },
         { new: true }
       );
@@ -165,8 +169,10 @@ export class FollowersService {
 
       if (friendship) {
         await Friendship.findOneAndUpdate({ _id: friendship._id }, {
-          isActive: false,
-          endedAt: new Date()
+          $set: {
+            isActive: false,
+            endedAt: new Date()
+          }
         });
 
         // Remover das listas de amigos
@@ -299,13 +305,13 @@ export class FollowersService {
       // Remover follow do blocker -> blocked
       await Followers.findOneAndUpdate(
         { followerId: blockerId, followingId: blockedId, isActive: true },
-        { isActive: false, unfollowedAt: new Date() }
+        { $set: { isActive: false, unfollowedAt: new Date() } }
       );
 
       // Remover follow do blocked -> blocker
       await Followers.findOneAndUpdate(
         { followerId: blockedId, followingId: blockerId, isActive: true },
-        { isActive: false, unfollowedAt: new Date() }
+        { $set: { isActive: false, unfollowedAt: new Date() } }
       );
 
       // Atualizar contadores

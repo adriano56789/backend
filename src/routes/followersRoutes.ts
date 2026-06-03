@@ -220,8 +220,10 @@ router.delete('/:id', async (req, res) => {
         await Followers.updateOne(
             { id },
             { 
+                $set: {
                 isActive: false,
                 unfollowedAt: new Date()
+                }
             }
         );
         

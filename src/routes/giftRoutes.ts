@@ -289,20 +289,22 @@ async function processGiftSend(fromUserId: string, toUserId: string, giftId: str
         await GiftTransaction.findOneAndUpdate(
             { id: transactionId },
             {
-                id: transactionId,
-                fromUserId,
-                fromUserName: fromUser.name,
-                fromUserAvatar: fromUser.avatarUrl,
-                toUserId,
-                toUserName: toUser.name,
-                streamId: streamId || 'unknown',
-                giftId: gift._id, // Usar _id do MongoDB
-                giftName: gift.name,
-                giftIcon: gift.icon,
-                giftPrice: giftPrice,
-                quantity: quantity,
-                totalValue: totalCost,
-                createdAt: new Date().toISOString()
+                $set: {
+                    id: transactionId,
+                    fromUserId,
+                    fromUserName: fromUser.name,
+                    fromUserAvatar: fromUser.avatarUrl,
+                    toUserId,
+                    toUserName: toUser.name,
+                    streamId: streamId || 'unknown',
+                    giftId: gift._id, // Usar _id do MongoDB
+                    giftName: gift.name,
+                    giftIcon: gift.icon,
+                    giftPrice: giftPrice,
+                    quantity: quantity,
+                    totalValue: totalCost,
+                    createdAt: new Date().toISOString()
+                }
             },
             { 
                 upsert: true, // Criar se não existir

@@ -234,8 +234,10 @@ router.get('/:id/messages', async (req, res) => {
                 isRead: false
             },
             {
+                $set: {
                 isRead: true,
                 readAt: new Date()
+                }
             }
         );
 
@@ -306,11 +308,13 @@ router.post('/', async (req, res) => {
         const newChat = await Chat.findOneAndUpdate(
             { id: chatId },
             {
+                $set: {
                 id: chatId,
                 participants,
                 type,
                 title: type === 'group' ? title : undefined,
                 isActive: true
+                }
             },
             { 
                 upsert: true, // Criar se não existir
@@ -372,7 +376,7 @@ router.delete('/:id', async (req, res) => {
 
         const chat = await Chat.findOneAndUpdate(
             { id, participants: userId },
-            { isActive: false, updatedAt: new Date() },
+            { $set: { isActive: false, updatedAt: new Date() } },
             { new: true }
         );
 

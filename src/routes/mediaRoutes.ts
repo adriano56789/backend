@@ -52,7 +52,7 @@ router.post('/users/:userId/photos', async (req, res) => {
 
             await User.findOneAndUpdate(
                 { id: userId },
-                { avatarUrl: photoUrl }
+                { $set: { avatarUrl: photoUrl } }
             );
             
             // Registrar atualização de perfil
@@ -282,7 +282,9 @@ router.put('/users/:userId/profile', async (req, res) => {
         await User.findOneAndUpdate(
             { id: userId }, 
             {
-                ...updateData,
+                $set: {
+                    ...updateData
+                },
                 $push: { 
                     recentActivities: {
                         action: 'profile_updated',

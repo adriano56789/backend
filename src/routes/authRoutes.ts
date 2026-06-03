@@ -139,6 +139,7 @@ router.post('/register', async (req, res) => {
         await User.updateOne(
             { id: user.id },
             {
+                $set: {
                 identification: user.id, // Usar id manual como identification
                 streamKey: streamKey,
                 roomId: roomId,
@@ -146,7 +147,8 @@ router.post('/register', async (req, res) => {
                 srtIngestUrl: srtIngestUrl,
                 playbackUrl: playbackUrl,
                 isOnline: true,
-                lastSeen: new Date(),
+                lastSeen: new Date()
+                },
                 $push: { 
                     recentActivities: {
                         action: 'register',
@@ -347,8 +349,10 @@ router.post('/logout', async (req, res) => {
             await User.findOneAndUpdate(
                 { id }, 
                 { 
+                    $set: {
                     isOnline: false, 
-                    lastSeen: new Date().toISOString(),
+                    lastSeen: new Date().toISOString()
+                    },
                     $push: { 
                         recentActivities: {
                             action: 'logout',
@@ -471,7 +475,7 @@ const JWT_SECRET = process.env.JWT_SECRET;
         // Desconectar a conta (fazer logout)
         await User.findOneAndUpdate(
             { id: decoded.id },
-            { isOnline: false, lastSeen: new Date().toISOString() }
+            { $set: { isOnline: false, lastSeen: new Date().toISOString() } }
         );
 
         res.json({ success: true, message: 'Conta desconectada com sucesso' });

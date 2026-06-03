@@ -113,13 +113,18 @@ router.post('/pix', FraudDetectionMiddleware.detectFraud, async (req, res) => {
             await Order.findOneAndUpdate(
                 { id: orderId },
                 {
-                    externalReference: externalReference,
-                    mpPaymentId: result.id,
-                    pixCode: pixCode,
-                    pixQrCode: qrCodeBase64,
-                    pixExpiration: result.date_of_expiration
+                    $set: {
+                        externalReference: externalReference,
+                        mpPaymentId: result.id,
+                        pixCode: pixCode,
+                        pixQrCode: qrCodeBase64,
+                        pixExpiration: result.date_of_expiration
+                    }
                 }
             );
+
+            const io = req.app.get('io');
+            io.emit('order_updated', { userId: order.userId, orderId: order.id, status: order.status });
 
             // Persistir atividade de geração de PIX
             if (order.userId) {
@@ -242,24 +247,29 @@ router.post('/credit-card', FraudDetectionMiddleware.detectFraud, async (req, re
         await Order.findOneAndUpdate(
             { id: orderId },
             {
-                externalReference: `purchase_${orderId}`,
-                mpPaymentId: result.id,
-                paymentStatus: result.status,
-                paymentMethod: 'credit_card',
-                paymentData: {
-                    status: result.status,
-                    status_detail: result.status_detail,
-                    payment_method_id: result.payment_method_id,
-                    payment_type_id: result.payment_type_id,
-                    installments: result.installments,
-                    card: {
-                        first_six_digits: result.card?.first_six_digits,
-                        last_four_digits: result.card?.last_four_digits,
-                        cardholder: result.card?.cardholder
+                $set: {
+                    externalReference: `purchase_${orderId}`,
+                    mpPaymentId: result.id,
+                    paymentStatus: result.status,
+                    paymentMethod: 'credit_card',
+                    paymentData: {
+                        status: result.status,
+                        status_detail: result.status_detail,
+                        payment_method_id: result.payment_method_id,
+                        payment_type_id: result.payment_type_id,
+                        installments: result.installments,
+                        card: {
+                            first_six_digits: result.card?.first_six_digits,
+                            last_four_digits: result.card?.last_four_digits,
+                            cardholder: result.card?.cardholder
+                        }
                     }
                 }
             }
         );
+
+        const io = req.app.get('io');
+        io.emit('order_updated', { userId: order.userId, orderId: order.id, status: order.status });
 
         // Persistir atividade de pagamento com cartão
         if (order.userId) {
@@ -406,12 +416,17 @@ router.post('/confirm', FraudDetectionMiddleware.detectFraud, async (req, res) =
         const updatedOrder = await Order.findOneAndUpdate(
             { id: orderId }, 
             { 
-                status: 'paid',
-                paymentConfirmationId,
-                confirmedAt: new Date()
+                $set: {
+                    status: 'paid',
+                    paymentConfirmationId,
+                    confirmedAt: new Date()
+                }
             }, 
             { new: true }
         );
+
+        const io = req.app.get('io');
+        io.emit('order_updated', { userId: order.userId, orderId: order.id, status: 'paid' });
 
         const user = await import('../models').then(m => m.User).then(U => U.findOneAndUpdate(
             { id: order.userId },

@@ -82,12 +82,12 @@ router.post('/', blockProtection(), async (req, res) => {
             // Remover follow do blocker para o blocked
             Followers.updateOne(
                 { followerId: blockerId, followingId: blockedId },
-                { isActive: false, unfollowedAt: new Date() }
+                { $set: { isActive: false, unfollowedAt: new Date() } }
             ),
             // Remover follow do blocked para o blocker
             Followers.updateOne(
                 { followerId: blockedId, followingId: blockerId },
-                { isActive: false, unfollowedAt: new Date() }
+                { $set: { isActive: false, unfollowedAt: new Date() } }
             ),
             // Remover amizade se existir
             Friendship.updateOne(
@@ -97,7 +97,7 @@ router.post('/', blockProtection(), async (req, res) => {
                         { userId1: blockedId, userId2: blockerId }
                     ]
                 },
-                { isActive: false }
+                { $set: { isActive: false } }
             )
         ]);
         
@@ -203,8 +203,10 @@ router.delete('/:id', async (req, res) => {
         await Block.updateOne(
             { id },
             { 
+                $set: {
                 isActive: false,
                 unblockedAt: new Date()
+                }
             }
         );
 

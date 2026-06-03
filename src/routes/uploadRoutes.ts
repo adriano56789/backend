@@ -107,7 +107,7 @@ router.post('/avatar', protect, avatarUpload.single('avatar'), async (req, res) 
         await User.findOneAndUpdate(
             { id: userId },
             { 
-                avatarUrl,
+                $set: { avatarUrl },
                 $push: { 
                     recentActivities: {
                         action: 'avatar_change',
@@ -170,8 +170,10 @@ router.post('/avatar', protect, avatarUpload.single('avatar'), async (req, res) 
         await Streamer.updateMany(
             { hostId: userId },
             { 
+                $set: {
                 avatar: avatarUrl,
                 updatedAt: new Date()
+                }
             }
         );
 
@@ -247,6 +249,7 @@ router.post('/avatar/:userId', avatarUpload.single('avatar'), async (req, res) =
         await ProfilePhoto.findOneAndUpdate(
             { userId, photoType: 'avatar', isMain: true },
             {
+                $set: {
                 obraId,
                 userId,
                 photoType: 'avatar',
@@ -257,6 +260,7 @@ router.post('/avatar/:userId', avatarUpload.single('avatar'), async (req, res) =
                     filename: req.file.filename,
                     uploadedAt: new Date(),
                     source: 'avatar_upload'
+                }
                 }
             },
             { upsert: true, new: true }
@@ -363,7 +367,7 @@ router.post('/cover/:id', coverUpload.single('cover'), async (req, res) => {
 
         const stream = await Streamer.findOneAndUpdate(
             { id: req.params.id },
-            { avatar: coverUrl },
+            { $set: { avatar: coverUrl } },
             { new: true }
         );
 

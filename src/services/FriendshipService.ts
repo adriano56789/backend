@@ -157,8 +157,10 @@ export class FriendshipService {
           isActive: true
         },
         {
-          isActive: false,
-          endedAt: new Date()
+          $set: {
+            isActive: false,
+            endedAt: new Date()
+          }
         },
         { new: true }
       );

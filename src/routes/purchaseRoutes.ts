@@ -53,11 +53,17 @@ router.post('/confirm', FraudDetectionMiddleware.detectFraud, async (req, res) =
                     await Order.findOneAndUpdate(
                         { id: orderId },
                         {
-                            status: 'failed',
-                            paymentStatus: paymentResult.status,
-                            paymentData: paymentResult
+                            $set: {
+                                status: 'failed',
+                                paymentStatus: paymentResult.status,
+                                paymentData: paymentResult
+                            }
                         }
                     );
+
+                    const io = req.app.get('io');
+                    io.emit('order_updated', { userId: order.userId, orderId: order.id, status: 'failed' });
+
                     return res.status(400).json({
                         error: 'Pagamento não aprovado',
                         status: paymentResult.status
@@ -93,12 +99,17 @@ router.post('/confirm', FraudDetectionMiddleware.detectFraud, async (req, res) =
         const updatedOrder = await Order.findOneAndUpdate(
             { id: orderId }, 
             { 
-                status: 'paid',
-                paymentConfirmationId: resolvedPaymentConfirmationId,
-                confirmedAt: new Date()
+                $set: {
+                    status: 'paid',
+                    paymentConfirmationId: resolvedPaymentConfirmationId,
+                    confirmedAt: new Date()
+                }
             }, 
             { new: true }
         );
+
+        const io = req.app.get('io');
+        io.emit('order_updated', { userId: order.userId, orderId: order.id, status: 'paid' });
 
         const xpGain = Math.floor(order.amount * 10);
 
@@ -138,8 +149,7 @@ router.post('/confirm', FraudDetectionMiddleware.detectFraud, async (req, res) =
             timestamp: new Date()
         });
 
-        // WebSocket: notificar usuário em tempo real
-        const io = req.app.get('io');
+        // WebSocket: notificar usuário em tempo real (io já declarado acima)
         if (io) {
             io.to(order.userId).emit('purchase_completed', {
                 orderId: order.id,

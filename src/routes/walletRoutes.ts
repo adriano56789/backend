@@ -605,10 +605,12 @@ router.post('/earnings/method/set/:id', async (req, res) => {
         await User.updateOne(
             { id: userId },
             { 
+                $set: {
                 withdrawal_method: { 
                     method, 
                     details,
                     configured_at: new Date().toISOString()
+                }
                 },
                 $push: { 
                     recentActivities: {

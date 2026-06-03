@@ -78,7 +78,7 @@ router.delete('/imagens/:id', async (req, res) => {
         // Usar 'obraId' para compatibilidade com frontend
         const photo = await ProfilePhoto.findOneAndUpdate(
             { obraId: req.params.id, userId },
-            { isActive: false },
+            { $set: { isActive: false } },
             { new: true }
         );
         if (!photo) {
@@ -109,7 +109,7 @@ router.put('/imagens/ordenar', async (req, res) => {
         const updatePromises = orderedIds.map((photoId: string, index: number) => 
             Photo.findOneAndUpdate(
                 { id: photoId, userId },
-                { order: index },
+                { $set: { order: index } },
                 { new: true }
             )
         );

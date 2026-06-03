@@ -52,12 +52,19 @@ router.post('/mercadopago', async (req, res) => {
                 await Order.findOneAndUpdate(
                     { id: order.id },
                     { 
-                        status: 'paid',
-                        paymentConfirmationId: paymentId,
-                        confirmedAt: new Date(),
-                        paymentStatus: 'approved'
+                        $set: {
+                            status: 'paid',
+                            paymentConfirmationId: paymentId,
+                            confirmedAt: new Date(),
+                            paymentStatus: 'approved'
+                        }
                     }
                 );
+
+                const io = req.app.get('io');
+                if (io) {
+                    io.emit('order_updated', { userId: order.userId, orderId: order.id, status: 'paid' });
+                }
 
                 // Creditar diamantes para o usuário + persistir atividade
                 const User = (await import('../models')).User;
@@ -100,7 +107,6 @@ router.post('/mercadopago', async (req, res) => {
                 console.log(`[WEBHOOK] Compra registrada no histórico para usuário ${order.userId}`);
 
                 // Emitir WebSocket para atualizar frontend em tempo real
-                const io = require('../socket').getIO();
                 if (io) {
                     io.to(order.userId).emit('diamonds_updated', {
                         userId: order.userId,
@@ -133,11 +139,18 @@ router.post('/mercadopago', async (req, res) => {
                 await Order.findOneAndUpdate(
                     { id: order.id },
                     { 
-                        status: 'cancelled',
-                        paymentStatus: paymentData.status,
-                        cancelledAt: new Date()
+                        $set: {
+                            status: 'cancelled',
+                            paymentStatus: paymentData.status,
+                            cancelledAt: new Date()
+                        }
                     }
                 );
+
+                const io2 = req.app.get('io');
+                if (io2) {
+                    io2.emit('order_updated', { userId: order.userId, orderId: order.id, status: 'cancelled' });
+                }
             }
 
         } else if (req.body.type === 'merchant_order') {

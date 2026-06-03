@@ -187,12 +187,14 @@ router.post('/', async (req, res) => {
         const newChat = (await Chat.findOneAndUpdate(
             { id: chatId },
             {
+                $set: {
                 id: chatId,
                 participants,
                 type,
                 title: type === 'group' ? title : undefined,
                 isActive: true,
                 metadata: type === 'group' ? { groupId: `group_${Date.now()}` } : {}
+                }
             },
             { 
                 upsert: true, // Criar se não existir
@@ -277,6 +279,7 @@ router.post('/send', async (req, res) => {
         const newMessage = (await ChatMessage.findOneAndUpdate(
             { id: messageId },
             {
+                $set: {
                 id: messageId,
                 conversationId,
                 senderId: from,
@@ -285,6 +288,7 @@ router.post('/send', async (req, res) => {
                 messageType,
                 isRead: false,
                 sentAt: new Date()
+                }
             },
             { 
                 upsert: true,
@@ -375,6 +379,7 @@ router.post('/:id/messages', async (req, res) => {
         const newMessage = (await ChatMessage.findOneAndUpdate(
             { id: messageId },
             {
+                $set: {
                 id: messageId,
                 conversationId: id,
                 senderId,
@@ -383,6 +388,7 @@ router.post('/:id/messages', async (req, res) => {
                 messageType,
                 isRead: false,
                 sentAt: new Date()
+                }
             },
             { 
                 upsert: true, // Criar se não existir
@@ -394,6 +400,7 @@ router.post('/:id/messages', async (req, res) => {
         await Chat.findOneAndUpdate(
             { id },
             {
+                $set: {
                 lastMessage: {
                     content: newMessage.content,
                     senderId: newMessage.senderId,
@@ -401,6 +408,7 @@ router.post('/:id/messages', async (req, res) => {
                     messageType: newMessage.messageType
                 },
                 updatedAt: new Date()
+                }
             }
         );
 
@@ -445,8 +453,10 @@ router.put('/messages/:id/read', async (req, res) => {
         await ChatMessage.findOneAndUpdate(
             { id },
             {
+                $set: {
                 isRead: true,
                 readAt: new Date()
+                }
             }
         );
 

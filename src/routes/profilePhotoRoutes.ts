@@ -207,7 +207,7 @@ router.post('/:userId/photos', async (req, res) => {
         if (photoType === 'avatar') {
             await ProfilePhoto.updateMany(
                 { userId, photoType: 'avatar', isMain: true },
-                { isMain: false }
+                { $set: { isMain: false } }
             );
         }
 
@@ -349,7 +349,7 @@ router.put('/:userId/photos/:obraId/order', async (req, res) => {
 
         const photo = await ProfilePhoto.findOneAndUpdate(
             { obraId: obraId, userId, photoType: 'gallery' },
-            { order, updatedAt: new Date() },
+            { $set: { order, updatedAt: new Date() } },
             { new: true }
         );
 
@@ -470,7 +470,7 @@ router.delete('/me/photos/:obraId', protect, async (req: AuthRequest, res) => {
         // Soft delete - marcar como inativa em vez de remover
         await ProfilePhoto.findOneAndUpdate(
             { obraId: obraId },
-            { isActive: false, updatedAt: new Date() }
+            { $set: { isActive: false, updatedAt: new Date() } }
         );
 
         // Persistir atividade de remoção de foto
@@ -533,13 +533,13 @@ router.put('/me/photos/:obraId/set-main', protect, async (req: AuthRequest, res)
         // Remover status principal de outros avatares
         await ProfilePhoto.updateMany(
             { userId, photoType: 'avatar', isMain: true },
-            { isMain: false }
+            { $set: { isMain: false } }
         );
 
         // Definir esta foto como principal
         const updatedPhoto = await ProfilePhoto.findOneAndUpdate(
             { obraId: obraId },
-            { isMain: true, updatedAt: new Date() },
+            { $set: { isMain: true, updatedAt: new Date() } },
             { new: true }
         );
 
@@ -554,7 +554,7 @@ router.put('/me/photos/:obraId/set-main', protect, async (req: AuthRequest, res)
 
             await User.findOneAndUpdate(
                 { id: userId },
-                { avatarUrl: updatedPhoto.photoUrl, updatedAt: new Date() }
+                { $set: { avatarUrl: updatedPhoto.photoUrl, updatedAt: new Date() } }
             );
             console.log(`✅ Avatar do usuário atualizado: ${updatedPhoto.photoUrl}`);
 
@@ -562,15 +562,16 @@ router.put('/me/photos/:obraId/set-main', protect, async (req: AuthRequest, res)
             await Streamer.updateMany(
                 { hostId: userId },
                 { 
+                    $set: {
                     avatar: updatedPhoto.photoUrl,
                     updatedAt: new Date()
+                    }
                 }
             );
             console.log(`✅ Avatar sincronizado com streams do usuário: ${userId}`);
         }
 
         console.log(`✅ Foto ${obraId} definida como avatar principal`);
-
         res.json({
             success: true,
             message: 'Avatar principal atualizado com sucesso'
@@ -646,7 +647,7 @@ router.delete('/:userId/photos/:obraId', async (req, res) => {
         // Soft delete - marcar como inativa em vez de remover
         await ProfilePhoto.findOneAndUpdate(
             { obraId: obraId },
-            { isActive: false, updatedAt: new Date() }
+            { $set: { isActive: false, updatedAt: new Date() } }
         );
 
         // Persistir atividade de remoção de foto

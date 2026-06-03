@@ -566,7 +566,7 @@ router.post('/avatars/:avatarId/equip', async (req, res) => {
         // Desmarcar todos os outros avatares como current
         await UserAvatar.updateMany(
             { userId, isActive: true },
-            { isCurrent: false }
+            { $set: { isCurrent: false } }
         );
 
         // Marcar este avatar como current
@@ -584,15 +584,17 @@ router.post('/avatars/:avatarId/equip', async (req, res) => {
         // Atualizar avatarUrl do usuário
         await User.findOneAndUpdate(
             { id: userId },
-            { avatarUrl: avatar.imageUrl }
+            { $set: { avatarUrl: avatar.imageUrl } }
         );
 
         // Sincronizar avatar com streams ativas do usuário
         await Streamer.updateMany(
             { hostId: userId },
             { 
+                $set: {
                 avatar: avatar.imageUrl,
                 updatedAt: new Date()
+                }
             }
         );
         console.log(`✅ Avatar sincronizado com streams do usuário: ${userId}`);
@@ -668,7 +670,7 @@ router.post('/frames/cleanup-expired', async (req, res) => {
         
         await User.updateOne(
             { id: userId },
-            updateData
+            { $set: updateData }
         );
 
         // Sincronizar com streams
@@ -676,13 +678,13 @@ router.post('/frames/cleanup-expired', async (req, res) => {
             await Streamer.updateMany(
                 { hostId: userId },
                 { 
+                    $set: {
                     activeFrameId: null,
                     updatedAt: new Date()
+                    }
                 }
             );
         }
-
-        console.log(`🧹 Cleanup: ${removedCount} frames expirados removidos do usuário ${userId}`);
 
         res.json({ 
             success: true, 
@@ -709,18 +711,17 @@ const checkExpiredFrames = async (req: Request, res: Response, next: NextFunctio
                 const currentFrame = user.ownedFrames.find((f: any) => f.frameId === user.activeFrameId);
                 
                 if (currentFrame && new Date(currentFrame.expirationDate) <= now) {
-                    // Frame atual expirou, remover
                     await User.updateOne(
                         { id: userId },
-                        { activeFrameId: null }
+                        { $set: { activeFrameId: null } }
                     );
                     
                     await Streamer.updateMany(
                         { hostId: userId },
-                        { 
+                        { $set: { 
                             activeFrameId: null,
                             updatedAt: new Date()
-                        }
+                        } }
                     );
                     
                     console.log(`⚠️ Frame expirado removido: ${currentFrame.frameId} do usuário ${userId}`);
@@ -766,15 +767,17 @@ router.post('/avatars/cleanup-expired', async (req, res) => {
                 // Resetar avatarUrl do usuário para padrão
                 await User.updateOne(
                     { id: userId },
-                    { avatarUrl: null }
+                    { $set: { avatarUrl: null } }
                 );
 
                 // Sincronizar com streams
                 await Streamer.updateMany(
                     { hostId: userId },
                     { 
+                        $set: {
                         avatar: null,
                         updatedAt: new Date()
+                        }
                     }
                 );
             }
@@ -810,19 +813,21 @@ const checkExpiredAvatars = async (req: Request, res: Response, next: NextFuncti
                 // Avatar atual expirou, remover
                 await UserAvatar.updateOne(
                     { _id: currentAvatar._id },
-                    { isCurrent: false }
+                    { $set: { isCurrent: false } }
                 );
-                
+
                 await User.updateOne(
                     { id: userId },
-                    { avatarUrl: null }
+                    { $set: { avatarUrl: null } }
                 );
-                
+
                 await Streamer.updateMany(
                     { hostId: userId },
                     { 
+                        $set: {
                         avatar: null,
                         updatedAt: new Date()
+                        }
                     }
                 );
                 

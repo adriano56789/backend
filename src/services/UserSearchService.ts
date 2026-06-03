@@ -35,7 +35,7 @@ export class UserSearchService {
             // Usar upsert para criar ou atualizar
             await UserIndex.findOneAndUpdate(
                 { userId: user.id },
-                indexData,
+                { $set: indexData },
                 { upsert: true, new: true }
             );
 
@@ -126,7 +126,7 @@ export class UserSearchService {
             
             await UserIndex.updateMany(
                 { userId: { $nin: activeUserIds } },
-                { isActive: false }
+                { $set: { isActive: false } }
             );
 
             console.log('✅ Limpeza concluída!');

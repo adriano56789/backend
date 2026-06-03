@@ -43,7 +43,23 @@ export const initSocket = (server: any) => {
 
         // Auto-join user to their personal room for targeted events (chat, notifications, etc.)
         socket.join(`user_${socket.data.userId}`);
-        console.log(` [SOCKET] User ${socket.data.userId} joined room user_${socket.data.userId}`);
+
+        // Marcar como online no banco imediatamente na conexão
+        const userId = socket.data.userId;
+        if (userId) {
+            import('./models').then(({ User, UserStatus }) => {
+                const now = new Date();
+                UserStatus.findOneAndUpdate(
+                    { userId },
+                    { $set: { isOnline: true, lastSeen: now } },
+                    { upsert: true }
+                ).catch(() => {});
+                User.findOneAndUpdate(
+                    { id: userId },
+                    { $set: { isOnline: true, lastSeen: now } }
+                ).catch(() => {});
+            });
+        }
         
         socket.on('disconnect', (reason) => {
             console.log(` [SOCKET] Client disconnected: ${socket.id} - Reason: ${reason}`);

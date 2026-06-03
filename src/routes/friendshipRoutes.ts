@@ -222,7 +222,9 @@ router.delete('/:id', async (req, res) => {
         await Friendship.updateOne(
             { id },
             { 
+                $set: {
                 isActive: false
+                }
             }
         );
 

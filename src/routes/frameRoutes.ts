@@ -132,7 +132,7 @@ router.post('/frames/:frameId/equip', async (req, res) => {
         // Desmarcar todos os outros frames como equipados
         await UserFrame.updateMany(
             { userId, isActive: true },
-            { isEquipped: false }
+            { $set: { isEquipped: false } }
         );
 
         // Marcar este frame como equipado
@@ -142,7 +142,7 @@ router.post('/frames/:frameId/equip', async (req, res) => {
         // Atualizar activeFrameId do usuário
         await User.findOneAndUpdate(
             { id: userId },
-            { activeFrameId: frameId }
+            { $set: { activeFrameId: frameId } }
         );
 
         res.json({ 
@@ -184,7 +184,7 @@ router.post('/frames/cleanup-expired', async (req, res) => {
                 isActive: true,
                 expirationDate: { $lte: new Date() }
             },
-            { isActive: false }
+            { $set: { isActive: false } }
         );
 
         res.json({ 

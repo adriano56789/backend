@@ -75,8 +75,10 @@ export class UserLevelService {
       await User.findOneAndUpdate(
         { id: userId },
         { 
-          level: result.newLevel,
-          totalExp: result.totalExp
+          $set: {
+            level: result.newLevel,
+            totalExp: result.totalExp
+          }
         }
       );
 
@@ -158,8 +160,10 @@ export class UserLevelService {
       await User.findOneAndUpdate(
         { id: userId },
         { 
-          level: finalLevel,
-          totalExp: userLevel.totalExp
+          $set: {
+            level: finalLevel,
+            totalExp: userLevel.totalExp
+          }
         }
       );
       

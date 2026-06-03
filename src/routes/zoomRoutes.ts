@@ -93,9 +93,11 @@ router.put('/user/:userId', async (req: Request, res: Response) => {
         const zoomSettings = await ZoomSettings.findOneAndUpdate(
             userQuery,
             { 
-                zoomLevel,
-                isDefault: false,
-                updatedAt: new Date()
+                $set: {
+                    zoomLevel,
+                    isDefault: false,
+                    updatedAt: new Date()
+                }
             },
             { upsert: true, new: true }
         );
@@ -156,9 +158,11 @@ router.post('/user/:userId/reset', async (req: Request, res: Response) => {
         const zoomSettings = await ZoomSettings.findOneAndUpdate(
             userQuery,
             { 
-                zoomLevel: 100,
-                isDefault: true,
-                updatedAt: new Date()
+                $set: {
+                    zoomLevel: 100,
+                    isDefault: true,
+                    updatedAt: new Date()
+                }
             },
             { upsert: true, new: true }
         );

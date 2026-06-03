@@ -342,9 +342,13 @@ UserRoutes.post('/:id/toggle-follow', async (req, res) => {
 
                 {
 
+                    $set: {
+
                     isActive: false,
 
                     unfollowedAt: new Date()
+
+                    }
 
                 }
 
@@ -412,11 +416,15 @@ UserRoutes.post('/:id/toggle-follow', async (req, res) => {
 
                     {
 
+                        $set: {
+
                         isActive: true,
 
                         followedAt: new Date(),
 
                         unfollowedAt: undefined
+
+                        }
 
                     }
 
@@ -680,7 +688,19 @@ UserRoutes.post('/:id/block', blockProtection(), async (req, res) => {
 
             { followerId: blockedId, followingId: blockerId, isActive: true },
 
-            { isActive: false, unfollowedAt: new Date() }
+            { $set: { isActive: false, unfollowedAt: new Date() } }
+
+        );
+
+
+
+        
+
+        await Followers.findOneAndUpdate(
+
+            { followerId: blockerId, followingId: blockedId, isActive: true },
+
+            { $set: { isActive: false, unfollowedAt: new Date() } }
 
         );
 
@@ -772,9 +792,13 @@ UserRoutes.delete('/:id/unblock', async (req, res) => {
 
             {
 
+                $set: {
+
                 isActive: false,
 
                 unblockedAt: new Date()
+
+                }
 
             }
 
@@ -1561,6 +1585,8 @@ UserRoutes.post('/:id/visit', async (req, res) => {
 
             {
 
+                $set: {
+
                 id: visitorId,
 
                 visitorId: userId,
@@ -1572,6 +1598,8 @@ UserRoutes.post('/:id/visit', async (req, res) => {
                 visitorName: visitor.name,
 
                 visitorAvatar: visitor.avatarUrl
+
+                }
 
             },
 
@@ -1647,7 +1675,7 @@ UserRoutes.get('/:id/location-permission', async (req, res) => {
 
 UserRoutes.post('/:id/location-permission', async (req, res) => {
 
-    const user = await User.findOneAndUpdate({ id: req.params.id }, { locationPermission: req.body.status }, { new: true });
+    const user = await User.findOneAndUpdate({ id: req.params.id }, { $set: { locationPermission: req.body.status } }, { new: true });
 
     res.json({ success: !!user, user: standardizeUserResponse(user) || {} as any });
 
@@ -1655,7 +1683,7 @@ UserRoutes.post('/:id/location-permission', async (req, res) => {
 
 UserRoutes.post('/:id/privacy/activity', async (req, res) => {
 
-    const user = await User.findOneAndUpdate({ id: req.params.id }, { showActivityStatus: req.body.show }, { new: true });
+    const user = await User.findOneAndUpdate({ id: req.params.id }, { $set: { showActivityStatus: req.body.show } }, { new: true });
 
     res.json({ success: !!user, user: standardizeUserResponse(user) || {} as any });
 
@@ -1663,7 +1691,7 @@ UserRoutes.post('/:id/privacy/activity', async (req, res) => {
 
 UserRoutes.post('/:id/privacy/location', async (req, res) => {
 
-    const user = await User.findOneAndUpdate({ id: req.params.id }, { showLocation: req.body.show }, { new: true });
+    const user = await User.findOneAndUpdate({ id: req.params.id }, { $set: { showLocation: req.body.show } }, { new: true });
 
     res.json({ success: !!user, user: standardizeUserResponse(user) || {} as any });
 
@@ -1681,7 +1709,7 @@ UserRoutes.get('/:id/received-gifts', async (req, res) => {
 
 UserRoutes.post('/:id/set-active-frame', async (req, res) => {
 
-    const user = await User.findOneAndUpdate({ id: req.params.id }, { activeFrameId: req.body.frameId }, { new: true });
+    const user = await User.findOneAndUpdate({ id: req.params.id }, { $set: { activeFrameId: req.body.frameId } }, { new: true });
 
     res.json({ success: !!user, user: standardizeUserResponse(user) });
 
@@ -1697,7 +1725,7 @@ UserRoutes.get('/:id/avatar-protection', async (req, res) => {
 
 UserRoutes.post('/:id/avatar-protection', async (req, res) => {
 
-    const user = await User.findOneAndUpdate({ id: req.params.id }, { isAvatarProtected: req.body.isEnabled }, { new: true });
+    const user = await User.findOneAndUpdate({ id: req.params.id }, { $set: { isAvatarProtected: req.body.isEnabled } }, { new: true });
 
     
 
@@ -1995,7 +2023,7 @@ UserRoutes.post('/:userId/frames/equip', async (req, res) => {
 
             { id: userId },
 
-            { activeFrameId: frameId },
+            { $set: { activeFrameId: frameId } },
 
             { new: true }
 
@@ -2055,7 +2083,7 @@ UserRoutes.post('/:userId/frames/unequip', async (req, res) => {
 
             { id: userId },
 
-            { activeFrameId: null },
+            { $set: { activeFrameId: null } },
 
             { new: true }
 

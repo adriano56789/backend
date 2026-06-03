@@ -674,10 +674,15 @@ io.on('connection', (socket) => {
 
             const userEntry = onlineUsers.get(userId);
 
-            // VALIDAÇÃO: Se não há entrada para este usuário, apenas limpar
+            // VALIDAÇÃO: Se não há entrada para este usuário, apenas limpar e marcar offline
             if (!userEntry) {
-                console.log(`🔌 Socket ${socket.id} desconectado (usuário ${userId} não encontrado em onlineUsers)`);
                 socketToUser.delete(socket.id);
+                import('./models').then(({ User }) => {
+                    User.findOneAndUpdate(
+                        { id: userId },
+                        { $set: { isOnline: false, lastSeen: new Date().toISOString() } }
+                    ).catch(() => {});
+                });
                 return;
             }
 
@@ -1192,15 +1197,14 @@ io.on('connection', (socket) => {
             const { User } = await import('./models/index');
             const user = await User.findOneAndUpdate(
                 { id: data.userId },
-                { $set: { diamonds: data.diamonds } },
+                { $inc: { diamonds: data.change } },
                 { new: true }
             );
 
             if (user) {
-                // Notificar sobre atualização de diamantes
                 io.emit('diamonds_updated', {
                     userId: data.userId,
-                    diamonds: data.diamonds,
+                    diamonds: user.diamonds,
                     change: data.change,
                     timestamp: new Date()
                 });

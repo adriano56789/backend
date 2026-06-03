@@ -222,6 +222,9 @@ router.post('/:id/like', async (req: Request, res: Response) => {
         // Buscar foto atualizada para retornar likes corretos
         const updatedPhoto = await Photo.findOne({ id: photoId });
 
+        const io = req.app.get('io');
+        io.emit('photo_updated', { photoId, userId, likes: updatedPhoto?.likes });
+
         res.json({ 
             success: true, 
             likes: updatedPhoto?.likes || 1,
@@ -273,6 +276,10 @@ router.delete('/:id/like', async (req: Request, res: Response) => {
             { id: photoId },
             { $inc: { likes: -1 } }
         );
+
+        const updatedPhotoAfter = await Photo.findOne({ id: photoId });
+        const io = req.app.get('io');
+        io.emit('photo_updated', { photoId, userId, likes: updatedPhotoAfter?.likes });
 
         res.json({ 
             success: true, 

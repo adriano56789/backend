@@ -156,7 +156,7 @@ export class FraudManagementRoutes {
                 
                 const ban = await BannedEntity.findOneAndUpdate(
                     { entityType, entityId, active: true },
-                    { active: false },
+                    { $set: { active: false } },
                     { new: true }
                 );
 
@@ -298,7 +298,7 @@ export class FraudManagementRoutes {
                         permanent: false,
                         expiresAt: { $lt: new Date() }
                     },
-                    { active: false }
+                    { $set: { active: false } }
                 );
 
                 // Persistir atividade administrativa de limpeza

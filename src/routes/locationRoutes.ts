@@ -22,12 +22,14 @@ router.post('/update', async (req, res) => {
         const user = await User.findOneAndUpdate(
             { id: userId },
             {
-                location: {
-                    type: 'Point',
-                    coordinates: [longitude, latitude] // MongoDB usa [longitude, latitude]
+                $set: {
+                    location: {
+                        type: 'Point',
+                        coordinates: [longitude, latitude] // MongoDB usa [longitude, latitude]
+                    },
+                    locationPermission: 'granted', // Assumimos que se enviou, permitiu
+                    showLocation: true
                 },
-                locationPermission: 'granted', // Assumimos que se enviou, permitiu
-                showLocation: true,
                 $push: { 
                     recentActivities: {
                         action: 'location_updated',

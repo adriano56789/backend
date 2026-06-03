@@ -915,7 +915,7 @@ router.post('/visitors/record', async (req, res) => {
         // Atualizar ou criar registro de visita
         await Visitor.findOneAndUpdate(
             { visitorId, visitedId },
-            { visitedAt: new Date() },
+            { $set: { visitedAt: new Date() } },
             { upsert: true, new: true }
         );
 
@@ -1011,7 +1011,7 @@ router.post('/streams/:id/toggle-auto-invite', async (req, res) => {
         
         await Streamer.updateOne(
             { id: streamId },
-            { isAutoPrivateInviteEnabled: novoStatus }
+            { $set: { isAutoPrivateInviteEnabled: novoStatus } }
         );
         
         console.log(`✅ [TOGGLE_AUTO_INVITE] Status atualizado: ${novoStatus}`);
