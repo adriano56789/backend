@@ -3080,7 +3080,7 @@ router.post('/streams', async (req, res) => {
         const streamTitle = name || title || `Live de ${user.name}`;
 
         const stream = await Streamer.findOneAndUpdate(
-            { hostId },
+            { id: hostId },
             { 
                 $set: {
                     id: streamId,
@@ -3936,7 +3936,7 @@ router.post('/live/end', async (req, res) => {
 
                 success: false,
 
-                message: 'Usu+írio n+úo autenticado' 
+                message: 'Usu+ï¿½rio n+ï¿½o autenticado' 
 
             });
 
@@ -3944,7 +3944,7 @@ router.post('/live/end', async (req, res) => {
 
 
 
-        // Buscar usu+írio para encontrar stream ativa
+        // Buscar usu+ï¿½rio para encontrar stream ativa
 
         const user = await findUserByAnyId(User, userId);
 
@@ -3954,7 +3954,7 @@ router.post('/live/end', async (req, res) => {
 
                 success: false,
 
-                message: 'Usu+írio n+úo encontrado' 
+                message: 'Usu+ï¿½rio n+ï¿½o encontrado' 
 
             });
 
@@ -3962,7 +3962,7 @@ router.post('/live/end', async (req, res) => {
 
 
 
-        // Buscar stream ativa do usu+írio
+        // Buscar stream ativa do usu+ï¿½rio
 
         const activeStream = await Streamer.findOne({ 
 
@@ -4012,7 +4012,7 @@ router.post('/live/end', async (req, res) => {
 
 
 
-        // Atualizar status do usu+írio + persistir atividade
+        // Atualizar status do usu+ï¿½rio + persistir atividade
 
         await User.findOneAndUpdate(
 
@@ -4082,7 +4082,7 @@ router.post('/live/end', async (req, res) => {
             console.log(`[LIVE-END] PK Battle ${activeBattle._id} encerrada por fim da live`);
         }
 
-        console.log(`[LIVE-END] Live encerrada: ${activeStream.id} para usu+írio ${userId}`);
+        console.log(`[LIVE-END] Live encerrada: ${activeStream.id} para usu+ï¿½rio ${userId}`);
 
         res.json({
             success: true,
@@ -4135,13 +4135,13 @@ router.get('/live/:category', async (req, res) => {
 
 
 
-        console.log(`­ƒöì [DEBUG] API Route called - Category: ${category}, Country: ${country || 'none'}`);
+        console.log(`ï¿½ï¿½ï¿½ï¿½ [DEBUG] API Route called - Category: ${category}, Country: ${country || 'none'}`);
 
-        console.log(`­ƒöì [SECURITY] User-Agent: ${userAgent}, Referer: ${referer}`);
+        console.log(`ï¿½ï¿½ï¿½ï¿½ [SECURITY] User-Agent: ${userAgent}, Referer: ${referer}`);
 
         
 
-        // DETEC+ç+âO DE FERRAMENTAS DE GRAVA+ç+âO/SCRAPING
+        // DETEC+ï¿½+ï¿½O DE FERRAMENTAS DE GRAVA+ï¿½+ï¿½O/SCRAPING
 
         const recordingIndicators = [
 
@@ -4167,11 +4167,11 @@ router.get('/live/:category', async (req, res) => {
 
         
 
-        // ­ƒÜ¿ BLOQUEAR ACESSO DE FERRAMENTAS DE GRAVA+ç+âO
+        // ï¿½ï¿½Ü¿ BLOQUEAR ACESSO DE FERRAMENTAS DE GRAVA+ï¿½+ï¿½O
 
         if (isRecordingAttempt || isDirectApiAccess) {
 
-            console.log(`­ƒÜ¿ [RECORDING BLOCKED] Category: ${category}, User-Agent: ${userAgent}`);
+            console.log(`ï¿½ï¿½Ü¿ [RECORDING BLOCKED] Category: ${category}, User-Agent: ${userAgent}`);
 
             return res.json([]); // Retornar lista vazia
 
@@ -4179,7 +4179,7 @@ router.get('/live/:category', async (req, res) => {
 
 
 
-        // Base filter para streams ativos e v+ílidas
+        // Base filter para streams ativos e v+ï¿½lidas
 
         let baseFilter: any = {
 
@@ -4191,17 +4191,17 @@ router.get('/live/:category', async (req, res) => {
 
             avatar: { $exists: true, $nin: ['', null] },
 
-            // ­ƒÜÇ FILTRO RIGOROSO: apenas streams realmente ao vivo
+            // ï¿½ï¿½ï¿½ï¿½ FILTRO RIGOROSO: apenas streams realmente ao vivo
 
             startTime: { $exists: true, $ne: null },
 
             streamStatus: 'active',
 
-            // ­ƒÜÇ VERIFICAR SE O HOST EST+ü REALMENTE ONLINE
+            // ï¿½ï¿½ï¿½ï¿½ VERIFICAR SE O HOST EST+ï¿½ REALMENTE ONLINE
 
             viewers: { $exists: true, $gte: 0 },
 
-            // ­ƒÜÇ VERIFICAR SE TEM DADOS DE TRANSMISS+âO
+            // ï¿½ï¿½ï¿½ï¿½ VERIFICAR SE TEM DADOS DE TRANSMISS+ï¿½O
 
             rtmpIngestUrl: { $exists: true, $ne: null },
 
@@ -4211,7 +4211,7 @@ router.get('/live/:category', async (req, res) => {
 
 
 
-        // Se for "global" ou "popular", retorna todas as lives ativas E v+ílidas
+        // Se for "global" ou "popular", retorna todas as lives ativas E v+ï¿½lidas
 
         if (category === 'global' || category === 'popular') {
 
@@ -4219,25 +4219,25 @@ router.get('/live/:category', async (req, res) => {
 
 
 
-            // Se houver filtro por pa+¡s, adicionar ao filter
+            // Se houver filtro por pa+ï¿½s, adicionar ao filter
 
             if (country && country !== 'ICON_GLOBE') {
 
                 filter.country = country;
 
-                console.log(`­ƒîì Filtering streams by country: ${country}`);
+                console.log(`ï¿½ï¿½ï¿½ï¿½ Filtering streams by country: ${country}`);
 
             }
 
 
 
-            console.log(`­ƒöì [DEBUG] Final filter for global/popular:`, JSON.stringify(filter, null, 2));
+            console.log(`ï¿½ï¿½ï¿½ï¿½ [DEBUG] Final filter for global/popular:`, JSON.stringify(filter, null, 2));
 
 
 
             const streams = await Streamer.find(filter).sort({ viewers: -1 });
 
-            console.log(`­ƒô¦ Found ${streams.length} streams for category: ${category}, country: ${country || 'all'}`);
+            console.log(`ï¿½ï¿½ï¿½ï¿½ Found ${streams.length} streams for category: ${category}, country: ${country || 'all'}`);
 
 
 
@@ -4247,7 +4247,7 @@ router.get('/live/:category', async (req, res) => {
 
                 const countryCodes = streams.map(s => s.country || 'undefined').join(', ');
 
-                console.log(`­ƒîì [DEBUG] Stream country codes: ${countryCodes}`);
+                console.log(`ï¿½ï¿½ï¿½ï¿½ [DEBUG] Stream country codes: ${countryCodes}`);
 
             }
 
@@ -4257,7 +4257,7 @@ router.get('/live/:category', async (req, res) => {
 
             const srsStreamsData = mapSrsStreamsArray(streams as any);
 
-            // Aplicar prote+º+úo m+íxima aos dados transformados (converter para tipo compat+¡vel)
+            // Aplicar prote+ï¿½+ï¿½o m+ï¿½xima aos dados transformados (converter para tipo compat+ï¿½vel)
 
             const protectedStreams = mapStreamsToProtectedArrayFlexible(streams as any);
 
@@ -4269,7 +4269,7 @@ router.get('/live/:category', async (req, res) => {
 
 
 
-        // Para categorias espec+¡ficas, filtra por tag ou categoria E valida dados
+        // Para categorias espec+ï¿½ficas, filtra por tag ou categoria E valida dados
 
         let categoryFilter: any = {
 
@@ -4287,25 +4287,25 @@ router.get('/live/:category', async (req, res) => {
 
 
 
-        // Se houver filtro por pa+¡s em categorias espec+¡ficas
+        // Se houver filtro por pa+ï¿½s em categorias espec+ï¿½ficas
 
         if (country && country !== 'ICON_GLOBE') {
 
             categoryFilter.country = country;
 
-            console.log(`­ƒîì Filtering ${category} streams by country: ${country}`);
+            console.log(`ï¿½ï¿½ï¿½ï¿½ Filtering ${category} streams by country: ${country}`);
 
         }
 
 
 
-        console.log(`­ƒöì [DEBUG] Final filter for category "${category}":`, JSON.stringify(categoryFilter, null, 2));
+        console.log(`ï¿½ï¿½ï¿½ï¿½ [DEBUG] Final filter for category "${category}":`, JSON.stringify(categoryFilter, null, 2));
 
 
 
         const categoryStreams = await Streamer.find(categoryFilter).sort({ viewers: -1 });
 
-        console.log(`­ƒô¦ Found ${categoryStreams.length} streams for category: ${category}, country: ${country || 'all'}`);
+        console.log(`ï¿½ï¿½ï¿½ï¿½ Found ${categoryStreams.length} streams for category: ${category}, country: ${country || 'all'}`);
 
 
 
@@ -4315,13 +4315,13 @@ router.get('/live/:category', async (req, res) => {
 
             const countryCodes = categoryStreams.map(s => s.country || 'undefined').join(', ');
 
-            console.log(`­ƒîì [DEBUG] Category stream country codes: ${countryCodes}`);
+            console.log(`ï¿½ï¿½ï¿½ï¿½ [DEBUG] Category stream country codes: ${countryCodes}`);
 
         }
 
 
 
-        // Retornar streams da categoria COM PROTECAO MAXIMA - SEM IDs REAIS usando mapper flex+¡vel
+        // Retornar streams da categoria COM PROTECAO MAXIMA - SEM IDs REAIS usando mapper flex+ï¿½vel
 
         const protectedCategoryStreams = mapStreamsToProtectedArrayFlexible(categoryStreams as any);
 
@@ -4341,7 +4341,7 @@ router.get('/live/:category', async (req, res) => {
 
 
 
-// Rota para buscar streams por regi+úo
+// Rota para buscar streams por regi+ï¿½o
 
 // API para listar lives ativas
 
@@ -4356,13 +4356,13 @@ router.get('/streams/live', async (req, res) => {
 
         
 
-        console.log(`­ƒöì [STREAMS LIVE] Buscando lives ativas`);
+        console.log(`ï¿½ï¿½ï¿½ï¿½ [STREAMS LIVE] Buscando lives ativas`);
 
-        console.log(`­ƒöì [SECURITY] User-Agent: ${userAgent}, Referer: ${referer}`);
+        console.log(`ï¿½ï¿½ï¿½ï¿½ [SECURITY] User-Agent: ${userAgent}, Referer: ${referer}`);
 
         
 
-        // DETEC+ç+âO DE FERRAMENTAS DE GRAVA+ç+âO/SCRAPING
+        // DETEC+ï¿½+ï¿½O DE FERRAMENTAS DE GRAVA+ï¿½+ï¿½O/SCRAPING
 
         const recordingIndicators = [
 
@@ -4388,11 +4388,11 @@ router.get('/streams/live', async (req, res) => {
 
         
 
-        // ­ƒÜ¿ BLOQUEAR ACESSO DE FERRAMENTAS DE GRAVA+ç+âO
+        // ï¿½ï¿½Ü¿ BLOQUEAR ACESSO DE FERRAMENTAS DE GRAVA+ï¿½+ï¿½O
 
         if (isRecordingAttempt || isDirectApiAccess) {
 
-            console.log(`­ƒÜ¿ [RECORDING BLOCKED] Streams live, User-Agent: ${userAgent}`);
+            console.log(`ï¿½ï¿½Ü¿ [RECORDING BLOCKED] Streams live, User-Agent: ${userAgent}`);
 
             return res.json([]); // Retornar lista vazia
 
@@ -4420,7 +4420,7 @@ router.get('/streams/live', async (req, res) => {
 
         const streamsWithHostData = enrichStreamsWithHostData(activeStreams as any, {
 
-            name: 'Usu+írio',
+            name: 'Usu+ï¿½rio',
 
             avatar: '',
 
@@ -4432,7 +4432,7 @@ router.get('/streams/live', async (req, res) => {
 
         });
 
-        console.log(`Ô£à [STREAMS LIVE] Encontradas ${activeStreams.length} lives ativas`);
+        console.log(`Ô£ï¿½ [STREAMS LIVE] Encontradas ${activeStreams.length} lives ativas`);
 
 
 
@@ -4448,7 +4448,7 @@ router.get('/streams/live', async (req, res) => {
 
     } catch (error: any) {
 
-        console.error('ÔØî [STREAMS LIVE] Erro ao buscar lives ativas:', error);
+        console.error('ï¿½ï¿½ï¿½ [STREAMS LIVE] Erro ao buscar lives ativas:', error);
 
         res.status(500).json({ error: error.message });
 
@@ -4458,7 +4458,7 @@ router.get('/streams/live', async (req, res) => {
 
 
 
-// API para criar transmiss+úo real
+// API para criar transmiss+ï¿½o real
 
 // ===== ROUTE START =====
 router.put('/streams/:id', async (req, res) => {
@@ -4535,7 +4535,7 @@ router.patch('/streams/:id', async (req, res) => {
 
 });
 
-// GET /api/streams/:id/urls - Obter configura+º+Áes de URLs de um stream
+// GET /api/streams/:id/urls - Obter configura+ï¿½+ï¿½es de URLs de um stream
 
 // ===== ROUTE START =====
 router.get('/streams/:id/urls', async (req: express.Request, res: express.Response) => {
@@ -4543,11 +4543,11 @@ router.get('/streams/:id/urls', async (req: express.Request, res: express.Respon
         const userId = getUserIdFromToken(req);
         const { id: streamId } = req.params;
 
-        // Verificar se a stream pertence ao usu+írio
+        // Verificar se a stream pertence ao usu+ï¿½rio
         const stream = await Streamer.findOne({ id: streamId, hostId: userId });
         
         if (!stream) {
-            return ResponseHelper.error(res, 'Stream n+úo encontrada ou n+úo pertence ao usu+írio', 404);
+            return ResponseHelper.error(res, 'Stream n+ï¿½o encontrada ou n+ï¿½o pertence ao usu+ï¿½rio', 404);
         }
 
         // Retornar URLs do stream
@@ -4567,7 +4567,7 @@ router.get('/streams/:id/urls', async (req: express.Request, res: express.Respon
     }
 });
 
-// POST /api/streams/:id/urls - Salvar configura+º+Áes de URLs RTMP/SRT
+// POST /api/streams/:id/urls - Salvar configura+ï¿½+ï¿½es de URLs RTMP/SRT
 
 // ===== ROUTE START =====
 router.post('/streams/:id/urls', async (req: express.Request, res: express.Response) => {
@@ -4576,11 +4576,11 @@ router.post('/streams/:id/urls', async (req: express.Request, res: express.Respo
         const { id: streamId } = req.params;
         const { rtmpIngestUrl, srtIngestUrl, playbackUrl, streamKey } = req.body;
 
-        // Verificar se a stream pertence ao usu+írio
+        // Verificar se a stream pertence ao usu+ï¿½rio
         const stream = await Streamer.findOne({ id: streamId, hostId: userId });
         
         if (!stream) {
-            return ResponseHelper.error(res, 'Stream n+úo encontrada ou n+úo pertence ao usu+írio', 404);
+            return ResponseHelper.error(res, 'Stream n+ï¿½o encontrada ou n+ï¿½o pertence ao usu+ï¿½rio', 404);
         }
 
         // Atualizar apenas as URLs fornecidas
@@ -4596,17 +4596,17 @@ router.post('/streams/:id/urls', async (req: express.Request, res: express.Respo
             { new: true }
         );
 
-        console.log(`­ƒöù [URLS] Configura+º+Áes atualizadas para stream ${streamId} pelo usu+írio ${userId}`);
+        console.log(`ï¿½ï¿½ï¿½ï¿½ [URLS] Configura+ï¿½+ï¿½es atualizadas para stream ${streamId} pelo usu+ï¿½rio ${userId}`);
 
         ResponseHelper.success(res, {
             success: true,
             stream: updatedStream,
-            message: 'Configura+º+Áes de URLs salvas com sucesso'
+            message: 'Configura+ï¿½+ï¿½es de URLs salvas com sucesso'
         });
 
     } catch (error) {
-        console.error('ÔØî [URLS] Erro ao salvar configura+º+Áes:', error);
-        ResponseHelper.error(res, 'Falha ao salvar configura+º+Áes de URLs', 500);
+        console.error('ï¿½ï¿½ï¿½ [URLS] Erro ao salvar configura+ï¿½+ï¿½es:', error);
+        ResponseHelper.error(res, 'Falha ao salvar configura+ï¿½+ï¿½es de URLs', 500);
     }
 });
 
@@ -4702,7 +4702,7 @@ router.get('/streams/manual', async (req, res) => res.json([]));
 // ===== ROUTE START =====
 router.get('/streams/effects', async (req, res) => res.json({}));
 
-// Fun+º+úo para limpar usu+írios inativos (marcar como offline)
+// Fun+ï¿½+ï¿½o para limpar usu+ï¿½rios inativos (marcar como offline)
 
 const cleanupInactiveUsers = async () => {
 
@@ -4714,7 +4714,7 @@ const cleanupInactiveUsers = async () => {
 
 
 
-        // Buscar streams ativas para n+úo remover usu+írios que est+úo em streams
+        // Buscar streams ativas para n+ï¿½o remover usu+ï¿½rios que est+ï¿½o em streams
 
         const activeStreams = await models.Streamer.find({ isLive: true });
 
@@ -4722,11 +4722,11 @@ const cleanupInactiveUsers = async () => {
 
 
 
-        // Marcar como offline apenas usu+írios que:
+        // Marcar como offline apenas usu+ï¿½rios que:
 
-        // 1. N+úo t+¬m lastSeen recente E n+úo est+úo em nenhuma stream ativa
+        // 1. N+ï¿½o t+ï¿½m lastSeen recente E n+ï¿½o est+ï¿½o em nenhuma stream ativa
 
-        // 2. OU t+¬m lastSeen antigo E n+úo est+úo em nenhuma stream ativa
+        // 2. OU t+ï¿½m lastSeen antigo E n+ï¿½o est+ï¿½o em nenhuma stream ativa
 
         const result = await models.User.updateMany(
 
@@ -4772,13 +4772,13 @@ const cleanupInactiveUsers = async () => {
 
         if (result.modifiedCount > 0) {
 
-            console.log(`­ƒº¦ Limpeza de usu+írios inativos: ${result.modifiedCount} usu+írios marcados como offline`);
+            console.log(`ï¿½ï¿½ï¿½ï¿½ Limpeza de usu+ï¿½rios inativos: ${result.modifiedCount} usu+ï¿½rios marcados como offline`);
 
         }
 
     } catch (error) {
 
-        console.error('ÔØî Erro na limpeza de usu+írios inativos:', error);
+        console.error('ï¿½ï¿½ï¿½ Erro na limpeza de usu+ï¿½rios inativos:', error);
 
     }
 
@@ -4786,13 +4786,13 @@ const cleanupInactiveUsers = async () => {
 
 
 
-// REMOVIDO: Cleanup autom+ítico de usu+írios inativos
+// REMOVIDO: Cleanup autom+ï¿½tico de usu+ï¿½rios inativos
 // setInterval(cleanupInactiveUsers, 5 * 60 * 1000);
-// console.log('­ƒöº Cleanup autom+ítico ativado');
+// console.log('ï¿½ï¿½ï¿½ï¿½ Cleanup autom+ï¿½tico ativado');
 
 
 
-// Rota para buscar usu+írios online em uma stream espec+¡fica
+// Rota para buscar usu+ï¿½rios online em uma stream espec+ï¿½fica
 
 // ===== ROUTE START =====
 router.get('/streams/:id/online-users', async (req, res) => {
@@ -4803,7 +4803,7 @@ router.get('/streams/:id/online-users', async (req, res) => {
 
 
 
-        // Buscar usu+írios marcados como online nesta stream no banco de dados
+        // Buscar usu+ï¿½rios marcados como online nesta stream no banco de dados
 
         const onlineUsersInStream = await User.find({
 
@@ -4811,15 +4811,15 @@ router.get('/streams/:id/online-users', async (req, res) => {
 
             currentStreamId: streamId,
 
-            name: { $exists: true, $nin: ['', null] }, // Apenas usu+írios com nome v+ílido
+            name: { $exists: true, $nin: ['', null] }, // Apenas usu+ï¿½rios com nome v+ï¿½lido
 
-            id: { $exists: true, $nin: ['', null] } // Apenas usu+írios com ID v+ílido
+            id: { $exists: true, $nin: ['', null] } // Apenas usu+ï¿½rios com ID v+ï¿½lido
 
         }).select('id name avatarUrl identification level activeFrameId frameExpiration');
 
 
 
-        console.log(`­ƒöì [ONLINE USERS] Usu+írios encontrados na stream ${streamId}:`, onlineUsersInStream.map(u => ({
+        console.log(`ï¿½ï¿½ï¿½ï¿½ [ONLINE USERS] Usu+ï¿½rios encontrados na stream ${streamId}:`, onlineUsersInStream.map(u => ({
 
             id: u.id,
 
@@ -4833,21 +4833,21 @@ router.get('/streams/:id/online-users', async (req, res) => {
 
 
 
-        // Se n+úo encontrar usu+írios online, buscar todos os usu+írios que enviaram presentes nesta live
+        // Se n+ï¿½o encontrar usu+ï¿½rios online, buscar todos os usu+ï¿½rios que enviaram presentes nesta live
 
         if (onlineUsersInStream.length === 0) {
 
-            console.log(`­ƒöì [ONLINE USERS] Nenhum usu+írio online encontrado, buscando usu+írios que enviaram presentes...`);
+            console.log(`ï¿½ï¿½ï¿½ï¿½ [ONLINE USERS] Nenhum usu+ï¿½rio online encontrado, buscando usu+ï¿½rios que enviaram presentes...`);
 
             
 
-            // Importar GiftTransaction apenas quando necess+írio
+            // Importar GiftTransaction apenas quando necess+ï¿½rio
 
             const { GiftTransaction } = await import('../models');
 
             
 
-            // Buscar usu+írios que enviaram presentes nesta live
+            // Buscar usu+ï¿½rios que enviaram presentes nesta live
 
             const giftSenders = await GiftTransaction.aggregate([
 
@@ -4861,11 +4861,11 @@ router.get('/streams/:id/online-users', async (req, res) => {
 
             
 
-            console.log(`­ƒÄü [ONLINE USERS] Remetentes de presentes encontrados:`, giftSenders);
+            console.log(`ï¿½ï¿½ï¿½ï¿½ [ONLINE USERS] Remetentes de presentes encontrados:`, giftSenders);
 
             
 
-            // Buscar dados completos desses usu+írios
+            // Buscar dados completos desses usu+ï¿½rios
 
             const senderIds = giftSenders.map((s: { _id: string }) => s._id);
 
@@ -4881,7 +4881,7 @@ router.get('/streams/:id/online-users', async (req, res) => {
 
                 
 
-                // Combinar dados dos usu+írios com valores reais de presentes enviados nesta live
+                // Combinar dados dos usu+ï¿½rios com valores reais de presentes enviados nesta live
 
                 const usersWithGiftData = senderUsers.map(u => {
 
@@ -4911,7 +4911,7 @@ router.get('/streams/:id/online-users', async (req, res) => {
 
                 
 
-                console.log(`­ƒÄ» [ONLINE USERS] Resultado final (presentes):`, usersWithGiftData);
+                console.log(`ï¿½ï¿½Ä» [ONLINE USERS] Resultado final (presentes):`, usersWithGiftData);
 
                 return res.json(usersWithGiftData);
 
@@ -4933,7 +4933,7 @@ router.get('/streams/:id/online-users', async (req, res) => {
 
 
 
-        // Agrupar valores por usu+írio para esta live espec+¡fica
+        // Agrupar valores por usu+ï¿½rio para esta live espec+ï¿½fica
 
         const userValuesInLive: Record<string, number> = {};
 
@@ -4979,11 +4979,11 @@ router.get('/streams/:id/online-users', async (req, res) => {
 
 
 
-        // Se ainda n+úo encontrar nada, buscar o host da stream como fallback
+        // Se ainda n+ï¿½o encontrar nada, buscar o host da stream como fallback
 
         if (usersWithValue.length === 0) {
 
-            console.log(`­ƒöì [ONLINE USERS] Nenhum usu+írio encontrado, buscando host como fallback...`);
+            console.log(`ï¿½ï¿½ï¿½ï¿½ [ONLINE USERS] Nenhum usu+ï¿½rio encontrado, buscando host como fallback...`);
 
             
 
@@ -5015,7 +5015,7 @@ router.get('/streams/:id/online-users', async (req, res) => {
 
                     };
 
-                    console.log(`­ƒÄ» [ONLINE USERS] Host encontrado como fallback:`, hostData);
+                    console.log(`ï¿½ï¿½Ä» [ONLINE USERS] Host encontrado como fallback:`, hostData);
 
                     return res.json([hostData]);
 
@@ -5027,13 +5027,13 @@ router.get('/streams/:id/online-users', async (req, res) => {
 
 
 
-        console.log(`­ƒÄ» [DEBUG] Resultado final:`, usersWithValue);
+        console.log(`ï¿½ï¿½Ä» [DEBUG] Resultado final:`, usersWithValue);
 
         return res.json(usersWithValue);
 
     } catch (error: any) {
 
-        console.error('ÔØî [ONLINE USERS] Erro:', error);
+        console.error('ï¿½ï¿½ï¿½ [ONLINE USERS] Erro:', error);
 
         return res.status(500).json({ error: error.message });
 
@@ -5041,9 +5041,9 @@ router.get('/streams/:id/online-users', async (req, res) => {
 
 });
 
-// Rota para atualizar status online do usu+írio
+// Rota para atualizar status online do usu+ï¿½rio
 
-// API para usu+írio entrar na live
+// API para usu+ï¿½rio entrar na live
 
 // ===== ROUTE START =====
 router.get('/streams/:streamId/join', async (req, res) => {
@@ -5051,28 +5051,28 @@ router.get('/streams/:streamId/join', async (req, res) => {
         const userId = await getUserIdFromToken(req);
         const streamId = req.params.streamId;
 
-        console.log(`­ƒæñ [STREAM JOIN GET] Usu+írio ${userId} entrando na stream ${streamId}`);
+        console.log(`ï¿½ï¿½ï¿½ï¿½ [STREAM JOIN GET] Usu+ï¿½rio ${userId} entrando na stream ${streamId}`);
 
         if (!userId || !streamId) {
-            return res.status(400).json({ success: false, error: 'UserId e StreamId s+úo obrigat+¦rios' });
+            return res.status(400).json({ success: false, error: 'UserId e StreamId s+ï¿½o obrigat+ï¿½rios' });
         }
 
         // Verificar se stream existe
         const streamer = await Streamer.findOne({ id: streamId });
         if (!streamer) {
-            return res.status(404).json({ success: false, error: 'Stream n+úo encontrada' });
+            return res.status(404).json({ success: false, error: 'Stream n+ï¿½o encontrada' });
         }
 
-        // Verificar se usu+írio est+í bloqueado
+        // Verificar se usu+ï¿½rio est+ï¿½ bloqueado
         const block = await Block.findOne({ 
             blockerId: streamer.hostId, 
             blockedId: userId 
         });
         if (block) {
-            return res.status(403).json({ success: false, error: 'Usu+írio bloqueado pelo host' });
+            return res.status(403).json({ success: false, error: 'Usu+ï¿½rio bloqueado pelo host' });
         }
 
-        // Atualizar status do usu+írio
+        // Atualizar status do usu+ï¿½rio
         const user = await User.findOneAndUpdate(
             { id: userId },
             {
@@ -5084,7 +5084,7 @@ router.get('/streams/:streamId/join', async (req, res) => {
         );
 
         if (!user) {
-            return res.status(404).json({ success: false, error: 'Usu+írio n+úo encontrado' });
+            return res.status(404).json({ success: false, error: 'Usu+ï¿½rio n+ï¿½o encontrado' });
         }
 
         // Notificar via WebSocket
@@ -5097,11 +5097,11 @@ router.get('/streams/:streamId/join', async (req, res) => {
             });
         }
 
-        console.log(`Ô£à [STREAM JOIN GET] Usu+írio ${userId} entrou na stream ${streamId}`);
+        console.log(`Ô£ï¿½ [STREAM JOIN GET] Usu+ï¿½rio ${userId} entrou na stream ${streamId}`);
 
         res.json({
             success: true,
-            message: 'Usu+írio entrou na stream com sucesso',
+            message: 'Usu+ï¿½rio entrou na stream com sucesso',
             user: {
                 id: user.id,
                 name: user.name,
@@ -5120,12 +5120,12 @@ router.get('/streams/:streamId/join', async (req, res) => {
         });
 
     } catch (error: any) {
-        console.error('ÔØî [STREAM JOIN GET] Erro:', error);
+        console.error('ï¿½ï¿½ï¿½ [STREAM JOIN GET] Erro:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });
 
-// ­ƒöº API DE SALDO DA LIVE - Retorna saldo em tempo real
+// ï¿½ï¿½ï¿½ï¿½ API DE SALDO DA LIVE - Retorna saldo em tempo real
 
 // ===== ROUTE START =====
 router.get('/streams/:id/balance', async (req, res) => {
@@ -5134,7 +5134,7 @@ router.get('/streams/:id/balance', async (req, res) => {
 
         const streamId = req.params.id;
 
-        console.log(`­ƒÆ¦ [BALANCE] Buscando saldo da live: ${streamId}`);
+        console.log(`ï¿½ï¿½Æ¦ [BALANCE] Buscando saldo da live: ${streamId}`);
 
         
 
@@ -5146,7 +5146,7 @@ router.get('/streams/:id/balance', async (req, res) => {
 
         if (!streamer) {
 
-            console.log(`ÔØî Streamer not found: ${streamId}`);
+            console.log(`ï¿½ï¿½ï¿½ Streamer not found: ${streamId}`);
 
             return res.status(404).json({ error: 'Streamer not found' });
 
@@ -5154,13 +5154,13 @@ router.get('/streams/:id/balance', async (req, res) => {
 
 
 
-        // ­ƒöº USAR DIAMONDS DO STREAM (valor correto para o contador)
+        // ï¿½ï¿½ï¿½ï¿½ USAR DIAMONDS DO STREAM (valor correto para o contador)
 
         const currentBalance = streamer.diamonds || 0;
 
         
 
-        console.log(`Ô£à [BALANCE] Saldo da live ${streamId}: ${currentBalance} diamantes`);
+        console.log(`Ô£ï¿½ [BALANCE] Saldo da live ${streamId}: ${currentBalance} diamantes`);
 
         
 
@@ -5184,7 +5184,7 @@ router.get('/streams/:id/balance', async (req, res) => {
 
     } catch (error: any) {
 
-        console.error('ÔØî [BALANCE] Erro ao buscar saldo da live:', error);
+        console.error('ï¿½ï¿½ï¿½ [BALANCE] Erro ao buscar saldo da live:', error);
 
         res.status(500).json({ error: error.message });
 
@@ -5194,7 +5194,7 @@ router.get('/streams/:id/balance', async (req, res) => {
 
 
 
-// API para usu+írio sair da live
+// API para usu+ï¿½rio sair da live
 
 // ===== ROUTE START =====
 router.post('/streams/:streamId/leave', async (req, res) => {
@@ -5207,43 +5207,43 @@ router.post('/streams/:streamId/leave', async (req, res) => {
 
 
 
-        console.log(`­ƒæñ [STREAM LEAVE] Usu+írio ${userId} saindo da stream ${streamId}`);
+        console.log(`ï¿½ï¿½ï¿½ï¿½ [STREAM LEAVE] Usu+ï¿½rio ${userId} saindo da stream ${streamId}`);
 
 
 
         if (!userId || !streamId) {
 
-            return res.status(400).json({ success: false, error: 'UserId e StreamId s+úo obrigat+¦rios' });
+            return res.status(400).json({ success: false, error: 'UserId e StreamId s+ï¿½o obrigat+ï¿½rios' });
 
         }
 
 
 
-        // Verificar se o usu+írio existe
+        // Verificar se o usu+ï¿½rio existe
 
         const user = await User.findOne({ id: userId });
 
         if (!user) {
 
-            return res.status(404).json({ success: false, error: 'Usu+írio n+úo encontrado' });
+            return res.status(404).json({ success: false, error: 'Usu+ï¿½rio n+ï¿½o encontrado' });
 
         }
 
 
 
-        // Verificar se usu+írio est+í realmente na stream
+        // Verificar se usu+ï¿½rio est+ï¿½ realmente na stream
 
         if (!user.isOnline || user.currentStreamId !== streamId) {
 
-            console.log(`ÔÜá´©Å [STREAM LEAVE] Usu+írio ${userId} n+úo est+í na stream ${streamId}`);
+            console.log(`ï¿½ï¿½á´©ï¿½ [STREAM LEAVE] Usu+ï¿½rio ${userId} n+ï¿½o est+ï¿½ na stream ${streamId}`);
 
-            return res.json({ success: true, message: 'Usu+írio n+úo est+í na stream' });
+            return res.json({ success: true, message: 'Usu+ï¿½rio n+ï¿½o est+ï¿½ na stream' });
 
         }
 
 
 
-        // Verificar se usu+írio +® host de alguma stream ativa
+        // Verificar se usu+ï¿½rio +ï¿½ host de alguma stream ativa
 
         const activeHostStreams = await Streamer.find({
 
@@ -5257,7 +5257,7 @@ router.post('/streams/:streamId/leave', async (req, res) => {
 
 
 
-        // Se n+úo for host de nenhuma outra stream, marcar como offline
+        // Se n+ï¿½o for host de nenhuma outra stream, marcar como offline
 
         if (!activeHostStreams || activeHostStreams.length === 0) {
 
@@ -5297,7 +5297,7 @@ router.post('/streams/:streamId/leave', async (req, res) => {
 
 
 
-        // ­ƒöº MELHOR PR+üTICA: Decrementar viewers com $inc ( MongoDB garante n+úo ficar negativo com min: 0 )
+        // ï¿½ï¿½ï¿½ï¿½ MELHOR PR+ï¿½TICA: Decrementar viewers com $inc ( MongoDB garante n+ï¿½o ficar negativo com min: 0 )
 
         await Streamer.findOneAndUpdate(
 
@@ -5341,7 +5341,7 @@ router.post('/streams/:streamId/leave', async (req, res) => {
 
 
 
-        console.log(`Ô£à [STREAM LEAVE] Usu+írio ${userId} saiu da stream ${streamId}`);
+        console.log(`Ô£ï¿½ [STREAM LEAVE] Usu+ï¿½rio ${userId} saiu da stream ${streamId}`);
 
 
 
@@ -5363,7 +5363,7 @@ router.post('/streams/:streamId/leave', async (req, res) => {
 
                 id: streamId,
 
-                viewers: Math.max(0, 0) // ­ƒöº MELHOR PR+üTICA: MongoDB j+í controlou o decremento
+                viewers: Math.max(0, 0) // ï¿½ï¿½ï¿½ï¿½ MELHOR PR+ï¿½TICA: MongoDB j+ï¿½ controlou o decremento
 
             }
 
@@ -5371,7 +5371,7 @@ router.post('/streams/:streamId/leave', async (req, res) => {
 
     } catch (error: any) {
 
-        console.error('ÔØî [STREAM LEAVE] Erro:', error);
+        console.error('ï¿½ï¿½ï¿½ [STREAM LEAVE] Erro:', error);
 
         res.status(500).json({ success: false, error: error.message });
 
@@ -5381,11 +5381,11 @@ router.post('/streams/:streamId/leave', async (req, res) => {
 
 
 
-// Handler #1 removido ÔÇö duplicata body-based. Usar JWT-based handler abaixo (linha ~7067).
+// Handler #1 removido ï¿½ï¿½ï¿½ duplicata body-based. Usar JWT-based handler abaixo (linha ~7067).
 
 
 
-// Rota para quando usu+írio entra na stream - LEGACY
+// Rota para quando usu+ï¿½rio entra na stream - LEGACY
 
 // ===== ROUTE START =====
 router.post('/streams/:id/end-session', async (req, res) => {
@@ -5398,7 +5398,7 @@ router.post('/streams/:id/end-session', async (req, res) => {
 
 
 
-        console.log(`­ƒö¦ Encerrando live ${streamId} e salvando no hist+¦rico`);
+        console.log(`ï¿½ï¿½ï¿½ï¿½ Encerrando live ${streamId} e salvando no hist+ï¿½rico`);
 
 
 
@@ -5410,11 +5410,11 @@ router.post('/streams/:id/end-session', async (req, res) => {
 
         if (!stream) {
 
-            console.warn(`ÔÜá´©Å Stream ${streamId} n+úo encontrada, mas continuando para limpar estado do usu+írio`);
+            console.warn(`ï¿½ï¿½á´©ï¿½ Stream ${streamId} n+ï¿½o encontrada, mas continuando para limpar estado do usu+ï¿½rio`);
 
             
 
-            // Mesmo que a stream n+úo exista, limpar o estado do usu+írio
+            // Mesmo que a stream n+ï¿½o exista, limpar o estado do usu+ï¿½rio
 
             const userId = getUserIdFromToken(req);
 
@@ -5436,13 +5436,13 @@ router.post('/streams/:id/end-session', async (req, res) => {
 
                 );
 
-                console.log(`Ô£à Estado do usu+írio ${userId} limpo mesmo sem stream encontrada`);
+                console.log(`Ô£ï¿½ Estado do usu+ï¿½rio ${userId} limpo mesmo sem stream encontrada`);
 
             }
 
             
 
-            return res.json({ success: true, message: 'Stream n+úo encontrada mas estado limpo' });
+            return res.json({ success: true, message: 'Stream n+ï¿½o encontrada mas estado limpo' });
 
         }
 
@@ -5466,7 +5466,7 @@ router.post('/streams/:id/end-session', async (req, res) => {
 
 
 
-        // 3. Salvar no hist+¦rico
+        // 3. Salvar no hist+ï¿½rico
 
         const { StreamHistory } = await import('../models');
 
@@ -5516,13 +5516,13 @@ router.post('/streams/:id/end-session', async (req, res) => {
 
             await StreamHistory.create(historyEntry);
 
-            console.log(`­ƒÆ¥ Hist+¦rico salvo para stream ${streamId}`);
+            console.log(`ï¿½ï¿½Æ¥ Hist+ï¿½rico salvo para stream ${streamId}`);
 
         } catch (historyError: any) {
 
-            console.warn(`ÔÜá´©Å Erro ao salvar hist+¦rico (mas continuando): ${historyError.message}`);
+            console.warn(`ï¿½ï¿½á´©ï¿½ Erro ao salvar hist+ï¿½rico (mas continuando): ${historyError.message}`);
 
-            // Continuar mesmo se o hist+¦rico falhar
+            // Continuar mesmo se o hist+ï¿½rico falhar
 
         }
 
@@ -5556,13 +5556,13 @@ router.post('/streams/:id/end-session', async (req, res) => {
 
             if (!updatedStream) {
 
-                console.warn(`ÔÜá´©Å Stream ${streamId} n+úo encontrada para atualizar`);
+                console.warn(`ï¿½ï¿½á´©ï¿½ Stream ${streamId} n+ï¿½o encontrada para atualizar`);
 
             }
 
         } catch (updateError: any) {
 
-            console.warn(`ÔÜá´©Å Erro ao atualizar stream (mas continuando): ${updateError.message}`);
+            console.warn(`ï¿½ï¿½á´©ï¿½ Erro ao atualizar stream (mas continuando): ${updateError.message}`);
 
         }
 
@@ -5588,19 +5588,19 @@ router.post('/streams/:id/end-session', async (req, res) => {
 
             if (!updatedUser) {
 
-                console.warn(`ÔÜá´©Å Usu+írio ${stream.hostId} n+úo encontrado para atualizar`);
+                console.warn(`ï¿½ï¿½á´©ï¿½ Usu+ï¿½rio ${stream.hostId} n+ï¿½o encontrado para atualizar`);
 
             }
 
         } catch (userError: any) {
 
-            console.warn(`ÔÜá´©Å Erro ao atualizar usu+írio (mas continuando): ${userError.message}`);
+            console.warn(`ï¿½ï¿½á´©ï¿½ Erro ao atualizar usu+ï¿½rio (mas continuando): ${userError.message}`);
 
         }
 
 
 
-        // 6. Remover todos os usu+írios online desta stream
+        // 6. Remover todos os usu+ï¿½rios online desta stream
 
         try {
 
@@ -5620,11 +5620,11 @@ router.post('/streams/:id/end-session', async (req, res) => {
 
             );
 
-            console.log(`Ô£à Usu+írios removidos da stream ${streamId}`);
+            console.log(`Ô£ï¿½ Usu+ï¿½rios removidos da stream ${streamId}`);
 
         } catch (removeError: any) {
 
-            console.warn(`ÔÜá´©Å Erro ao remover usu+írios da stream (mas continuando): ${removeError.message}`);
+            console.warn(`ï¿½ï¿½á´©ï¿½ Erro ao remover usu+ï¿½rios da stream (mas continuando): ${removeError.message}`);
 
         }
 
@@ -5652,7 +5652,7 @@ router.post('/streams/:id/end-session', async (req, res) => {
 
                 streamId: streamId,
 
-                message: 'Esta transmiss+úo foi encerrada',
+                message: 'Esta transmiss+ï¿½o foi encerrada',
 
                 timestamp: new Date().toISOString()
 
@@ -5660,13 +5660,13 @@ router.post('/streams/:id/end-session', async (req, res) => {
 
 
 
-            console.log(`­ƒôó Notifica+º+úo WebSocket enviada: stream ${streamId} encerrada`);
+            console.log(`ï¿½ï¿½ï¿½ï¿½ Notifica+ï¿½+ï¿½o WebSocket enviada: stream ${streamId} encerrada`);
 
         }
 
 
 
-        console.log(`Ô£à Live ${streamId} encerrada e hist+¦rico salvo com sucesso`);
+        console.log(`Ô£ï¿½ Live ${streamId} encerrada e hist+ï¿½rico salvo com sucesso`);
 
 
 
@@ -5694,7 +5694,7 @@ router.post('/streams/:id/end-session', async (req, res) => {
 
     } catch (error: any) {
 
-        console.error('ÔØî Erro ao encerrar sess+úo da live:', error);
+        console.error('ï¿½ï¿½ï¿½ Erro ao encerrar sess+ï¿½o da live:', error);
 
         res.status(500).json({ success: false, error: error.message });
 
@@ -5704,7 +5704,7 @@ router.post('/streams/:id/end-session', async (req, res) => {
 
 
 
-// API espec+¡fica para remover cards de lives
+// API espec+ï¿½fica para remover cards de lives
 
 // ===== ROUTE START =====
 router.delete('/cards/:streamId', async (req, res) => {
@@ -5717,7 +5717,7 @@ router.delete('/cards/:streamId', async (req, res) => {
 
 
 
-        console.log(`­ƒùæ´©Å Removendo card da live ${streamId} pelo usu+írio ${userId}`);
+        console.log(`ï¿½ï¿½ï¿½æ´©ï¿½ Removendo card da live ${streamId} pelo usu+ï¿½rio ${userId}`);
 
 
 
@@ -5725,7 +5725,7 @@ router.delete('/cards/:streamId', async (req, res) => {
 
         if (!userId) {
 
-            console.warn(`ÔÜá´©Å userId n+úo fornecido para remover card ${streamId}`);
+            console.warn(`ï¿½ï¿½á´©ï¿½ userId n+ï¿½o fornecido para remover card ${streamId}`);
 
             return res.status(400).json({ success: false, error: 'User ID required' });
 
@@ -5741,7 +5741,7 @@ router.delete('/cards/:streamId', async (req, res) => {
 
         if (!stream) {
 
-            console.warn(`ÔÜá´©Å Stream ${streamId} n+úo encontrada`);
+            console.warn(`ï¿½ï¿½á´©ï¿½ Stream ${streamId} n+ï¿½o encontrada`);
 
             return res.status(404).json({ success: false, error: 'Stream not found' });
 
@@ -5749,11 +5749,11 @@ router.delete('/cards/:streamId', async (req, res) => {
 
 
 
-        // 2. Verificar se o usu+írio +® o dono da stream
+        // 2. Verificar se o usu+ï¿½rio +ï¿½ o dono da stream
 
         if (stream.hostId !== userId) {
 
-            console.warn(`ÔÜá´©Å Usu+írio ${userId} n+úo +® dono da stream ${streamId} (dono: ${stream.hostId})`);
+            console.warn(`ï¿½ï¿½á´©ï¿½ Usu+ï¿½rio ${userId} n+ï¿½o +ï¿½ dono da stream ${streamId} (dono: ${stream.hostId})`);
 
             return res.status(403).json({ success: false, error: 'Unauthorized: Only stream owner can remove card' });
 
@@ -5801,13 +5801,13 @@ router.delete('/cards/:streamId', async (req, res) => {
 
 
 
-            console.log(`­ƒôó Notifica+º+úo WebSocket enviada: card ${streamId} removido`);
+            console.log(`ï¿½ï¿½ï¿½ï¿½ Notifica+ï¿½+ï¿½o WebSocket enviada: card ${streamId} removido`);
 
         }
 
 
 
-        console.log(`Ô£à Card da live ${streamId} removido com sucesso`);
+        console.log(`Ô£ï¿½ Card da live ${streamId} removido com sucesso`);
 
 
 
@@ -5817,7 +5817,7 @@ router.delete('/cards/:streamId', async (req, res) => {
 
     } catch (error: any) {
 
-        console.error('ÔØî Erro ao remover card:', error);
+        console.error('ï¿½ï¿½ï¿½ Erro ao remover card:', error);
 
         res.status(500).json({ success: false, error: error.message });
 
@@ -5886,7 +5886,7 @@ router.post('/streams/:id/gift', async (req, res) => {
 
         if (fromUserId === stream.hostId) {
 
-            // Quando a pessoa manda presente pra si mesma, fazemos as duas atualiza+º+Áes (- e +) EM UMA +ÜNICA chamada no banco.
+            // Quando a pessoa manda presente pra si mesma, fazemos as duas atualiza+ï¿½+ï¿½es (- e +) EM UMA +ï¿½NICA chamada no banco.
 
             // O erro dos diamantes bugados acontecia porque o sender.save() e o receiver.save() sobrescreviam um ao outro.
 
@@ -5902,7 +5902,7 @@ router.post('/streams/:id/gift', async (req, res) => {
 
             updatedReceiver = updatedSender;
 
-            console.log(`­ƒÆ¦ [LIVE GIFT] ${updatedSender?.name} enviou ${totalValue} diamantes para si mesmo (duas m+®tricas do mesmo evento)`);
+            console.log(`ï¿½ï¿½Æ¦ [LIVE GIFT] ${updatedSender?.name} enviou ${totalValue} diamantes para si mesmo (duas m+ï¿½tricas do mesmo evento)`);
 
         } else {
 
@@ -5932,7 +5932,7 @@ router.post('/streams/:id/gift', async (req, res) => {
 
                 );
 
-                console.log(`­ƒÆ¦ [LIVE GIFT] ${updatedSender?.name} enviou ${totalValue} diamantes para ${updatedReceiver?.name}`);
+                console.log(`ï¿½ï¿½Æ¦ [LIVE GIFT] ${updatedSender?.name} enviou ${totalValue} diamantes para ${updatedReceiver?.name}`);
 
             }
 
@@ -5942,7 +5942,7 @@ router.post('/streams/:id/gift', async (req, res) => {
 
         if (updatedReceiver) {
 
-            console.log(`­ƒôè [LIVE GIFT] ${updatedReceiver.name} - Receptores: ${updatedReceiver.receptores}, Earnings: ${updatedReceiver.earnings}`);
+            console.log(`ï¿½ï¿½ï¿½ï¿½ [LIVE GIFT] ${updatedReceiver.name} - Receptores: ${updatedReceiver.receptores}, Earnings: ${updatedReceiver.earnings}`);
 
         }
 
@@ -5978,7 +5978,7 @@ router.post('/streams/:id/gift', async (req, res) => {
 
             });
 
-            console.log(`­ƒôí [WEBSOCKET] Earnings atualizados em tempo real para ${updatedReceiver.name}: +${totalValue} diamantes (total earnings: ${updatedReceiver.earnings}, receptores: ${updatedReceiver.receptores})`);
+            console.log(`ï¿½ï¿½ï¿½ï¿½ [WEBSOCKET] Earnings atualizados em tempo real para ${updatedReceiver.name}: +${totalValue} diamantes (total earnings: ${updatedReceiver.earnings}, receptores: ${updatedReceiver.receptores})`);
 
         }
 
@@ -6004,13 +6004,13 @@ router.post('/streams/:id/gift', async (req, res) => {
 
             });
 
-            console.log(`­ƒôí [WEBSOCKET] Diamonds atualizados em tempo real para ${updatedSender.name}: ${updatedSender.diamonds} (enviados: ${updatedSender.enviados})`);
+            console.log(`ï¿½ï¿½ï¿½ï¿½ [WEBSOCKET] Diamonds atualizados em tempo real para ${updatedSender.name}: ${updatedSender.diamonds} (enviados: ${updatedSender.enviados})`);
 
         }
 
 
 
-        // Acumular diamantes na stream (n+úo converter para BRL ainda)
+        // Acumular diamantes na stream (n+ï¿½o converter para BRL ainda)
 
         await Streamer.findOneAndUpdate(
 
@@ -6026,7 +6026,7 @@ router.post('/streams/:id/gift', async (req, res) => {
 
 
 
-        // Emitir atualiza+º+úo para a sala de transmiss+úo com os 'receptores' reais
+        // Emitir atualiza+ï¿½+ï¿½o para a sala de transmiss+ï¿½o com os 'receptores' reais
 
         if (io && updatedReceiver) {
 
@@ -6046,7 +6046,7 @@ router.post('/streams/:id/gift', async (req, res) => {
 
             });
 
-            console.log(`­ƒôí [WEBSOCKET] live_coins_updated emitido para a sala ${req.params.id} com totalCoins: ${updatedReceiver.receptores}`);
+            console.log(`ï¿½ï¿½ï¿½ï¿½ [WEBSOCKET] live_coins_updated emitido para a sala ${req.params.id} com totalCoins: ${updatedReceiver.receptores}`);
 
         }
 
@@ -6074,7 +6074,7 @@ router.post('/streams/:id/gift', async (req, res) => {
 
             giftName,
 
-            giftIcon: gift.icon || '­ƒÄü',
+            giftIcon: gift.icon || 'ï¿½ï¿½ï¿½ï¿½',
 
             giftPrice: price,
 
@@ -6088,7 +6088,7 @@ router.post('/streams/:id/gift', async (req, res) => {
 
 
 
-        console.log(`­ƒÆÄ Gift sent: ${giftName} x${amount} from ${updatedSender?.name || 'Unknown'} to stream ${req.params.id} - ${totalValue} diamonds accumulated`);
+        console.log(`ï¿½ï¿½ï¿½ï¿½ Gift sent: ${giftName} x${amount} from ${updatedSender?.name || 'Unknown'} to stream ${req.params.id} - ${totalValue} diamonds accumulated`);
 
 
 
@@ -6124,9 +6124,9 @@ router.post('/streams/:id/gift', async (req, res) => {
 
 });
 
-// REMOVIDO: Endpoint de simula+º+úo que estava causando usu+írio falso online
+// REMOVIDO: Endpoint de simula+ï¿½+ï¿½o que estava causando usu+ï¿½rio falso online
 
-// REMOVIDO: Rotas legadas WebRTC (publish/play/stop) ÔÇö agora usando WHIP (browser) e RTMP (Android) direto para SRS
+// REMOVIDO: Rotas legadas WebRTC (publish/play/stop) ï¿½ï¿½ï¿½ agora usando WHIP (browser) e RTMP (Android) direto para SRS
 
 
 
@@ -6143,7 +6143,7 @@ router.put('/streams/:id/quality', async (req, res) => {
 
 
 
-        console.log(`­ƒÄÑ [STREAM_QUALITY] Stream: ${streamId}, Quality: ${quality}, User: ${userId}`);
+        console.log(`ï¿½ï¿½ï¿½ï¿½ [STREAM_QUALITY] Stream: ${streamId}, Quality: ${quality}, User: ${userId}`);
 
 
 
@@ -6153,13 +6153,13 @@ router.put('/streams/:id/quality', async (req, res) => {
 
         if (!streamer) {
 
-            console.log(`ÔØî [STREAM_QUALITY] Stream n+úo encontrado: ${streamId}`);
+            console.log(`ï¿½ï¿½ï¿½ [STREAM_QUALITY] Stream n+ï¿½o encontrado: ${streamId}`);
 
             return res.status(404).json({
 
                 success: false,
 
-                error: 'Stream n+úo encontrado'
+                error: 'Stream n+ï¿½o encontrado'
 
             });
 
@@ -6167,11 +6167,11 @@ router.put('/streams/:id/quality', async (req, res) => {
 
 
 
-        // 2. Validar se o usu+írio +® o host do stream
+        // 2. Validar se o usu+ï¿½rio +ï¿½ o host do stream
 
         if (streamer.hostId !== userId) {
 
-            console.log(`ÔØî [STREAM_QUALITY] Usu+írio n+úo +® host: ${userId} != ${streamer.hostId}`);
+            console.log(`ï¿½ï¿½ï¿½ [STREAM_QUALITY] Usu+ï¿½rio n+ï¿½o +ï¿½ host: ${userId} != ${streamer.hostId}`);
 
             return res.status(403).json({
 
@@ -6185,19 +6185,19 @@ router.put('/streams/:id/quality', async (req, res) => {
 
 
 
-        // 3. Validar se a qualidade +® v+ílida
+        // 3. Validar se a qualidade +ï¿½ v+ï¿½lida
 
         const validQualities = ['360p', '480p', '720p', '1080p'];
 
         if (!validQualities.includes(quality)) {
 
-            console.log(`ÔØî [STREAM_QUALITY] Qualidade inv+ílida: ${quality}`);
+            console.log(`ï¿½ï¿½ï¿½ [STREAM_QUALITY] Qualidade inv+ï¿½lida: ${quality}`);
 
             return res.status(400).json({
 
                 success: false,
 
-                error: 'Qualidade inv+ílida'
+                error: 'Qualidade inv+ï¿½lida'
 
             });
 
@@ -6217,7 +6217,7 @@ router.put('/streams/:id/quality', async (req, res) => {
 
 
 
-        console.log(`Ô£à [STREAM_QUALITY] Qualidade atualizada: ${quality}`);
+        console.log(`Ô£ï¿½ [STREAM_QUALITY] Qualidade atualizada: ${quality}`);
 
 
 
@@ -6237,7 +6237,7 @@ router.put('/streams/:id/quality', async (req, res) => {
 
             });
 
-            console.log(`­ƒôí [STREAM_QUALITY] Evento WebSocket emitido para stream_${streamId}`);
+            console.log(`ï¿½ï¿½ï¿½ï¿½ [STREAM_QUALITY] Evento WebSocket emitido para stream_${streamId}`);
 
         }
 
@@ -6267,7 +6267,7 @@ router.put('/streams/:id/quality', async (req, res) => {
 
     } catch (error) {
 
-        console.error('ÔØî [STREAM_QUALITY] Erro:', error);
+        console.error('ï¿½ï¿½ï¿½ [STREAM_QUALITY] Erro:', error);
 
         res.status(500).json({
 
@@ -6283,7 +6283,7 @@ router.put('/streams/:id/quality', async (req, res) => {
 
 
 
-// API STARK - Iniciar live (padr+úo Buscast)
+// API STARK - Iniciar live (padr+ï¿½o Buscast)
 
 // ===== ROUTE START =====
 router.post('/stark/live/start', async (req, res) => {
@@ -6299,7 +6299,7 @@ router.post('/stark/live/start', async (req, res) => {
 
 
 
-        // Valida+º+Áes b+ísicas
+        // Valida+ï¿½+ï¿½es b+ï¿½sicas
 
         if (!userId || !liveTitle || liveTitle.trim() === '') {
 
@@ -6307,7 +6307,7 @@ router.post('/stark/live/start', async (req, res) => {
 
                 code: 0,
 
-                msg: 'userId e title/name s+úo obrigat+¦rios'
+                msg: 'userId e title/name s+ï¿½o obrigat+ï¿½rios'
 
             });
 
@@ -6315,7 +6315,7 @@ router.post('/stark/live/start', async (req, res) => {
 
 
 
-        // Buscar usu+írio para verificar exist+¬ncia
+        // Buscar usu+ï¿½rio para verificar exist+ï¿½ncia
 
         const user = await User.findOne({ id: userId });
 
@@ -6325,7 +6325,7 @@ router.post('/stark/live/start', async (req, res) => {
 
                 code: 0,
 
-                msg: 'Usu+írio n+úo encontrado'
+                msg: 'Usu+ï¿½rio n+ï¿½o encontrado'
 
             });
 
@@ -6335,9 +6335,9 @@ router.post('/stark/live/start', async (req, res) => {
 
         // Gerar dados reais da live
 
-        const liveId = uuidv4(); // UUID +¦nico
+        const liveId = uuidv4(); // UUID +ï¿½nico
 
-        const streamId = `stream_${userId}_${uuidv4().substring(0, 8)}`; // streamId +¦nico
+        const streamId = `stream_${userId}_${uuidv4().substring(0, 8)}`; // streamId +ï¿½nico
 
         const srsHost = process.env.SRS_HOST || 'srs';
         const srsRtmp = `rtmp://${srsHost}:1935/live`;
@@ -6348,7 +6348,7 @@ router.post('/stark/live/start', async (req, res) => {
 
 
 
-        // Criar nova transmiss+úo
+        // Criar nova transmiss+ï¿½o
 
         const newLive = await Streamer.create({
 
@@ -6396,7 +6396,7 @@ router.post('/stark/live/start', async (req, res) => {
 
 
 
-        // Atualizar status do usu+írio
+        // Atualizar status do usu+ï¿½rio
 
         await User.findOneAndUpdate(
 
@@ -6460,8 +6460,8 @@ router.post('/stark/live/start', async (req, res) => {
 
 
 
-// Endpoint /api/streams/start - Cria registro provis+¦rio (isLive: false)
-// Frontend chama antes de capturar m+¡dia para obter streamKey e URLs
+// Endpoint /api/streams/start - Cria registro provis+ï¿½rio (isLive: false)
+// Frontend chama antes de capturar m+ï¿½dia para obter streamKey e URLs
 
 // ===== ROUTE START =====
 router.post('/streams/start', async (req, res) => {
@@ -6476,10 +6476,10 @@ router.post('/streams/start', async (req, res) => {
 
         const user = await User.findOne({ id: userId });
         if (!user) {
-            return res.status(404).json({ error: 'Usu+írio n+úo encontrado', status: 'user_not_found' });
+            return res.status(404).json({ error: 'Usu+ï¿½rio n+ï¿½o encontrado', status: 'user_not_found' });
         }
 
-        // Gerar streamKey +¦nica
+        // Gerar streamKey +ï¿½nica
         const streamKey = `live_${userId}_${Date.now()}`;
         const liveId = uuidv4();
 
@@ -6487,7 +6487,7 @@ router.post('/streams/start', async (req, res) => {
         const srsRtmp = `rtmp://${srsHost}:1935/live`;
         const backendApi = 'https://api.livego.store/api/video/http';
 
-        // Criar registro provis+¦rio ÔÇö isLive: false at+® SRS on_publish
+        // Criar registro provis+ï¿½rio ï¿½ï¿½ï¿½ isLive: false at+ï¿½ SRS on_publish
         const stream = await Streamer.create({
             id: liveId,
             hostId: userId,
@@ -6510,7 +6510,7 @@ router.post('/streams/start', async (req, res) => {
             chatEnabled: true
         });
 
-        console.log(`[STREAMS START] Stream provis+¦rio criado: ${streamKey} para usu+írio ${userId}`);
+        console.log(`[STREAMS START] Stream provis+ï¿½rio criado: ${streamKey} para usu+ï¿½rio ${userId}`);
 
         res.json({
             success: true,
@@ -6522,7 +6522,7 @@ router.post('/streams/start', async (req, res) => {
         });
 
     } catch (error: any) {
-        console.error('[STREAMS START] Erro ao criar stream provis+¦rio:', error);
+        console.error('[STREAMS START] Erro ao criar stream provis+ï¿½rio:', error);
         res.status(500).json({
             error: 'Erro interno ao criar stream',
             status: 'error',
@@ -6531,7 +6531,7 @@ router.post('/streams/start', async (req, res) => {
     }
 });
 
-// Endpoint /api/lives/start - Porteiro oficial da transmiss+úo
+// Endpoint /api/lives/start - Porteiro oficial da transmiss+ï¿½o
 // Frontend chama com { streamId } e espera { success: boolean }
 
 // ===== ROUTE START =====
@@ -6545,15 +6545,15 @@ router.post('/lives/start', async (req, res) => {
         const { streamId } = req.body;
 
         if (!streamId) {
-            return res.status(400).json({ error: 'streamId +® obrigat+¦rio', status: 'invalid_request' });
+            return res.status(400).json({ error: 'streamId +ï¿½ obrigat+ï¿½rio', status: 'invalid_request' });
         }
 
         const user = await User.findOne({ id: userId });
         if (!user) {
-            return res.status(404).json({ error: 'Usu+írio n+úo encontrado', status: 'user_not_found' });
+            return res.status(404).json({ error: 'Usu+ï¿½rio n+ï¿½o encontrado', status: 'user_not_found' });
         }
 
-        // Buscar stream existente por streamKey ou criar provis+¦rio
+        // Buscar stream existente por streamKey ou criar provis+ï¿½rio
         let stream = await Streamer.findOne({ streamKey: streamId });
         if (!stream) {
             stream = await Streamer.findOne({ id: streamId });
@@ -6565,7 +6565,7 @@ router.post('/lives/start', async (req, res) => {
         const now = new Date();
 
         if (!stream) {
-            // Criar registro provis+¦rio
+            // Criar registro provis+ï¿½rio
             const liveId = uuidv4();
             stream = await Streamer.create({
                 id: liveId,
@@ -6621,13 +6621,13 @@ router.get('/lives/:id', async (req, res) => {
 
         
 
-        console.log(`­ƒöì [DEBUG] Getting live details for streamer: ${id}`);
+        console.log(`ï¿½ï¿½ï¿½ï¿½ [DEBUG] Getting live details for streamer: ${id}`);
 
-        console.log(`­ƒöì [SECURITY] User-Agent: ${userAgent}, Referer: ${referer}`);
+        console.log(`ï¿½ï¿½ï¿½ï¿½ [SECURITY] User-Agent: ${userAgent}, Referer: ${referer}`);
 
         
 
-        // DETEC+ç+âO DE GRAVA+ç+âO - Verificar sinais de ferramentas de grava+º+úo
+        // DETEC+ï¿½+ï¿½O DE GRAVA+ï¿½+ï¿½O - Verificar sinais de ferramentas de grava+ï¿½+ï¿½o
 
         const recordingIndicators = [
 
@@ -6649,7 +6649,7 @@ router.get('/lives/:id', async (req, res) => {
 
         
 
-        // Verificar se +® acesso direto +á API (sem referer do app)
+        // Verificar se +ï¿½ acesso direto +ï¿½ API (sem referer do app)
 
         const isDirectApiAccess = !referer || (referer.includes('localhost') && userAgent.includes('curl'));
 
@@ -6663,7 +6663,7 @@ router.get('/lives/:id', async (req, res) => {
 
         if (!streamer) {
 
-            console.log(`ÔØî Streamer not found: ${id}`);
+            console.log(`ï¿½ï¿½ï¿½ Streamer not found: ${id}`);
 
             return res.status(404).json({ error: 'Streamer not found' });
 
@@ -6671,7 +6671,7 @@ router.get('/lives/:id', async (req, res) => {
 
 
 
-        // Transformar streamer para formato protegido usando mapper flex+¡vel
+        // Transformar streamer para formato protegido usando mapper flex+ï¿½vel
 
         const protectedStream = mapStreamToProtectedFlexible(streamer as any);
 
@@ -6679,7 +6679,7 @@ router.get('/lives/:id', async (req, res) => {
 
     } catch (error: any) {
 
-        console.error('ÔØî Error getting live details:', error);
+        console.error('ï¿½ï¿½ï¿½ Error getting live details:', error);
 
         res.status(500).json({ error: 'Internal server error' });
 
@@ -6700,7 +6700,7 @@ router.post('/lives/:id/end', async (req, res) => {
 
 
 
-        console.log(`[STREAM-END] Encerrando stream: ${realId} por usu+írio: ${userId}`);
+        console.log(`[STREAM-END] Encerrando stream: ${realId} por usu+ï¿½rio: ${userId}`);
 
 
 
@@ -6724,7 +6724,7 @@ router.post('/lives/:id/end', async (req, res) => {
 
 
 
-        // Atualizar status do usu+írio
+        // Atualizar status do usu+ï¿½rio
 
         await User.findOneAndUpdate(
 
@@ -6760,7 +6760,7 @@ router.post('/lives/:id/end', async (req, res) => {
 
 
 
-// GET /api/live/nearby - Streams pr+¦ximas por localiza+º+úo
+// GET /api/live/nearby - Streams pr+ï¿½ximas por localiza+ï¿½+ï¿½o
 
 // ===== ROUTE START =====
 router.get('/live/nearby', async (req, res) => {
@@ -6787,7 +6787,7 @@ router.get('/live/nearby', async (req, res) => {
 
 
 
-        // Buscar streams ativas pr+¦ximas usando geoLocation do host
+        // Buscar streams ativas pr+ï¿½ximas usando geoLocation do host
 
         const nearbyStreams = await Streamer.find({
 
@@ -6807,17 +6807,17 @@ router.get('/live/nearby', async (req, res) => {
 
 
 
-        // Filtrar streams que t+¬m host com localiza+º+úo pr+¦xima
+        // Filtrar streams que t+ï¿½m host com localiza+ï¿½+ï¿½o pr+ï¿½xima
 
         const validStreams = nearbyStreams.filter(stream => stream.hostId);
 
 
 
-        console.log(` [NEARBY STREAMS] ${validStreams.length} streams encontradas pr+¦ximas a (${lat}, ${lng})`);
+        console.log(` [NEARBY STREAMS] ${validStreams.length} streams encontradas pr+ï¿½ximas a (${lat}, ${lng})`);
 
 
 
-        // Retornar streams COM PROTE+ç+âO DE DADOS SENS+ìVEIS usando mapper flex+¡vel
+        // Retornar streams COM PROTE+ï¿½+ï¿½O DE DADOS SENS+ï¿½VEIS usando mapper flex+ï¿½vel
 
         const protectedActiveStreams = mapStreamsToProtectedArrayFlexible(validStreams as any);
 
@@ -6837,7 +6837,7 @@ router.get('/live/nearby', async (req, res) => {
 
 
 
-// GET /api/live/following - Streams de usu+írios que o usu+írio segue
+// GET /api/live/following - Streams de usu+ï¿½rios que o usu+ï¿½rio segue
 
 // ===== ROUTE START =====
 router.get('/live/following', async (req, res) => {
@@ -6856,7 +6856,7 @@ router.get('/live/following', async (req, res) => {
 
 
 
-        // Buscar usu+írio e seus seguidos
+        // Buscar usu+ï¿½rio e seus seguidos
 
         const User = await import('../models').then(m => m.User);
 
@@ -6872,7 +6872,7 @@ router.get('/live/following', async (req, res) => {
 
 
 
-        // Buscar IDs dos usu+írios que segue
+        // Buscar IDs dos usu+ï¿½rios que segue
 
         const followingIds = user.followingList || [];
 
@@ -6886,7 +6886,7 @@ router.get('/live/following', async (req, res) => {
 
 
 
-        // Buscar streams ativas dos usu+írios que segue
+        // Buscar streams ativas dos usu+ï¿½rios que segue
 
         const followingStreams = await Streamer.find({
 
@@ -6904,7 +6904,7 @@ router.get('/live/following', async (req, res) => {
 
 
 
-        console.log(`­ƒæÑ [FOLLOWING STREAMS] ${followingStreams.length} streams de usu+írios seguidos por ${userId}`);
+        console.log(`ï¿½ï¿½ï¿½ï¿½ [FOLLOWING STREAMS] ${followingStreams.length} streams de usu+ï¿½rios seguidos por ${userId}`);
 
 
 
@@ -6953,7 +6953,7 @@ router.get('/live/new', async (req, res) => {
 
 
 
-        console.log(`­ƒåò [NEW STREAMS] ${newStreams.length} streams mais recentes`);
+        console.log(`ï¿½ï¿½ï¿½ï¿½ [NEW STREAMS] ${newStreams.length} streams mais recentes`);
 
 
 
@@ -7006,7 +7006,7 @@ router.post('/streams/:id/like', async (req: express.Request, res: express.Respo
 
 
 
-        // Verificar se j+í deu like
+        // Verificar se j+ï¿½ deu like
 
         const existingLike = await StreamLike.findOne({ streamId, userId });
 
@@ -7211,7 +7211,7 @@ router.delete('/streams/:id/like', async (req: express.Request, res: express.Res
 
 
 
-// POST /api/streams/:streamId/end - Encerrar stream espec+¡fica por ID
+// POST /api/streams/:streamId/end - Encerrar stream espec+ï¿½fica por ID
 
 // ===== ROUTE START =====
 router.post('/streams/:streamId/end', async (req: express.Request, res: express.Response) => {
@@ -7230,7 +7230,7 @@ router.post('/streams/:streamId/end', async (req: express.Request, res: express.
 
                 success: false, 
 
-                message: 'Usu+írio n+úo autenticado' 
+                message: 'Usu+ï¿½rio n+ï¿½o autenticado' 
 
             });
 
@@ -7238,11 +7238,11 @@ router.post('/streams/:streamId/end', async (req: express.Request, res: express.
 
 
 
-        console.log(`[STREAM-END] Tentando encerrar stream: ${streamId} pelo usu+írio: ${userId}`);
+        console.log(`[STREAM-END] Tentando encerrar stream: ${streamId} pelo usu+ï¿½rio: ${userId}`);
 
 
 
-        // Buscar stream espec+¡fica
+        // Buscar stream espec+ï¿½fica
 
         const stream = await Streamer.findOne({ id: streamId });
 
@@ -7254,7 +7254,7 @@ router.post('/streams/:streamId/end', async (req: express.Request, res: express.
 
                 success: false, 
 
-                message: 'Stream n+úo encontrada' 
+                message: 'Stream n+ï¿½o encontrada' 
 
             });
 
@@ -7262,7 +7262,7 @@ router.post('/streams/:streamId/end', async (req: express.Request, res: express.
 
 
 
-        // Verificar se o usu+írio +® o dono da stream ou admin
+        // Verificar se o usu+ï¿½rio +ï¿½ o dono da stream ou admin
 
         const user = await findUserByAnyId(User, userId);
 
@@ -7278,7 +7278,7 @@ router.post('/streams/:streamId/end', async (req: express.Request, res: express.
 
                 success: false, 
 
-                message: 'Apenas o dono da stream ou administrador pode encerr+í-la' 
+                message: 'Apenas o dono da stream ou administrador pode encerr+ï¿½-la' 
 
             });
 
@@ -7286,7 +7286,7 @@ router.post('/streams/:streamId/end', async (req: express.Request, res: express.
 
 
 
-        // Verificar se stream est+í ativa
+        // Verificar se stream est+ï¿½ ativa
 
         if (!stream.isLive) {
 
@@ -7294,7 +7294,7 @@ router.post('/streams/:streamId/end', async (req: express.Request, res: express.
 
                 success: false, 
 
-                message: 'Stream j+í est+í encerrada' 
+                message: 'Stream j+ï¿½ est+ï¿½ encerrada' 
 
             });
 
@@ -7326,7 +7326,7 @@ router.post('/streams/:streamId/end', async (req: express.Request, res: express.
 
 
 
-        // Atualizar status do usu+írio se n+úo tiver outras streams ativas
+        // Atualizar status do usu+ï¿½rio se n+ï¿½o tiver outras streams ativas
 
         const otherActiveStreams = await Streamer.find({
 
@@ -7411,7 +7411,7 @@ router.post('/streams/:streamId/end', async (req: express.Request, res: express.
 
 
 
-// POST /api/streams/end-all - Encerrar todas as streams do usu+írio
+// POST /api/streams/end-all - Encerrar todas as streams do usu+ï¿½rio
 
 // ===== ROUTE START =====
 router.post('/streams/end-all', async (req: express.Request, res: express.Response) => {
@@ -7428,7 +7428,7 @@ router.post('/streams/end-all', async (req: express.Request, res: express.Respon
 
                 success: false, 
 
-                message: 'Usu+írio n+úo autenticado' 
+                message: 'Usu+ï¿½rio n+ï¿½o autenticado' 
 
             });
 
@@ -7436,11 +7436,11 @@ router.post('/streams/end-all', async (req: express.Request, res: express.Respon
 
 
 
-        console.log(`[STREAM-END-ALL] Encerrando todas as streams do usu+írio: ${userId}`);
+        console.log(`[STREAM-END-ALL] Encerrando todas as streams do usu+ï¿½rio: ${userId}`);
 
 
 
-        // Buscar todas as streams ativas do usu+írio
+        // Buscar todas as streams ativas do usu+ï¿½rio
 
         const activeStreams = await Streamer.find({
 
@@ -7458,7 +7458,7 @@ router.post('/streams/end-all', async (req: express.Request, res: express.Respon
 
                 success: false, 
 
-                message: 'Nenhuma stream ativa encontrada para este usu+írio' 
+                message: 'Nenhuma stream ativa encontrada para este usu+ï¿½rio' 
 
             });
 
@@ -7494,7 +7494,7 @@ router.post('/streams/end-all', async (req: express.Request, res: express.Respon
 
 
 
-        // Atualizar status do usu+írio
+        // Atualizar status do usu+ï¿½rio
 
         await User.findOneAndUpdate(
 
@@ -7514,7 +7514,7 @@ router.post('/streams/end-all', async (req: express.Request, res: express.Respon
 
 
 
-        console.log(`[STREAM-END-ALL] ${activeStreams.length} streams encerradas para usu+írio: ${userId}`);
+        console.log(`[STREAM-END-ALL] ${activeStreams.length} streams encerradas para usu+ï¿½rio: ${userId}`);
 
 
 
@@ -7573,7 +7573,7 @@ router.post('/streams/:streamId/heartbeat', async (req: express.Request, res: ex
 
                 success: false, 
 
-                message: 'Usu+írio n+úo autenticado' 
+                message: 'Usu+ï¿½rio n+ï¿½o autenticado' 
 
             });
 
@@ -7581,7 +7581,7 @@ router.post('/streams/:streamId/heartbeat', async (req: express.Request, res: ex
 
 
 
-        // Buscar stream espec+¡fica
+        // Buscar stream espec+ï¿½fica
 
         const stream = await Streamer.findOne({ id: streamId });
 
@@ -7593,7 +7593,7 @@ router.post('/streams/:streamId/heartbeat', async (req: express.Request, res: ex
 
                 success: false, 
 
-                message: 'Stream n+úo encontrada' 
+                message: 'Stream n+ï¿½o encontrada' 
 
             });
 
@@ -7601,7 +7601,7 @@ router.post('/streams/:streamId/heartbeat', async (req: express.Request, res: ex
 
 
 
-        // Verificar se o usu+írio +® o dono da stream
+        // Verificar se o usu+ï¿½rio +ï¿½ o dono da stream
 
         if (stream.hostId.toString() !== userId) {
 
@@ -7617,7 +7617,7 @@ router.post('/streams/:streamId/heartbeat', async (req: express.Request, res: ex
 
 
 
-        // Verificar se stream est+í ativa
+        // Verificar se stream est+ï¿½ ativa
 
         if (!stream.isLive) {
 
@@ -7625,7 +7625,7 @@ router.post('/streams/:streamId/heartbeat', async (req: express.Request, res: ex
 
                 success: false, 
 
-                message: 'Stream n+úo est+í ativa' 
+                message: 'Stream n+ï¿½o est+ï¿½ ativa' 
 
             });
 
@@ -7645,17 +7645,17 @@ router.post('/streams/:streamId/heartbeat', async (req: express.Request, res: ex
 
 
 
-        // Se viewer count for enviado, atualizar tamb+®m
+        // Se viewer count for enviado, atualizar tamb+ï¿½m
 
         if (req.body.viewers !== undefined && typeof req.body.viewers === 'number') {
 
-            updateData.viewers = Math.max(0, req.body.viewers); // Garantir n+¦mero n+úo negativo
+            updateData.viewers = Math.max(0, req.body.viewers); // Garantir n+ï¿½mero n+ï¿½o negativo
 
         }
 
 
 
-        // Se bandwidth for enviado, atualizar tamb+®m (campo n+úo existe no modelo, removido por enquanto)
+        // Se bandwidth for enviado, atualizar tamb+ï¿½m (campo n+ï¿½o existe no modelo, removido por enquanto)
 
         // if (req.body.bandwidth !== undefined && typeof req.body.bandwidth === 'number') {
 
@@ -7687,7 +7687,7 @@ router.post('/streams/:streamId/heartbeat', async (req: express.Request, res: ex
 
             viewers: updateData.viewers || stream.viewers || 0
 
-            // bandwidth removido - campo n+úo existe no modelo
+            // bandwidth removido - campo n+ï¿½o existe no modelo
 
         });
 
@@ -7715,11 +7715,11 @@ router.post('/streams/:streamId/heartbeat', async (req: express.Request, res: ex
 
 
 
-// === ROTAS DE ADMINISTRA+ç+âO ===
+// === ROTAS DE ADMINISTRA+ï¿½+ï¿½O ===
 
 
 
-// POST /api/admin/streams/:streamId/force-end - For+ºar encerramento (admin)
+// POST /api/admin/streams/:streamId/force-end - For+ï¿½ar encerramento (admin)
 
 // ===== ROUTE START =====
 router.post('/admin/streams/:streamId/force-end', async (req: express.Request, res: express.Response) => {
@@ -7740,7 +7740,7 @@ router.post('/admin/streams/:streamId/force-end', async (req: express.Request, r
 
                 success: false, 
 
-                message: 'Usu+írio n+úo autenticado' 
+                message: 'Usu+ï¿½rio n+ï¿½o autenticado' 
 
             });
 
@@ -7748,7 +7748,7 @@ router.post('/admin/streams/:streamId/force-end', async (req: express.Request, r
 
 
 
-        // Verificar se +® admin
+        // Verificar se +ï¿½ admin
 
         const user = await findUserByAnyId(User, userId);
 
@@ -7758,7 +7758,7 @@ router.post('/admin/streams/:streamId/force-end', async (req: express.Request, r
 
                 success: false, 
 
-                message: 'Acesso negado. Apenas administradores podem for+ºar encerramento' 
+                message: 'Acesso negado. Apenas administradores podem for+ï¿½ar encerramento' 
 
             });
 
@@ -7766,7 +7766,7 @@ router.post('/admin/streams/:streamId/force-end', async (req: express.Request, r
 
 
 
-        console.log(`[ADMIN-FORCE-END] Admin ${userId} for+ºando encerramento da stream: ${streamId}`);
+        console.log(`[ADMIN-FORCE-END] Admin ${userId} for+ï¿½ando encerramento da stream: ${streamId}`);
 
 
 
@@ -7782,7 +7782,7 @@ router.post('/admin/streams/:streamId/force-end', async (req: express.Request, r
 
                 success: false, 
 
-                message: 'Stream n+úo encontrada' 
+                message: 'Stream n+ï¿½o encontrada' 
 
             });
 
@@ -7790,7 +7790,7 @@ router.post('/admin/streams/:streamId/force-end', async (req: express.Request, r
 
 
 
-        // For+ºar encerramento
+        // For+ï¿½ar encerramento
 
         await Streamer.findOneAndUpdate(
 
@@ -7808,7 +7808,7 @@ router.post('/admin/streams/:streamId/force-end', async (req: express.Request, r
 
                 endedByAdmin: userId,
 
-                endReason: reason || 'Encerramento for+ºado por administrador',
+                endReason: reason || 'Encerramento for+ï¿½ado por administrador',
 
                 endedAt: new Date()
 
@@ -7818,7 +7818,7 @@ router.post('/admin/streams/:streamId/force-end', async (req: express.Request, r
 
 
 
-        // Atualizar status do usu+írio se n+úo tiver outras streams ativas
+        // Atualizar status do usu+ï¿½rio se n+ï¿½o tiver outras streams ativas
 
         const otherActiveStreams = await Streamer.find({
 
@@ -7854,7 +7854,7 @@ router.post('/admin/streams/:streamId/force-end', async (req: express.Request, r
 
 
 
-        console.log(`[ADMIN-FORCE-END] Stream ${streamId} encerrada for+ºadamente pelo admin ${userId}`);
+        console.log(`[ADMIN-FORCE-END] Stream ${streamId} encerrada for+ï¿½adamente pelo admin ${userId}`);
 
 
 
@@ -7862,7 +7862,7 @@ router.post('/admin/streams/:streamId/force-end', async (req: express.Request, r
 
             success: true,
 
-            message: 'Stream encerrada for+ºadamente com sucesso',
+            message: 'Stream encerrada for+ï¿½adamente com sucesso',
 
             streamId: streamId,
 
@@ -7870,7 +7870,7 @@ router.post('/admin/streams/:streamId/force-end', async (req: express.Request, r
 
             endedByAdmin: userId,
 
-            endReason: reason || 'Encerramento for+ºado por administrador',
+            endReason: reason || 'Encerramento for+ï¿½ado por administrador',
 
             endedAt: new Date().toISOString()
 
@@ -7882,13 +7882,13 @@ router.post('/admin/streams/:streamId/force-end', async (req: express.Request, r
 
         const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
 
-        console.error('[ADMIN-FORCE-END] Erro ao for+ºar encerramento:', error);
+        console.error('[ADMIN-FORCE-END] Erro ao for+ï¿½ar encerramento:', error);
 
         res.status(500).json({ 
 
             success: false, 
 
-            message: 'Erro interno ao for+ºar encerramento',
+            message: 'Erro interno ao for+ï¿½ar encerramento',
 
             error: errorMessage
 
@@ -7900,7 +7900,7 @@ router.post('/admin/streams/:streamId/force-end', async (req: express.Request, r
 
 
 
-// GET /api/admin/streams/zombie-stats - Estat+¡sticas de streams zumbis
+// GET /api/admin/streams/zombie-stats - Estat+ï¿½sticas de streams zumbis
 
 // ===== ROUTE START =====
 router.get('/admin/streams/zombie-stats', async (req: express.Request, res: express.Response) => {
@@ -7917,7 +7917,7 @@ router.get('/admin/streams/zombie-stats', async (req: express.Request, res: expr
 
                 success: false, 
 
-                message: 'Usu+írio n+úo autenticado' 
+                message: 'Usu+ï¿½rio n+ï¿½o autenticado' 
 
             });
 
@@ -7925,7 +7925,7 @@ router.get('/admin/streams/zombie-stats', async (req: express.Request, res: expr
 
 
 
-        // Verificar se +® admin
+        // Verificar se +ï¿½ admin
 
         const user = await findUserByAnyId(User, userId);
 
@@ -7935,7 +7935,7 @@ router.get('/admin/streams/zombie-stats', async (req: express.Request, res: expr
 
                 success: false, 
 
-                message: 'Acesso negado. Apenas administradores podem ver estat+¡sticas' 
+                message: 'Acesso negado. Apenas administradores podem ver estat+ï¿½sticas' 
 
             });
 
@@ -7943,13 +7943,13 @@ router.get('/admin/streams/zombie-stats', async (req: express.Request, res: expr
 
 
 
-        // Servi+ºo de limpeza de streams zumbis removido
+        // Servi+ï¿½o de limpeza de streams zumbis removido
 
         res.json({
 
             success: true,
 
-            message: 'Servi+ºo de limpeza de streams zumbis foi desativado',
+            message: 'Servi+ï¿½o de limpeza de streams zumbis foi desativado',
 
             stats: { active: 0, zombie: 0, cleaned: 0 }
 
@@ -7961,13 +7961,13 @@ router.get('/admin/streams/zombie-stats', async (req: express.Request, res: expr
 
         const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
 
-        console.error('[ADMIN-ZOMBIE-STATS] Erro ao obter estat+¡sticas:', error);
+        console.error('[ADMIN-ZOMBIE-STATS] Erro ao obter estat+ï¿½sticas:', error);
 
         res.status(500).json({ 
 
             success: false, 
 
-            message: 'Erro interno ao obter estat+¡sticas',
+            message: 'Erro interno ao obter estat+ï¿½sticas',
 
             error: errorMessage
 
@@ -7996,7 +7996,7 @@ router.post('/admin/streams/cleanup-zombies', async (req: express.Request, res: 
 
                 success: false, 
 
-                message: 'Usu+írio n+úo autenticado' 
+                message: 'Usu+ï¿½rio n+ï¿½o autenticado' 
 
             });
 
@@ -8004,7 +8004,7 @@ router.post('/admin/streams/cleanup-zombies', async (req: express.Request, res: 
 
 
 
-        // Verificar se +® admin
+        // Verificar se +ï¿½ admin
 
         const user = await findUserByAnyId(User, userId);
 
@@ -8026,13 +8026,13 @@ router.post('/admin/streams/cleanup-zombies', async (req: express.Request, res: 
 
 
 
-        // Servi+ºo de limpeza de streams zumbis foi removido
+        // Servi+ï¿½o de limpeza de streams zumbis foi removido
 
         res.json({
 
             success: true,
 
-            message: 'Servi+ºo de limpeza de streams zumbis foi desativado',
+            message: 'Servi+ï¿½o de limpeza de streams zumbis foi desativado',
 
             stats: { active: 0, zombie: 0, cleaned: 0 },
 
@@ -8072,7 +8072,7 @@ router.post('/admin/streams/cleanup-zombies', async (req: express.Request, res: 
 
 
 
-// POST /api/streams/prepare - Preparar live (cria registro mas n+úo inicia transmiss+úo)
+// POST /api/streams/prepare - Preparar live (cria registro mas n+ï¿½o inicia transmiss+ï¿½o)
 
 // ===== ROUTE START =====
 router.post('/streams/prepare', async (req, res) => {
@@ -8091,7 +8091,7 @@ router.post('/streams/prepare', async (req, res) => {
 
                 success: false, 
 
-                message: 'Usu+írio n+úo autenticado' 
+                message: 'Usu+ï¿½rio n+ï¿½o autenticado' 
 
             });
 
@@ -8104,7 +8104,7 @@ router.post('/streams/prepare', async (req, res) => {
         // Aceitar tanto 'name' quanto 'title' - priorizar 'title' se ambos existirem
         const liveTitle = title || name;
 
-        // Valida+º+Áes b+ísicas
+        // Valida+ï¿½+ï¿½es b+ï¿½sicas
 
         if (!liveTitle || liveTitle.trim() === '') {
 
@@ -8112,7 +8112,7 @@ router.post('/streams/prepare', async (req, res) => {
 
                 success: false, 
 
-                message: 'T+¡tulo da live +® obrigat+¦rio (use "name" ou "title")' 
+                message: 'T+ï¿½tulo da live +ï¿½ obrigat+ï¿½rio (use "name" ou "title")' 
 
             });
 
@@ -8120,7 +8120,7 @@ router.post('/streams/prepare', async (req, res) => {
 
 
 
-        // Buscar usu+írio
+        // Buscar usu+ï¿½rio
 
         const user = await User.findOne({ id: userId });
 
@@ -8130,7 +8130,7 @@ router.post('/streams/prepare', async (req, res) => {
 
                 success: false, 
 
-                message: 'Usu+írio n+úo encontrado' 
+                message: 'Usu+ï¿½rio n+ï¿½o encontrado' 
 
             });
 
@@ -8146,7 +8146,7 @@ router.post('/streams/prepare', async (req, res) => {
 
 
 
-        // Configura+º+Áes SRS
+        // Configura+ï¿½+ï¿½es SRS
 
         const srsHost = process.env.SRS_HOST || '72.60.249.175';
 
@@ -8209,7 +8209,7 @@ router.post('/streams/prepare', async (req, res) => {
 
 
 
-        console.log(`[STREAM-PREPARE] Live preparada: ${streamId} para usu+írio ${userId}`);
+        console.log(`[STREAM-PREPARE] Live preparada: ${streamId} para usu+ï¿½rio ${userId}`);
 
 
 
@@ -8261,14 +8261,14 @@ router.post('/streams/prepare', async (req, res) => {
 
 
 
-// POST /api/streams/:id/start - Iniciar transmiss+úo (marcar como ativa)
+// POST /api/streams/:id/start - Iniciar transmiss+ï¿½o (marcar como ativa)
 
 // ===== ROUTE START =====
 router.post('/streams/:id/start', async (req, res) => {
 
     try {
 
-        console.log('[STREAM-START] Iniciando transmiss+úo...');
+        console.log('[STREAM-START] Iniciando transmiss+ï¿½o...');
 
         
 
@@ -8280,7 +8280,7 @@ router.post('/streams/:id/start', async (req, res) => {
 
                 success: false, 
 
-                message: 'Usu+írio n+úo autenticado' 
+                message: 'Usu+ï¿½rio n+ï¿½o autenticado' 
 
             });
 
@@ -8302,7 +8302,7 @@ router.post('/streams/:id/start', async (req, res) => {
 
                 success: false, 
 
-                message: 'Stream n+úo encontrado' 
+                message: 'Stream n+ï¿½o encontrado' 
 
             });
 
@@ -8310,7 +8310,7 @@ router.post('/streams/:id/start', async (req, res) => {
 
 
 
-        // Verificar se j+í est+í ativa
+        // Verificar se j+ï¿½ est+ï¿½ ativa
 
         if (stream.isLive && stream.streamStatus === 'active') {
 
@@ -8318,7 +8318,7 @@ router.post('/streams/:id/start', async (req, res) => {
 
                 success: false, 
 
-                message: 'Stream j+í est+í ativa' 
+                message: 'Stream j+ï¿½ est+ï¿½ ativa' 
 
             });
 
@@ -8338,7 +8338,7 @@ router.post('/streams/:id/start', async (req, res) => {
 
 
 
-        // Atualizar usu+írio
+        // Atualizar usu+ï¿½rio
 
         await User.findOneAndUpdate(
 
@@ -8360,7 +8360,7 @@ router.post('/streams/:id/start', async (req, res) => {
 
 
 
-        // Atualizar status online na cole+º+úo userstatuses
+        // Atualizar status online na cole+ï¿½+ï¿½o userstatuses
 
         const { UserStatus } = await import('../models');
 
@@ -8384,7 +8384,7 @@ router.post('/streams/:id/start', async (req, res) => {
 
 
 
-        console.log(`[STREAM-START] Stream ${id} iniciada para usu+írio ${userId}`);
+        console.log(`[STREAM-START] Stream ${id} iniciada para usu+ï¿½rio ${userId}`);
 
 
 

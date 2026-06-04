@@ -4,7 +4,6 @@ import path from 'path';
 import fs from 'fs';
 import { User, ProfilePhoto, Streamer } from '../models';
 import { protect, getUserIdFromToken } from '../middleware/auth';
-import { getAvatarUrl, getPhotoUrl, getChatImageUrl } from '../config/urls';
 
 const router = express.Router();
 
@@ -21,10 +20,11 @@ const avatarStorage = multer.diskStorage({
         cb(null, uploadDir);
     },
     filename: (req, file, cb) => {
-        // Gerar nome único: timestamp.extensão
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        // Obter userId do token ou do param da URL
+        const userId = req.params?.userId || (req as any).user?.id || getUserIdFromToken(req) || 'unknown';
+        const timestamp = Date.now();
         const ext = path.extname(file.originalname);
-        cb(null, `avatar_${uniqueSuffix}${ext}`);
+        cb(null, `avatar_${userId}_${timestamp}${ext}`);
     }
 });
 
@@ -98,8 +98,11 @@ router.post('/avatar', protect, avatarUpload.single('avatar'), async (req, res) 
             });
         }
 
-        // Construir URL da imagem (usar configuração dinâmica)
-        const avatarUrl = getAvatarUrl(req.file.filename);
+        // Construir URL da imagem dinamicamente a partir da requisição
+        const proto = req.headers['x-forwarded-proto'] as string || req.protocol || 'https';
+        const host = req.headers['x-forwarded-host'] as string || req.get('host') || 'api.livego.store';
+        const baseUrl = `${proto}://${host}`;
+        const avatarUrl = `${baseUrl}/uploads/avatars/${req.file.filename}`;
         
         console.log(`📸 Upload de avatar para usuário ${userId}: ${avatarUrl}`);
 
@@ -230,8 +233,11 @@ router.post('/avatar/:userId', avatarUpload.single('avatar'), async (req, res) =
             });
         }
 
-        // Construir URL da imagem (usar configuração dinâmica)
-        const avatarUrl = getAvatarUrl(req.file.filename);
+        // Construir URL da imagem dinamicamente a partir da requisição
+        const proto = req.headers['x-forwarded-proto'] as string || req.protocol || 'https';
+        const host = req.headers['x-forwarded-host'] as string || req.get('host') || 'api.livego.store';
+        const baseUrl = `${proto}://${host}`;
+        const avatarUrl = `${baseUrl}/uploads/avatars/${req.file.filename}`;
         
         console.log(`[UPLOAD] Avatar para usuário ${userId}: ${avatarUrl}`);
 
@@ -362,7 +368,8 @@ router.post('/cover/:id', coverUpload.single('cover'), async (req, res) => {
         }
 
         const proto = req.headers['x-forwarded-proto'] as string || req.protocol || 'https';
-        const baseUrl = process.env.BASE_URL || `${proto}://${req.get('host') || 'livego.store'}`;
+        const host = req.headers['x-forwarded-host'] as string || req.get('host') || 'api.livego.store';
+        const baseUrl = `${proto}://${host}`;
         const coverUrl = `${baseUrl}/uploads/covers/${req.file.filename}`;
 
         const stream = await Streamer.findOneAndUpdate(
@@ -394,7 +401,8 @@ router.post('/chat', protect, chatUpload.single('image'), async (req, res) => {
         }
 
         const proto = req.headers['x-forwarded-proto'] as string || req.protocol || 'https';
-        const baseUrl = process.env.BASE_URL || `${proto}://${req.get('host') || 'livego.store'}`;
+        const host = req.headers['x-forwarded-host'] as string || req.get('host') || 'api.livego.store';
+        const baseUrl = `${proto}://${host}`;
         const imageUrl = `${baseUrl}/uploads/chat/${req.file.filename}`;
         
         console.log(`📸 Upload de imagem para chat: ${imageUrl}`);

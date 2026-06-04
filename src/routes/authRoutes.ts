@@ -57,8 +57,13 @@ router.post('/register', async (req, res) => {
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
-        // Campos de stream serão gerados após criação do usuário usando _id
-        // Não gerar ID manual - usar _id do MongoDB
+        // Gerar ID único de 8 dígitos para compatibilidade com idHelper
+        let newUserId: string;
+        let idExists = false;
+        do {
+            newUserId = Math.floor(10000000 + Math.random() * 90000000).toString();
+            idExists = await User.findOne({ id: newUserId });
+        } while (idExists);
 
         // Função para normalizar tags
         const normalizeTags = (tags: any): string[] => {
@@ -76,7 +81,7 @@ router.post('/register', async (req, res) => {
         // Filtrar campos para evitar sobrescrever valores padrão
         const userData: any = {
             // APENAS CAMPOS ESSENCIAIS NO CADASTRO
-            // id será gerado pelo MongoDB (_id)
+            id: newUserId, // ID real gerado automaticamente (não MongoDB _id)
             identification: "pending", // Será atualizado após criação
             name: name?.trim() || "",
             email: email?.trim().toLowerCase() || "",

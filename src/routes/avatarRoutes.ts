@@ -240,8 +240,11 @@ router.post('/users/:id/avatar-upload', async (req, res) => {
       return res.status(404).json({ error: 'Usuário não encontrado' });
     }
     
-    // Gerar URL da imagem (usar configuração dinâmica)
-    const avatarUrl = getAvatarUrl(req.file.filename);
+    // Gerar URL da imagem dinamicamente a partir da requisição
+    const proto = req.headers['x-forwarded-proto'] as string || req.protocol || 'https';
+    const host = req.headers['x-forwarded-host'] as string || req.get('host') || 'api.livego.store';
+    const baseUrl = `${proto}://${host}`;
+    const avatarUrl = `${baseUrl}/uploads/avatars/${req.file.filename}`;
     
     // Adicionar ao array de avatarImages
     if (!user.avatarImages) {

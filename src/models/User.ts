@@ -93,7 +93,7 @@ const UserSchema: Schema = new Schema({
   name: { type: String, required: true },
   displayName: { type: String },
   avatar: { type: String },
-  avatarUrl: { type: String, required: true },
+  avatarUrl: { type: String, default: '' },
   coverUrl: { type: String },
   streamServerUrl: { type: String },
   rtmpIngestUrl: { type: String },
