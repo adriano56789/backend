@@ -2014,6 +2014,7 @@ router.post('/live/clear', async (req, res) => {
             { id: userId },
             { $set: { 
                 isLive: false, 
+                isOnline: false,
                 currentStreamId: null 
             } }
         );
@@ -2996,22 +2997,14 @@ router.post('/streams/:id/end', async (req, res) => {
 
 
         // Atualizar usuário
-
         await User.findOneAndUpdate(
-
             { id: userId },
-
             { $set: { 
-
                 isLive: false, 
-
+                isOnline: false,
                 currentStreamId: null
-
             } }
-
         );
-
-
 
         console.log(`[STREAM-END] Stream ${id} finalizada para usuário ${userId}`);
 
@@ -3270,21 +3263,14 @@ router.post('/end-session', async (req, res) => {
 
 
         // Atualizar usuário
-
         await User.findOneAndUpdate(
-
             { id: userId },
-
             { $set: { 
-
                 isLive: false, 
-
+                isOnline: false,
                 currentStreamId: null 
-
             } }
         );
-
-
 
         console.log(`[END-SESSION] Sessão encerrada para usuário ${userId}. Streams afetadas: ${result.modifiedCount}`);
 
@@ -3424,7 +3410,8 @@ router.delete('/rtc/v1/stop', async (req, res) => {
         await User.findOneAndUpdate(
             { id: userId },
             { $set: { 
-                isLive: false, 
+                isLive: false,
+                isOnline: false,
                 // MANTER currentStreamId para permitir reconexão
                 // currentStreamId: null, 
                 lastSeen: new Date().toISOString()
@@ -3801,6 +3788,11 @@ router.post('/:streamId/end', async (req, res) => {
       return ResponseHelper.error(res, 'Live não encontrada ou sem permissão', 404);
     }
 
+    await User.findOneAndUpdate(
+      { id: userId },
+      { $set: { isLive: false, isOnline: false, currentStreamId: null } }
+    );
+
     console.log(`🛑 [SRS] Live finalizada: streamId=${streamId}, userId=${userId}`);
 
     ResponseHelper.success(res, { message: 'Live finalizada com sucesso' });
@@ -4015,19 +4007,13 @@ router.post('/live/end', async (req, res) => {
         // Atualizar status do usu+�rio + persistir atividade
 
         await User.findOneAndUpdate(
-
             { id: userId },
-
             {
-
                 $set: {
-
                     isLive: false,
-
+                    isOnline: false,
                     currentStreamId: null
-
                 },
-
                 $push: { 
                     recentActivities: {
                         action: 'live_end',
@@ -4036,12 +4022,8 @@ router.post('/live/end', async (req, res) => {
                         endpoint: '/api/live/end'
                     }
                 }
-
             }
-
         );
-
-
 
         // Notificar viewers via Socket.IO
         const io = req.app.get('io');
@@ -5421,19 +5403,13 @@ router.post('/streams/:id/end-session', async (req, res) => {
             if (userId) {
 
                 await User.findOneAndUpdate(
-
                     { id: userId },
-
-                    {
-
+                    { $set: {
                         isLive: false,
-
+                        isOnline: false,
                         currentStreamId: null,
-
                         lastSeen: new Date().toISOString()
-
-                    }
-
+                    } }
                 );
 
                 console.log(`ԣ� Estado do usu+�rio ${userId} limpo mesmo sem stream encontrada`);
@@ -5577,18 +5553,12 @@ router.post('/streams/:id/end-session', async (req, res) => {
             const User = await import('../models').then(m => m.User);
 
             updatedUser = await User.findOneAndUpdate(
-
                 { id: stream.hostId },
-
-                { isLive: false },
-
+                { $set: { isLive: false, isOnline: false, currentStreamId: null } },
                 { new: true }
-
             );
-
             if (!updatedUser) {
-
-                console.warn(`��ᴩ� Usu+�rio ${stream.hostId} n+�o encontrado para atualizar`);
+                console.warn(`⚠️ Usuário ${stream.hostId} não encontrado para atualizar`);
 
             }
 
@@ -6727,22 +6697,14 @@ router.post('/lives/:id/end', async (req, res) => {
         // Atualizar status do usu+�rio
 
         await User.findOneAndUpdate(
-
             { id: userId },
-
-            {
-
+            { $set: {
                 isLive: false,
-
+                isOnline: false,
                 currentStreamId: null,
-
                 lastSeen: new Date()
-
-            }
-
+            } }
         );
-
-
 
         return successResponse(res, 'Stream encerrada com sucesso');
 
@@ -7341,26 +7303,16 @@ router.post('/streams/:streamId/end', async (req: express.Request, res: express.
 
 
         if (otherActiveStreams.length === 0) {
-
             await User.findOneAndUpdate(
-
-                { _id: stream.hostId },
-
-                {
-
+                { id: stream.hostId },
+                { $set: {
                     isLive: false,
-
+                    isOnline: false,
                     currentStreamId: null,
-
                     lastSeen: new Date()
-
-                }
-
+                } }
             );
-
         }
-
-
 
         console.log(`[STREAM-END] Stream ${streamId} encerrada com sucesso por ${isOwner ? 'dono' : 'admin'}`);
 
@@ -7494,27 +7446,18 @@ router.post('/streams/end-all', async (req: express.Request, res: express.Respon
 
 
 
-        // Atualizar status do usu+�rio
-
+        // Atualizar status do usuário
         await User.findOneAndUpdate(
-
             { id: userId },
-
-            {
-
+            { $set: {
                 isLive: false,
-
+                isOnline: false,
                 currentStreamId: null,
-
                 lastSeen: new Date()
-
-            }
-
+            } }
         );
 
-
-
-        console.log(`[STREAM-END-ALL] ${activeStreams.length} streams encerradas para usu+�rio: ${userId}`);
+        console.log(`[STREAM-END-ALL] ${activeStreams.length} streams encerradas para usuário: ${userId}`);
 
 
 
@@ -7833,28 +7776,18 @@ router.post('/admin/streams/:streamId/force-end', async (req: express.Request, r
 
 
         if (otherActiveStreams.length === 0) {
-
             await User.findOneAndUpdate(
-
-                { _id: stream.hostId },
-
-                {
-
+                { id: stream.hostId },
+                { $set: {
                     isLive: false,
-
+                    isOnline: false,
                     currentStreamId: null,
-
                     lastSeen: new Date()
-
-                }
-
+                } }
             );
-
         }
 
-
-
-        console.log(`[ADMIN-FORCE-END] Stream ${streamId} encerrada for+�adamente pelo admin ${userId}`);
+        console.log(`[ADMIN-FORCE-END] Stream ${streamId} encerrada for�adamente pelo admin ${userId}`);
 
 
 

@@ -195,34 +195,21 @@ if (ENV.MQTT_ENABLED) {
 }
 
 connectDB().then(async () => {
-    console.log('🗄️ [DB] Banco conectado - sem inicialização automática');
-
-    // Inicializar Protobuf no backend
     await BackendProtobufService.init();
-    console.log('📦 [BACKEND-PROTOBUF] Sistema de serialização binária inicializado');
-
-    // Inicializar sistema de atividades
     initializeActivityHooks();
-    console.log('📊 [ACTIVITY] Sistema de logging de atividades inicializado');
-
-    // Inicializar serviço de eventos de atividades
     activityEventService.initialize(io);
-    console.log('🔔 [ACTIVITY] Serviço de eventos de atividades inicializado');
 
-    // REMOVIDO: Inicialização automática do banco
-    // await initializeDatabase(); // NÃO EXECUTAR AUTOMATICAMENTE
-
-    console.log('✅ [DB] Sistema pronto - banco conectado!');
-
-    // REMOVIDO: Sistema de automação que pode criar dados
-    // const verification = await quickAutomationCheck();
-    // console.log(`🔍 [VERIFY] Status: ${verification.successRate}% automático (${verification.errorsCount} erros)`);
+    server.listen(port, '0.0.0.0', () => {
+        console.log(`🌍 API Server started on http://0.0.0.0:${port}`);
+    });
 }).catch(error => {
-    console.error('❌ [DB] Erro ao conectar banco:', error.message);
+    console.error('❌ [DB] Falha na conexão com MongoDB:', error.message);
     if (!isDev) {
         process.exit(1);
     } else {
-        console.warn('⚠️  [DEV] Continuando execução sem banco de dados (recursos limitados).');
+        server.listen(port, '0.0.0.0', () => {
+            console.log(`🌍 API Server started on http://0.0.0.0:${port} (SEM BANCO)`);
+        });
     }
 });
 
@@ -1447,20 +1434,6 @@ export const getIO = () => io;
 
 // 🔧 DESATIVADO: Não executar limpeza automática para proteger diamantes
 // setInterval(cleanupInactiveStreams, 5 * 60 * 1000); // 5 minutos
-
-// Iniciar servidor API na porta 3000
-server.listen(port, '0.0.0.0', () => {
-    const protocol = isHttps ? 'https' : 'http';
-    console.log(`🌍 API Server started on ${protocol}://0.0.0.0:${port}`);
-    console.log(`🔗 Domínio oficial: https://livego.store`);
-
-    // 🚀 INICIAR SISTEMA DE AUTOMAÇÃO FINANCEIRA
-    console.log('💰 [FINANCIAL] Iniciando sistema de automação financeira...');
-    console.log('   ✅ Webhook Mercado Pago ativo');
-    console.log('   ✅ Saques automáticos ativos');
-    console.log('   ✅ Verificação periódica ativa');
-    console.log('   ✅ Distribuição 80/20 automática');
-});
 
 // Iniciar servidor WebSocket na porta 3001 separadamente
 let wsServer: http.Server | https.Server;

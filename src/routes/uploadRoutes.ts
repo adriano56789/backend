@@ -151,8 +151,10 @@ router.post('/avatar', protect, avatarUpload.single('avatar'), async (req, res) 
             );
         } else {
             // Criar novo avatar
+            const obraId = `avatar_${Date.now()}_${userId}`;
             newPhoto = await ProfilePhoto.create({
                 userId,
+                obraId,
                 photoUrl: avatarUrl,
                 photoType: 'avatar',
                 isMain: true,

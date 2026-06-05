@@ -96,7 +96,7 @@ router.post('/unpublish', async (req, res) => {
         if (updated) {
             await User.findOneAndUpdate(
                 { id: updated.hostId },
-                { $set: { isLive: false, currentStreamId: null } }
+                { $set: { isLive: false, isOnline: false, currentStreamId: null } }
             );
         }
 

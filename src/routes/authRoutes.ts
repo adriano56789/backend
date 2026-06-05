@@ -65,6 +65,8 @@ router.post('/register', async (req, res) => {
             idExists = await User.findOne({ id: newUserId });
         } while (idExists);
 
+        console.log(`[REGISTER] ID gerado: ${newUserId} (${newUserId.length} dígitos)`);
+
         // Função para normalizar tags
         const normalizeTags = (tags: any): string[] => {
             if (!tags) return [];
@@ -131,6 +133,7 @@ router.post('/register', async (req, res) => {
         // Campos de stream são gerados automaticamente após criação - não verificar aqui
 
         const user = await User.create(userData);
+        console.log(`[REGISTER] User created: id=${user.id} (${user.id.length} chars), identification=${user.identification} (${user.identification?.length} chars)`);
 
         // Gerar campos de stream usando o id manual
         const streamKey = `stream_${user.id}`;
