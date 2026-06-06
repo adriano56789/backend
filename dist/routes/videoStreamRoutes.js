@@ -129,7 +129,7 @@ router.post('/stream/stop', async (req, res) => {
         // Atualizar status do stream
         await Streamer_1.Streamer.findOneAndUpdate({ id: streamId }, { $set: { isLive: false, streamStatus: 'ended', endTime: new Date() } });
         // Atualizar status do usuário
-        await User_1.User.findOneAndUpdate({ id: userId }, { $set: { isLive: false, currentStreamId: null, lastStreamEnd: new Date() } });
+        await User_1.User.findOneAndUpdate({ id: userId }, { $set: { isLive: false, isOnline: false, currentStreamId: null, lastStreamEnd: new Date() } });
         console.log('[VIDEO-STREAM] Stream parado com sucesso:', {
             streamId,
             userId

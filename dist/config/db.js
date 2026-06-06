@@ -16,10 +16,8 @@ const connectDB = async () => {
     try {
         const conn = await mongoose_1.default.connect(uri, {
             dbName: dbName,
-            serverSelectionTimeoutMS: 5000,
+            serverSelectionTimeoutMS: 15000,
         });
-        const sanitizedUri = uri.replace(/\/\/[^:]+:[^@]+@/, '//***:***@');
-        console.log(`✅ [DB] Mongoose Conectado: ${sanitizedUri} (Banco: ${dbName})`);
         return conn;
     }
     catch (error) {

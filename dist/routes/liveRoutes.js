@@ -948,6 +948,7 @@ router.post('/live/clear', async (req, res) => {
         // Atualizar status do usuário
         await index_1.User.findOneAndUpdate({ id: userId }, { $set: {
                 isLive: false,
+                isOnline: false,
                 currentStreamId: null
             } });
         console.log(`[LIVE-CLEAR] ${clearedStreams.length} lives limpas: ${clearedStreams.join(', ')}`);
@@ -1467,6 +1468,8 @@ router.post('/streams/:id/join', async (req, res) => {
         }
         // Incrementar viewers (simples, poderia melhorar com Redis)
         await index_1.Streamer.findOneAndUpdate({ id }, { $inc: { viewers: 1 } });
+        // Atualizar currentStreamId do usuário
+        await index_1.User.findOneAndUpdate({ id: userId }, { $set: { currentStreamId: id, isOnline: true } });
         console.log(`[STREAM-JOIN] Usuário ${userId} entrou na live ${id}`);
         res.json({
             success: true,
@@ -1591,6 +1594,7 @@ router.post('/streams/:id/end', async (req, res) => {
         // Atualizar usuário
         await index_1.User.findOneAndUpdate({ id: userId }, { $set: {
                 isLive: false,
+                isOnline: false,
                 currentStreamId: null
             } });
         console.log(`[STREAM-END] Stream ${id} finalizada para usuário ${userId}`);
@@ -1619,6 +1623,7 @@ router.post('/streams', async (req, res) => {
     try {
         const { name, title, country, category = 'popular' } = req.body;
         const hostId = (0, auth_1.getUserIdFromToken)(req);
+        console.log(`[STREAMS-POST] Criando stream para hostId=${hostId}, country=${country}, user.country pendente`);
         if (!hostId) {
             return res.status(401).json({ success: false, error: 'Unauthorized' });
         }
@@ -1628,7 +1633,9 @@ router.post('/streams', async (req, res) => {
         }
         const streamId = hostId;
         const streamTitle = name || title || `Live de ${user.name}`;
-        const stream = await index_1.Streamer.findOneAndUpdate({ hostId }, {
+        const finalCountry = country || user.country || 'BR';
+        console.log(`[STREAMS-POST] user.country=${user.country}, finalCountry=${finalCountry}`);
+        const stream = await index_1.Streamer.findOneAndUpdate({ id: hostId }, {
             $set: {
                 id: streamId,
                 hostId,
@@ -1640,10 +1647,12 @@ router.post('/streams', async (req, res) => {
                 streamStatus: 'active',
                 startTime: new Date(),
                 viewers: 0,
-                country: country || user.country || 'BR'
+                country: finalCountry
             }
         }, { upsert: true, new: true, setDefaultsOnInsert: true });
+        console.log(`[STREAMS-POST] Stream criada/atualizada: id=${stream.id}, isLive=${stream.isLive}, country=${stream.country}`);
         await index_1.User.findOneAndUpdate({ id: hostId }, { isLive: true, currentStreamId: streamId });
+        console.log(`[STREAMS-POST] Usuário ${hostId} marcado como isLive: true`);
         res.json({ success: true, stream });
     }
     catch (error) {
@@ -1654,7 +1663,6 @@ router.post('/streams', async (req, res) => {
 // GET /api/streams - Listar streams (rota principal para frontend)
 router.get('/streams', async (req, res) => {
     try {
-        console.log('[API-STREAMS] Listando streams...');
         // Parâmetros de query
         const { category = 'popular', country = 'all', limit = 50, offset = 0, isLive = 'true' } = req.query;
         // Construir filtro
@@ -1665,12 +1673,18 @@ router.get('/streams', async (req, res) => {
             filter.category = category;
         if (country && country !== 'all' && country !== 'ICON_GLOBE')
             filter.country = country;
+        console.log(`[API-STREAMS] Filtro:`, JSON.stringify(filter));
+        console.log(`[API-STREAMS] Query params: category=${category}, country=${country}, limit=${limit}, offset=${offset}, isLive=${isLive}`);
         // Buscar streams no banco usando Mongoose
         const streams = await index_1.Streamer.find(filter)
             .sort({ viewers: -1, startTime: -1 })
             .limit(parseInt(limit))
             .skip(parseInt(offset))
             .lean();
+        console.log(`[API-STREAMS] Streams encontradas: ${streams.length}`);
+        streams.forEach(s => {
+            console.log(`[API-STREAMS]   -> id=${s.id}, hostId=${s.hostId}, isLive=${s.isLive}, country=${s.country}, status=${s.streamStatus}, titulo=${s.title || s.name}`);
+        });
         // Enriquecer com dados do host
         const enrichedStreams = await Promise.all(streams.map(async (stream) => {
             const host = await index_1.User.findOne({ id: stream.hostId }).lean();
@@ -1685,12 +1699,14 @@ router.get('/streams', async (req, res) => {
                 } : null
             };
         }));
+        const total = await index_1.Streamer.countDocuments(filter);
+        console.log(`[API-STREAMS] Total (countDocuments): ${total}`);
         res.json({
             code: 0,
             msg: 'OK',
             data: {
                 streams: enrichedStreams,
-                total: await index_1.Streamer.countDocuments(filter)
+                total
             }
         });
     }
@@ -1746,6 +1762,7 @@ router.post('/end-session', async (req, res) => {
         // Atualizar usuário
         await index_1.User.findOneAndUpdate({ id: userId }, { $set: {
                 isLive: false,
+                isOnline: false,
                 currentStreamId: null
             } });
         console.log(`[END-SESSION] Sessão encerrada para usuário ${userId}. Streams afetadas: ${result.modifiedCount}`);
@@ -1807,6 +1824,7 @@ router.delete('/rtc/v1/stop', async (req, res) => {
         // Atualizar usuário - MANTER currentStreamId para reconexão
         await index_1.User.findOneAndUpdate({ id: userId }, { $set: {
                 isLive: false,
+                isOnline: false,
                 // MANTER currentStreamId para permitir reconexão
                 // currentStreamId: null, 
                 lastSeen: new Date().toISOString()
@@ -2042,6 +2060,7 @@ router.post('/:streamId/end', async (req, res) => {
         if (!stream) {
             return responseHelper_1.ResponseHelper.error(res, 'Live não encontrada ou sem permissão', 404);
         }
+        await index_1.User.findOneAndUpdate({ id: userId }, { $set: { isLive: false, isOnline: false, currentStreamId: null } });
         console.log(`🛑 [SRS] Live finalizada: streamId=${streamId}, userId=${userId}`);
         responseHelper_1.ResponseHelper.success(res, { message: 'Live finalizada com sucesso' });
     }
@@ -2140,6 +2159,7 @@ router.post('/live/end', async (req, res) => {
         await index_1.User.findOneAndUpdate({ id: userId }, {
             $set: {
                 isLive: false,
+                isOnline: false,
                 currentStreamId: null
             },
             $push: {
@@ -2816,11 +2836,12 @@ router.post('/streams/:id/end-session', async (req, res) => {
             // Mesmo que a stream n+�o exista, limpar o estado do usu+�rio
             const userId = (0, auth_1.getUserIdFromToken)(req);
             if (userId) {
-                await index_1.User.findOneAndUpdate({ id: userId }, {
-                    isLive: false,
-                    currentStreamId: null,
-                    lastSeen: new Date().toISOString()
-                });
+                await index_1.User.findOneAndUpdate({ id: userId }, { $set: {
+                        isLive: false,
+                        isOnline: false,
+                        currentStreamId: null,
+                        lastSeen: new Date().toISOString()
+                    } });
                 console.log(`ԣ� Estado do usu+�rio ${userId} limpo mesmo sem stream encontrada`);
             }
             return res.json({ success: true, message: 'Stream n+�o encontrada mas estado limpo' });
@@ -2883,9 +2904,9 @@ router.post('/streams/:id/end-session', async (req, res) => {
         let updatedUser;
         try {
             const User = await Promise.resolve().then(() => __importStar(require('../models'))).then(m => m.User);
-            updatedUser = await User.findOneAndUpdate({ id: stream.hostId }, { isLive: false }, { new: true });
+            updatedUser = await User.findOneAndUpdate({ id: stream.hostId }, { $set: { isLive: false, isOnline: false, currentStreamId: null } }, { new: true });
             if (!updatedUser) {
-                console.warn(`��ᴩ� Usu+�rio ${stream.hostId} n+�o encontrado para atualizar`);
+                console.warn(`⚠️ Usuário ${stream.hostId} não encontrado para atualizar`);
             }
         }
         catch (userError) {
@@ -3429,11 +3450,12 @@ router.post('/lives/:id/end', async (req, res) => {
             endTime: new Date()
         });
         // Atualizar status do usu+�rio
-        await index_1.User.findOneAndUpdate({ id: userId }, {
-            isLive: false,
-            currentStreamId: null,
-            lastSeen: new Date()
-        });
+        await index_1.User.findOneAndUpdate({ id: userId }, { $set: {
+                isLive: false,
+                isOnline: false,
+                currentStreamId: null,
+                lastSeen: new Date()
+            } });
         return (0, responseHelpers_1.successResponse)(res, 'Stream encerrada com sucesso');
     }
     catch (error) {
@@ -3679,11 +3701,12 @@ router.post('/streams/:streamId/end', async (req, res) => {
             id: { $ne: streamId }
         });
         if (otherActiveStreams.length === 0) {
-            await index_1.User.findOneAndUpdate({ _id: stream.hostId }, {
-                isLive: false,
-                currentStreamId: null,
-                lastSeen: new Date()
-            });
+            await index_1.User.findOneAndUpdate({ id: stream.hostId }, { $set: {
+                    isLive: false,
+                    isOnline: false,
+                    currentStreamId: null,
+                    lastSeen: new Date()
+                } });
         }
         console.log(`[STREAM-END] Stream ${streamId} encerrada com sucesso por ${isOwner ? 'dono' : 'admin'}`);
         const io = req.app.get('io');
@@ -3744,13 +3767,14 @@ router.post('/streams/end-all', async (req, res) => {
             endedBy: 'owner_force',
             endedAt: new Date()
         });
-        // Atualizar status do usu+�rio
-        await index_1.User.findOneAndUpdate({ id: userId }, {
-            isLive: false,
-            currentStreamId: null,
-            lastSeen: new Date()
-        });
-        console.log(`[STREAM-END-ALL] ${activeStreams.length} streams encerradas para usu+�rio: ${userId}`);
+        // Atualizar status do usuário
+        await index_1.User.findOneAndUpdate({ id: userId }, { $set: {
+                isLive: false,
+                isOnline: false,
+                currentStreamId: null,
+                lastSeen: new Date()
+            } });
+        console.log(`[STREAM-END-ALL] ${activeStreams.length} streams encerradas para usuário: ${userId}`);
         res.json({
             success: true,
             message: `${activeStreams.length} streams encerradas com sucesso`,
@@ -3883,13 +3907,14 @@ router.post('/admin/streams/:streamId/force-end', async (req, res) => {
             id: { $ne: streamId }
         });
         if (otherActiveStreams.length === 0) {
-            await index_1.User.findOneAndUpdate({ _id: stream.hostId }, {
-                isLive: false,
-                currentStreamId: null,
-                lastSeen: new Date()
-            });
+            await index_1.User.findOneAndUpdate({ id: stream.hostId }, { $set: {
+                    isLive: false,
+                    isOnline: false,
+                    currentStreamId: null,
+                    lastSeen: new Date()
+                } });
         }
-        console.log(`[ADMIN-FORCE-END] Stream ${streamId} encerrada for+�adamente pelo admin ${userId}`);
+        console.log(`[ADMIN-FORCE-END] Stream ${streamId} encerrada for�adamente pelo admin ${userId}`);
         res.json({
             success: true,
             message: 'Stream encerrada for+�adamente com sucesso',
@@ -4145,4 +4170,30 @@ router.post('/streams/:id/start', async (req, res) => {
     }
 });
 // POST /api/streams/:id/join - Entrar na live (validar acesso)
+// GET /api/debug/streams - Endpoint de diagnóstico: retorna TODOS os documentos Streamer sem filtro
+router.get('/debug/streams', async (req, res) => {
+    try {
+        const all = await index_1.Streamer.find({}).lean();
+        const isLiveTrue = all.filter(s => s.isLive === true);
+        const statusActive = all.filter(s => s.streamStatus === 'active');
+        res.json({
+            total: all.length,
+            isLive_true: isLiveTrue.length,
+            status_active: statusActive.length,
+            streams: all.map(s => ({
+                id: s.id,
+                hostId: s.hostId,
+                isLive: s.isLive,
+                streamStatus: s.streamStatus,
+                country: s.country,
+                category: s.category,
+                title: s.title || s.name,
+                startTime: s.startTime
+            }))
+        });
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
 exports.default = router;

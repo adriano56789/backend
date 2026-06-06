@@ -2719,6 +2719,13 @@ router.post('/streams/:id/join', async (req, res) => {
 
 
 
+        // Atualizar currentStreamId do usuário
+
+        await User.findOneAndUpdate(
+            { id: userId },
+            { $set: { currentStreamId: id, isOnline: true } }
+        );
+
         console.log(`[STREAM-JOIN] Usuário ${userId} entrou na live ${id}`);
 
 
@@ -3060,6 +3067,8 @@ router.post('/streams', async (req, res) => {
         const { name, title, country, category = 'popular' } = req.body;
         const hostId = getUserIdFromToken(req);
 
+        console.log(`[STREAMS-POST] Criando stream para hostId=${hostId}, country=${country}, user.country pendente`);
+
         if (!hostId) {
             return res.status(401).json({ success: false, error: 'Unauthorized' });
         }
@@ -3071,6 +3080,8 @@ router.post('/streams', async (req, res) => {
 
         const streamId = hostId;
         const streamTitle = name || title || `Live de ${user.name}`;
+        const finalCountry = country || user.country || 'BR';
+        console.log(`[STREAMS-POST] user.country=${user.country}, finalCountry=${finalCountry}`);
 
         const stream = await Streamer.findOneAndUpdate(
             { id: hostId },
@@ -3086,13 +3097,16 @@ router.post('/streams', async (req, res) => {
                     streamStatus: 'active',
                     startTime: new Date(),
                     viewers: 0,
-                    country: country || user.country || 'BR'
+                    country: finalCountry
                 }
             },
             { upsert: true, new: true, setDefaultsOnInsert: true }
         );
 
+        console.log(`[STREAMS-POST] Stream criada/atualizada: id=${stream.id}, isLive=${stream.isLive}, country=${stream.country}`);
+
         await User.findOneAndUpdate({ id: hostId }, { isLive: true, currentStreamId: streamId });
+        console.log(`[STREAMS-POST] Usuário ${hostId} marcado como isLive: true`);
 
         res.json({ success: true, stream });
     } catch (error: any) {
@@ -3104,8 +3118,6 @@ router.post('/streams', async (req, res) => {
 // GET /api/streams - Listar streams (rota principal para frontend)
 router.get('/streams', async (req, res) => {
     try {
-        console.log('[API-STREAMS] Listando streams...');
-
         // Parâmetros de query
         const {
             category = 'popular',
@@ -3121,12 +3133,20 @@ router.get('/streams', async (req, res) => {
         if (category && category !== 'all' && category !== 'popular') filter.category = category;
         if (country && country !== 'all' && country !== 'ICON_GLOBE') filter.country = country;
 
+        console.log(`[API-STREAMS] Filtro:`, JSON.stringify(filter));
+        console.log(`[API-STREAMS] Query params: category=${category}, country=${country}, limit=${limit}, offset=${offset}, isLive=${isLive}`);
+
         // Buscar streams no banco usando Mongoose
         const streams = await Streamer.find(filter)
             .sort({ viewers: -1, startTime: -1 })
             .limit(parseInt(limit as string))
             .skip(parseInt(offset as string))
             .lean();
+
+        console.log(`[API-STREAMS] Streams encontradas: ${streams.length}`);
+        streams.forEach(s => {
+            console.log(`[API-STREAMS]   -> id=${s.id}, hostId=${s.hostId}, isLive=${s.isLive}, country=${s.country}, status=${s.streamStatus}, titulo=${s.title || s.name}`);
+        });
 
         // Enriquecer com dados do host
         const enrichedStreams = await Promise.all(
@@ -3145,12 +3165,15 @@ router.get('/streams', async (req, res) => {
             })
         );
 
+        const total = await Streamer.countDocuments(filter);
+        console.log(`[API-STREAMS] Total (countDocuments): ${total}`);
+
         res.json({
             code: 0,
             msg: 'OK',
             data: {
                 streams: enrichedStreams,
-                total: await Streamer.countDocuments(filter)
+                total
             }
         });
     } catch (error: any) {
@@ -8367,6 +8390,31 @@ router.post('/streams/:id/start', async (req, res) => {
 
 // POST /api/streams/:id/join - Entrar na live (validar acesso)
 
-
+// GET /api/debug/streams - Endpoint de diagnóstico: retorna TODOS os documentos Streamer sem filtro
+router.get('/debug/streams', async (req, res) => {
+    try {
+        const all = await Streamer.find({}).lean();
+        const isLiveTrue = all.filter(s => s.isLive === true);
+        const statusActive = all.filter(s => s.streamStatus === 'active');
+        res.json({
+            total: all.length,
+            isLive_true: isLiveTrue.length,
+            status_active: statusActive.length,
+            streams: all.map(s => ({
+                id: s.id,
+                hostId: s.hostId,
+                isLive: s.isLive,
+                streamStatus: s.streamStatus,
+                country: s.country,
+                category: s.category,
+                title: s.title || s.name,
+                startTime: s.startTime
+            }))
+        });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
 
 export default router;
+

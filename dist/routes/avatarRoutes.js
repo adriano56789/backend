@@ -38,7 +38,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const models_1 = require("../models");
-const urls_1 = require("../config/urls");
 const router = express_1.default.Router();
 // GET /users/:id/frames - Retorna os frames do usuário
 router.get('/users/:id/frames', async (req, res) => {
@@ -243,8 +242,11 @@ router.post('/users/:id/avatar-upload', async (req, res) => {
         if (!user) {
             return res.status(404).json({ error: 'Usuário não encontrado' });
         }
-        // Gerar URL da imagem (usar configuração dinâmica)
-        const avatarUrl = (0, urls_1.getAvatarUrl)(req.file.filename);
+        // Gerar URL da imagem dinamicamente a partir da requisição
+        const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+        const host = req.headers['x-forwarded-host'] || req.get('host') || 'api.livego.store';
+        const baseUrl = `${proto}://${host}`;
+        const avatarUrl = `${baseUrl}/uploads/avatars/${req.file.filename}`;
         // Adicionar ao array de avatarImages
         if (!user.avatarImages) {
             user.avatarImages = [];

@@ -20,8 +20,11 @@ router.post('/upload', async (req, res) => {
         if (!user) {
             return res.status(404).json({ error: 'Usuário não encontrado' });
         }
-        // Gerar URL da foto (usar configuração dinâmica)
-        const photoUrl = (0, urls_1.getPhotoUrl)(req.file.filename);
+        // Gerar URL da foto dinamicamente a partir da requisição
+        const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+        const host = req.headers['x-forwarded-host'] || req.get('host') || 'api.livego.store';
+        const baseUrl = `${proto}://${host}`;
+        const photoUrl = `${baseUrl}/uploads/photos/${req.file.filename}`;
         // Adicionar ao array de fotos do usuário 
         if (!user.photos) {
             user.photos = [];

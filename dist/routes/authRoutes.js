@@ -32,8 +32,14 @@ router.post('/register', async (req, res) => {
         }
         const salt = await bcryptjs_1.default.genSalt(10);
         const hashedPassword = await bcryptjs_1.default.hash(password, salt);
-        // Campos de stream serão gerados após criação do usuário usando _id
-        // Não gerar ID manual - usar _id do MongoDB
+        // Gerar ID único de 8 dígitos para compatibilidade com idHelper
+        let newUserId;
+        let idExists = false;
+        do {
+            newUserId = Math.floor(10000000 + Math.random() * 90000000).toString();
+            idExists = !!(await models_1.User.findOne({ id: newUserId }));
+        } while (idExists);
+        console.log(`[REGISTER] ID gerado: ${newUserId} (${newUserId.length} dígitos)`);
         // Função para normalizar tags
         const normalizeTags = (tags) => {
             if (!tags)
@@ -50,7 +56,7 @@ router.post('/register', async (req, res) => {
         // Filtrar campos para evitar sobrescrever valores padrão
         const userData = {
             // APENAS CAMPOS ESSENCIAIS NO CADASTRO
-            // id será gerado pelo MongoDB (_id)
+            id: newUserId, // ID real gerado automaticamente (não MongoDB _id)
             identification: "pending", // Será atualizado após criação
             name: name?.trim() || "",
             email: email?.trim().toLowerCase() || "",
@@ -92,6 +98,7 @@ router.post('/register', async (req, res) => {
         }
         // Campos de stream são gerados automaticamente após criação - não verificar aqui
         const user = await models_1.User.create(userData);
+        console.log(`[REGISTER] User created: id=${user.id} (${user.id.length} chars), identification=${user.identification} (${user.identification?.length} chars)`);
         // Gerar campos de stream usando o id manual
         const streamKey = `stream_${user.id}`;
         const roomId = `room_${user.id}`;

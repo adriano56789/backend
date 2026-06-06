@@ -225,29 +225,21 @@ else {
     console.log('ℹ️ [MQTT] Distribuição MQTT desativada (MQTT_ENABLED=false)');
 }
 (0, db_1.connectDB)().then(async () => {
-    console.log('🗄️ [DB] Banco conectado - sem inicialização automática');
-    // Inicializar Protobuf no backend
     await ProtobufService_1.BackendProtobufService.init();
-    console.log('📦 [BACKEND-PROTOBUF] Sistema de serialização binária inicializado');
-    // Inicializar sistema de atividades
     (0, ActivityHooks_1.initializeActivityHooks)();
-    console.log('📊 [ACTIVITY] Sistema de logging de atividades inicializado');
-    // Inicializar serviço de eventos de atividades
     ActivityEventService_1.activityEventService.initialize(io);
-    console.log('🔔 [ACTIVITY] Serviço de eventos de atividades inicializado');
-    // REMOVIDO: Inicialização automática do banco
-    // await initializeDatabase(); // NÃO EXECUTAR AUTOMATICAMENTE
-    console.log('✅ [DB] Sistema pronto - banco conectado!');
-    // REMOVIDO: Sistema de automação que pode criar dados
-    // const verification = await quickAutomationCheck();
-    // console.log(`🔍 [VERIFY] Status: ${verification.successRate}% automático (${verification.errorsCount} erros)`);
+    server.listen(port, '0.0.0.0', () => {
+        console.log(`🌍 API Server started on http://0.0.0.0:${port}`);
+    });
 }).catch(error => {
-    console.error('❌ [DB] Erro ao conectar banco:', error.message);
+    console.error('❌ [DB] Falha na conexão com MongoDB:', error.message);
     if (!env_1.isDev) {
         process.exit(1);
     }
     else {
-        console.warn('⚠️  [DEV] Continuando execução sem banco de dados (recursos limitados).');
+        server.listen(port, '0.0.0.0', () => {
+            console.log(`🌍 API Server started on http://0.0.0.0:${port} (SEM BANCO)`);
+        });
     }
 });
 // Inicializar UserStatusManager para gerenciar status online
@@ -552,21 +544,11 @@ io.on('connection', (socket) => {
             }
             // Entrar na sala do Socket.IO (legado)
             socket.join(streamId);
-            // Atualizar status no banco (apenas na primeira conexão ou mudança de stream)
+            // Atualizar status no banco (sempre atualizar o currentStreamId)
+            const models = await Promise.resolve().then(() => __importStar(require('./models')));
             if (isFirstConnection || isChangingStream) {
-                const models = await Promise.resolve().then(() => __importStar(require('./models')));
-                // Verificar status atual do usuário antes de atualizar
-                const currentUser = await models.User.findOne({ id: userId });
-                const isCurrentlyOnline = currentUser?.isOnline || false;
-                console.log(`🔍 [USER_STATUS] Status atual do usuário ${userId}: online=${isCurrentlyOnline}, isFirstConnection=${isFirstConnection}, isChangingStream=${isChangingStream}`);
-                // Apenas atualizar se não estiver online ou for primeira conexão
-                if (!isCurrentlyOnline || isFirstConnection) {
-                    await models.User.findOneAndUpdate({ id: userId }, { $set: { isOnline: true, currentStreamId: streamId, lastSeen: new Date().toISOString() } });
-                    console.log(`🟢 [USER_STATUS] Usuário ${userId} definido como online`);
-                }
-                else {
-                    console.log(`ℹ️ [USER_STATUS] Usuário ${userId} já está online, ignorando atualização`);
-                }
+                await models.User.findOneAndUpdate({ id: userId }, { $set: { isOnline: true, currentStreamId: streamId, lastSeen: new Date().toISOString() } });
+                console.log(`🟢 [USER_STATUS] Usuário ${userId} definido como online na stream ${streamId}`);
             }
             const onlineUsersInStream = Array.from(onlineUsers.values())
                 .filter((user) => user.streamId === streamId)
@@ -576,9 +558,30 @@ io.on('connection', (socket) => {
                 users: onlineUsersInStream,
                 count: onlineUsersInStream.length
             });
-            io.to(streamId).emit('viewer_count_update', {
+            io.to(streamId).emit('viewers_count_updated', {
                 streamId,
                 count: onlineUsersInStream.length
+            });
+            // Buscar dados do usuário para emitir evento individual
+            let userName = 'Usuário';
+            let userAvatar = '';
+            let userLevel = 0;
+            try {
+                const userDoc = await models.User.findOne({ id: userId }).select('name avatarUrl level').lean();
+                if (userDoc) {
+                    userName = userDoc.name || 'Usuário';
+                    userAvatar = userDoc.avatarUrl || '';
+                    userLevel = userDoc.level || 0;
+                }
+            }
+            catch (_) { }
+            io.to(streamId).emit('user_joined_stream', {
+                userId,
+                userName,
+                userAvatar,
+                userLevel,
+                streamId,
+                timestamp: new Date().toISOString()
             });
             // Persistir viewer count no banco (sem bloquear o socket)
             const viewerCount = onlineUsersInStream.length;
@@ -680,6 +683,11 @@ io.on('connection', (socket) => {
                         userId: userId,
                         streamId: userEntry.streamId
                     });
+                    io.to(userEntry.streamId).emit('user_left_stream', {
+                        userId: userId,
+                        streamId: userEntry.streamId,
+                        timestamp: new Date().toISOString()
+                    });
                     // Enviar lista atualizada de usuários online
                     const onlineUsersInStream = Array.from(onlineUsers.values())
                         .filter(user => user.streamId === userEntry.streamId)
@@ -689,7 +697,7 @@ io.on('connection', (socket) => {
                         users: onlineUsersInStream,
                         count: onlineUsersInStream.length
                     });
-                    io.to(userEntry.streamId).emit('viewer_count_update', {
+                    io.to(userEntry.streamId).emit('viewers_count_updated', {
                         streamId: userEntry.streamId,
                         count: onlineUsersInStream.length
                     });
@@ -1319,18 +1327,6 @@ exports.getIO = getIO;
 // };
 // 🔧 DESATIVADO: Não executar limpeza automática para proteger diamantes
 // setInterval(cleanupInactiveStreams, 5 * 60 * 1000); // 5 minutos
-// Iniciar servidor API na porta 3000
-server.listen(port, '0.0.0.0', () => {
-    const protocol = isHttps ? 'https' : 'http';
-    console.log(`🌍 API Server started on ${protocol}://0.0.0.0:${port}`);
-    console.log(`🔗 Domínio oficial: https://livego.store`);
-    // 🚀 INICIAR SISTEMA DE AUTOMAÇÃO FINANCEIRA
-    console.log('💰 [FINANCIAL] Iniciando sistema de automação financeira...');
-    console.log('   ✅ Webhook Mercado Pago ativo');
-    console.log('   ✅ Saques automáticos ativos');
-    console.log('   ✅ Verificação periódica ativa');
-    console.log('   ✅ Distribuição 80/20 automática');
-});
 // Iniciar servidor WebSocket na porta 3001 separadamente
 let wsServer;
 if (isHttps) {

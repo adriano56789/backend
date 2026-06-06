@@ -57,7 +57,7 @@ router.post('/unpublish', async (req, res) => {
         // Atualizar status da stream para offline
         const updated = await models_1.Streamer.findOneAndUpdate({ id: realStreamKey, isLive: true }, { $set: { isLive: false, streamStatus: 'ended', endTime: new Date() } });
         if (updated) {
-            await models_1.User.findOneAndUpdate({ id: updated.hostId }, { $set: { isLive: false, currentStreamId: null } });
+            await models_1.User.findOneAndUpdate({ id: updated.hostId }, { $set: { isLive: false, isOnline: false, currentStreamId: null } });
         }
         res.status(200).json({ code: 0 });
     }

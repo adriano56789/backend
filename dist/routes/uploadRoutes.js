@@ -9,7 +9,6 @@ const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const models_1 = require("../models");
 const auth_1 = require("../middleware/auth");
-const urls_1 = require("../config/urls");
 const router = express_1.default.Router();
 // Configuração do Multer para upload de arquivos de avatar
 const avatarStorage = multer_1.default.diskStorage({
@@ -22,10 +21,11 @@ const avatarStorage = multer_1.default.diskStorage({
         cb(null, uploadDir);
     },
     filename: (req, file, cb) => {
-        // Gerar nome único: timestamp.extensão
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        // Obter userId do token ou do param da URL
+        const userId = req.params?.userId || req.user?.id || (0, auth_1.getUserIdFromToken)(req) || 'unknown';
+        const timestamp = Date.now();
         const ext = path_1.default.extname(file.originalname);
-        cb(null, `avatar_${uniqueSuffix}${ext}`);
+        cb(null, `avatar_${userId}_${timestamp}${ext}`);
     }
 });
 // Configuração do Multer para upload de imagens de chat
@@ -92,8 +92,11 @@ router.post('/avatar', auth_1.protect, avatarUpload.single('avatar'), async (req
                 error: 'Nenhum arquivo enviado'
             });
         }
-        // Construir URL da imagem (usar configuração dinâmica)
-        const avatarUrl = (0, urls_1.getAvatarUrl)(req.file.filename);
+        // Construir URL da imagem dinamicamente a partir da requisição
+        const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+        const host = req.headers['x-forwarded-host'] || req.get('host') || 'api.livego.store';
+        const baseUrl = `${proto}://${host}`;
+        const avatarUrl = `${baseUrl}/uploads/avatars/${req.file.filename}`;
         console.log(`📸 Upload de avatar para usuário ${userId}: ${avatarUrl}`);
         // Atualizar avatarUrl do usuário + persistir atividade
         await models_1.User.findOneAndUpdate({ id: userId }, {
@@ -132,8 +135,10 @@ router.post('/avatar', auth_1.protect, avatarUpload.single('avatar'), async (req
         }
         else {
             // Criar novo avatar
+            const obraId = `avatar_${Date.now()}_${userId}`;
             newPhoto = await models_1.ProfilePhoto.create({
                 userId,
+                obraId,
                 photoUrl: avatarUrl,
                 photoType: 'avatar',
                 isMain: true,
@@ -202,8 +207,11 @@ router.post('/avatar/:userId', avatarUpload.single('avatar'), async (req, res) =
                 error: 'Usuário não encontrado'
             });
         }
-        // Construir URL da imagem (usar configuração dinâmica)
-        const avatarUrl = (0, urls_1.getAvatarUrl)(req.file.filename);
+        // Construir URL da imagem dinamicamente a partir da requisição
+        const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+        const host = req.headers['x-forwarded-host'] || req.get('host') || 'api.livego.store';
+        const baseUrl = `${proto}://${host}`;
+        const avatarUrl = `${baseUrl}/uploads/avatars/${req.file.filename}`;
         console.log(`[UPLOAD] Avatar para usuário ${userId}: ${avatarUrl}`);
         // Atualizar avatarUrl do usuário
         await models_1.User.findOneAndUpdate({ id: userId }, { $set: { avatarUrl } }, { new: true });
@@ -311,7 +319,8 @@ router.post('/cover/:id', coverUpload.single('cover'), async (req, res) => {
             return res.status(400).json({ success: false, error: 'Nenhum arquivo enviado' });
         }
         const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
-        const baseUrl = process.env.BASE_URL || `${proto}://${req.get('host') || 'livego.store'}`;
+        const host = req.headers['x-forwarded-host'] || req.get('host') || 'api.livego.store';
+        const baseUrl = `${proto}://${host}`;
         const coverUrl = `${baseUrl}/uploads/covers/${req.file.filename}`;
         const stream = await models_1.Streamer.findOneAndUpdate({ id: req.params.id }, { $set: { avatar: coverUrl } }, { new: true });
         if (!stream) {
@@ -334,7 +343,8 @@ router.post('/chat', auth_1.protect, chatUpload.single('image'), async (req, res
             });
         }
         const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
-        const baseUrl = process.env.BASE_URL || `${proto}://${req.get('host') || 'livego.store'}`;
+        const host = req.headers['x-forwarded-host'] || req.get('host') || 'api.livego.store';
+        const baseUrl = `${proto}://${host}`;
         const imageUrl = `${baseUrl}/uploads/chat/${req.file.filename}`;
         console.log(`📸 Upload de imagem para chat: ${imageUrl}`);
         res.json({

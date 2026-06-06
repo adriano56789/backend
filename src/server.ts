@@ -548,26 +548,14 @@ io.on('connection', (socket) => {
             // Entrar na sala do Socket.IO (legado)
             socket.join(streamId);
 
-            // Atualizar status no banco (apenas na primeira conexão ou mudança de stream)
+            // Atualizar status no banco (sempre atualizar o currentStreamId)
+            const models = await import('./models');
             if (isFirstConnection || isChangingStream) {
-                const models = await import('./models');
-
-                // Verificar status atual do usuário antes de atualizar
-                const currentUser = await models.User.findOne({ id: userId });
-                const isCurrentlyOnline = currentUser?.isOnline || false;
-
-                console.log(`🔍 [USER_STATUS] Status atual do usuário ${userId}: online=${isCurrentlyOnline}, isFirstConnection=${isFirstConnection}, isChangingStream=${isChangingStream}`);
-
-                // Apenas atualizar se não estiver online ou for primeira conexão
-                if (!isCurrentlyOnline || isFirstConnection) {
-                    await models.User.findOneAndUpdate(
-                        { id: userId },
-                        { $set: { isOnline: true, currentStreamId: streamId, lastSeen: new Date().toISOString() } }
-                    );
-                    console.log(`🟢 [USER_STATUS] Usuário ${userId} definido como online`);
-                } else {
-                    console.log(`ℹ️ [USER_STATUS] Usuário ${userId} já está online, ignorando atualização`);
-                }
+                await models.User.findOneAndUpdate(
+                    { id: userId },
+                    { $set: { isOnline: true, currentStreamId: streamId, lastSeen: new Date().toISOString() } }
+                );
+                console.log(`🟢 [USER_STATUS] Usuário ${userId} definido como online na stream ${streamId}`);
             }
 
             const onlineUsersInStream = Array.from(onlineUsers.values())
@@ -579,9 +567,30 @@ io.on('connection', (socket) => {
                 users: onlineUsersInStream,
                 count: onlineUsersInStream.length
             });
-            io.to(streamId).emit('viewer_count_update', {
+            io.to(streamId).emit('viewers_count_updated', {
                 streamId,
                 count: onlineUsersInStream.length
+            });
+            // Buscar dados do usuário para emitir evento individual
+            let userName = 'Usuário';
+            let userAvatar = '';
+            let userLevel = 0;
+            try {
+                const userDoc = await models.User.findOne({ id: userId }).select('name avatarUrl level').lean();
+                if (userDoc) {
+                    userName = (userDoc as any).name || 'Usuário';
+                    userAvatar = (userDoc as any).avatarUrl || '';
+                    userLevel = (userDoc as any).level || 0;
+                }
+            } catch (_) {}
+
+            io.to(streamId).emit('user_joined_stream', {
+                userId,
+                userName,
+                userAvatar,
+                userLevel,
+                streamId,
+                timestamp: new Date().toISOString()
             });
 
             // Persistir viewer count no banco (sem bloquear o socket)
@@ -704,6 +713,11 @@ io.on('connection', (socket) => {
                         userId: userId,
                         streamId: userEntry.streamId
                     });
+                    io.to(userEntry.streamId).emit('user_left_stream', {
+                        userId: userId,
+                        streamId: userEntry.streamId,
+                        timestamp: new Date().toISOString()
+                    });
 
                     // Enviar lista atualizada de usuários online
                     const onlineUsersInStream = Array.from(onlineUsers.values())
@@ -715,7 +729,7 @@ io.on('connection', (socket) => {
                         users: onlineUsersInStream,
                         count: onlineUsersInStream.length
                     });
-                    io.to(userEntry.streamId).emit('viewer_count_update', {
+                    io.to(userEntry.streamId).emit('viewers_count_updated', {
                         streamId: userEntry.streamId,
                         count: onlineUsersInStream.length
                     });
