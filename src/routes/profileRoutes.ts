@@ -129,6 +129,7 @@ const singleValueRoutes = [
     { route: 'aniversario', field: 'birthday' },
     { route: 'apresentacao', field: 'bio' },
     { route: 'residencia', field: 'residence' },
+    { route: 'pais', field: 'country' },
     { route: 'estado-emocional', field: 'emotional_status' },
     { route: 'tags', field: 'tags' },
     { route: 'profissao', field: 'profession' }

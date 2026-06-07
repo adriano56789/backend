@@ -57,7 +57,7 @@ router.post('/register', async (req, res) => {
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
-        // Gerar ID único baseado no nome do usuário (sem números)
+        // Gerar ID baseado no nome do usuário
         const sanitizeId = (raw: string) => {
             return raw.toLowerCase()
                 .trim()
@@ -66,12 +66,19 @@ router.post('/register', async (req, res) => {
                 .substring(0, 30) || 'user';
         };
 
-        let newUserId = sanitizeId(name);
-        if (await User.findOne({ id: newUserId })) {
-            return res.status(400).json({ error: 'Nome de usuário já está em uso' });
+        const baseId = sanitizeId(name);
+        const existingUser = await User.findOne({ id: baseId });
+        if (existingUser) {
+            return res.status(200).json({
+                success: true,
+                message: 'Usuário já existe. Faça login.',
+                user: standardizeUserResponse(existingUser),
+                token: jwt.sign({ id: existingUser.id, email: existingUser.email }, JWT_SECRET, { expiresIn: '7d' })
+            });
         }
 
-        console.log(`[REGISTER] ID gerado a partir do nome: ${newUserId}`);
+        let newUserId = baseId;
+        console.log(`[REGISTER] ID gerado: ${newUserId}`);
 
         // Função para normalizar tags
         const normalizeTags = (tags: any): string[] => {

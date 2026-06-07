@@ -32,14 +32,14 @@ router.post('/register', async (req, res) => {
         }
         const salt = await bcryptjs_1.default.genSalt(10);
         const hashedPassword = await bcryptjs_1.default.hash(password, salt);
-        // Gerar ID único de 8 dígitos para compatibilidade com idHelper
+        // Gerar ID numérico aleatório (sem restrição de nome)
         let newUserId;
         let idExists = false;
         do {
             newUserId = Math.floor(10000000 + Math.random() * 90000000).toString();
             idExists = !!(await models_1.User.findOne({ id: newUserId }));
         } while (idExists);
-        console.log(`[REGISTER] ID gerado: ${newUserId} (${newUserId.length} dígitos)`);
+        console.log(`[REGISTER] ID gerado: ${newUserId}`);
         // Função para normalizar tags
         const normalizeTags = (tags) => {
             if (!tags)
