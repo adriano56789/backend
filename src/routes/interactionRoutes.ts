@@ -102,8 +102,11 @@ router.post('/streams/:id/private-invite', async (req, res) => {
             return res.status(404).json({ success: false, error: 'Usuário não encontrado' });
         }
         
+        console.log(`📝 [PRIVATE INVITE] Evento recebido: ${stream.hostId} convidando ${userId}`);
+
         // Persistir atividade de convite privado
-        await Promise.all([
+        console.log(`📤 [PRIVATE INVITE] Enviando updates de atividades para o banco...`);
+        const [updatedHost, updatedInvited] = await Promise.all([
             User.findOneAndUpdate(
                 { id: stream.hostId },
                 { 
@@ -115,7 +118,8 @@ router.post('/streams/:id/private-invite', async (req, res) => {
                             endpoint: '/api/interactions/streams/:id/private-invite'
                         }
                     }
-                }
+                },
+                { new: true }
             ),
             User.findOneAndUpdate(
                 { id: userId },
@@ -128,9 +132,12 @@ router.post('/streams/:id/private-invite', async (req, res) => {
                             endpoint: '/api/interactions/streams/:id/private-invite'
                         }
                     }
-                }
+                },
+                { new: true }
             )
-        ]).catch(console.error);
+        ]);
+
+        console.log(`✅ [PRIVATE INVITE] Resposta MongoDB recebida. Atividades persistidas.`);
 
         // Enviar notificação de convite via WebSocket
         const io = req.app.get('io');
@@ -154,7 +161,7 @@ router.post('/streams/:id/private-invite', async (req, res) => {
                 timestamp: new Date().toISOString()
             });
             
-            console.log(`🎫 [PRIVATE INVITE] Convite enviado: ${stream.hostId} → ${userId} (Stream: ${streamId})`);
+            console.log(`🎫 [PRIVATE INVITE] Notificações WebSocket enviadas.`);
         }
         
         res.json({ 
@@ -431,8 +438,11 @@ router.post('/streams/:id/interactions', async (req, res) => {
             timestamp: new Date()
         };
 
+        console.log(`📝 [INTERACTION] Evento recebido: ${type} por ${userId} na stream ${streamId}`);
+
         // Persistir atividade de interação na stream
-        await User.findOneAndUpdate(
+        console.log(`📤 [INTERACTION] Enviando update de atividades para o banco (User ${userId})...`);
+        const updateResult = await User.findOneAndUpdate(
             { id: userId },
             { 
                 $push: { 
@@ -443,8 +453,11 @@ router.post('/streams/:id/interactions', async (req, res) => {
                         endpoint: '/api/interactions/streams/:id/interactions'
                     }
                 }
-            }
-        ).catch(console.error);
+            },
+            { new: true }
+        );
+
+        console.log(`✅ [INTERACTION] Resposta MongoDB recebida. Atividades persistidas. Total: ${updateResult?.recentActivities?.length}`);
         
         // Notificar via WebSocket
         const io = require('../server').getIO();
@@ -459,7 +472,7 @@ router.post('/streams/:id/interactions', async (req, res) => {
             });
         }
         
-        console.log(`🎯 Interação registrada: ${type} por ${userId} na stream ${streamId}`);
+        console.log(`🎯 Interação registrada e persistida com sucesso.`);
         
         res.json({
             success: true,

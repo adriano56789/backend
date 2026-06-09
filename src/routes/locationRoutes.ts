@@ -2,8 +2,28 @@
 import express from 'express';
 import { User } from '../models';
 import { getUserIdFromToken } from '../middleware/auth';
+import { standardizeUserResponse } from '../utils/userResponse';
 
 const router = express.Router();
+
+async function reverseGeocode(lat: number, lng: number): Promise<{ city: string; state: string; country: string; residence: string }> {
+    try {
+        const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&lang=pt`,
+            { headers: { 'User-Agent': 'LiveApp/1.0' } }
+        );
+        if (!res.ok) return { city: '', state: '', country: '', residence: '' };
+        const data = await res.json();
+        const addr = data?.address || {};
+        const city = addr.city || addr.town || addr.village || addr.municipality || addr.county || '';
+        const state = addr.state || '';
+        const country = addr.country || '';
+        const residence = city && state ? `${city}, ${state}` : city || state || '';
+        return { city, state, country, residence };
+    } catch {
+        return { city: '', state: '', country: '', residence: '' };
+    }
+}
 
 // Atualizar localização do usuário
 router.post('/update', async (req, res) => {
@@ -19,15 +39,20 @@ router.post('/update', async (req, res) => {
             return res.status(400).json({ error: 'Latitude and longitude are required' });
         }
 
+        const { city, state, country, residence } = await reverseGeocode(latitude, longitude);
+
         const user = await User.findOneAndUpdate(
             { id: userId },
             {
                 $set: {
-                    location: {
-                        type: 'Point',
-                        coordinates: [longitude, latitude] // MongoDB usa [longitude, latitude]
-                    },
-                    locationPermission: 'granted', // Assumimos que se enviou, permitiu
+                    location: { type: 'Point', coordinates: [longitude, latitude] },
+                    latitude,
+                    longitude,
+                    city,
+                    state,
+                    country,
+                    residence,
+                    locationPermission: 'granted',
                     showLocation: true
                 },
                 $push: { 
@@ -46,7 +71,7 @@ router.post('/update', async (req, res) => {
             return res.status(404).json({ error: 'User not found' });
         }
 
-        res.json({ success: true, user });
+        res.json({ success: true, user: standardizeUserResponse(user) });
     } catch (error: any) {
         console.error('Error updating location:', error);
         res.status(500).json({ error: 'Internal server error' });

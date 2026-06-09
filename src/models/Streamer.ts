@@ -59,6 +59,10 @@ export interface IStreamer extends Document {
   srsClientId?: string;
   srsPublishData?: object;
   srsUnpublishData?: object;
+  latitude?: number;
+  longitude?: number;
+  city?: string;
+  state?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -121,7 +125,11 @@ const StreamerSchema: Schema = new Schema({
   webrtcSessionId: { type: String },
   srsClientId: { type: String },
   srsPublishData: { type: Object },
-  srsUnpublishData: { type: Object }
+  srsUnpublishData: { type: Object },
+  latitude: { type: Number },
+  longitude: { type: Number },
+  city: { type: String },
+  state: { type: String }
 }, { timestamps: true });
 
 // Create indexes

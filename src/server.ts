@@ -551,11 +551,13 @@ io.on('connection', (socket) => {
             // Atualizar status no banco (sempre atualizar o currentStreamId)
             const models = await import('./models');
             if (isFirstConnection || isChangingStream) {
-                await models.User.findOneAndUpdate(
+                console.log(`📤 [JOIN_STREAM] Enviando update de status para o banco (User ${userId})...`);
+                const updateResult = await models.User.findOneAndUpdate(
                     { id: userId },
-                    { $set: { isOnline: true, currentStreamId: streamId, lastSeen: new Date().toISOString() } }
+                    { $set: { isOnline: true, currentStreamId: streamId, lastSeen: new Date().toISOString() } },
+                    { new: true }
                 );
-                console.log(`🟢 [USER_STATUS] Usuário ${userId} definido como online na stream ${streamId}`);
+                console.log(`✅ [JOIN_STREAM] Resposta MongoDB recebida. Status atualizado: ${updateResult?.isOnline}, streamId: ${updateResult?.currentStreamId}`);
             }
 
             const onlineUsersInStream = Array.from(onlineUsers.values())
@@ -597,10 +599,13 @@ io.on('connection', (socket) => {
             const viewerCount = onlineUsersInStream.length;
             try {
                 const { Streamer } = await import('./models/Streamer');
+                console.log(`📤 [JOIN_STREAM] Atualizando contagem de viewers para ${viewerCount} na stream ${streamId}...`);
                 await Streamer.findOneAndUpdate(
                     { id: streamId },
                     { $set: { viewers: viewerCount } }
-                ).catch(() => {});
+                ).then(() => {
+                    console.log(`✅ [JOIN_STREAM] Contagem de viewers persistida no banco.`);
+                });
             } catch (e) {
                 // Falha silenciosa — não travar o join por causa do DB
             }
@@ -1410,44 +1415,8 @@ io.on('connection', (socket) => {
     });
 });
 
-export const getIO = () => io;
-
-// � DESATIVADO: Limpeza automática que estava zerando diamantes
-// Limpeza manual pode ser feita quando necessário
-// const cleanupInactiveStreams = async () => {
-//     try {
-//         console.log('🧹 [LIMPEZA] Verificando streams inativas...');
-//         
-//         // Limpar streams com 0 viewers há mais de 5 minutos
-//         const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-//         
-//         const result = await Streamer.updateMany(
-//             {
-//                 isLive: true,
-//                 streamStatus: 'active',
-//                 viewers: 0,
-//                 updatedAt: { $lt: fiveMinutesAgo }
-//             },
-//             {
-//                 $set: {
-//                     isLive: false,
-//                     streamStatus: 'ended',
-//                     endedAt: new Date()
-//                 }
-//             }
-//         );
-//         
-//         if (result.modifiedCount > 0) {
-//             console.log(`🧹 [LIMPEZA] ${result.modifiedCount} streams inativas marcadas como encerradas`);
-//         }
-//         
-//     } catch (error) {
-//         console.error('❌ [LIMPEZA] Erro ao limpar streams inativas:', error);
-//     }
-// };
-
-// 🔧 DESATIVADO: Não executar limpeza automática para proteger diamantes
-// setInterval(cleanupInactiveStreams, 5 * 60 * 1000); // 5 minutos
+// REMOVIDO: getIO duplicado (já existe em socket.ts e server.ts)
+// export const getIO = () => io;
 
 // Iniciar servidor WebSocket na porta 3001 separadamente
 let wsServer: http.Server | https.Server;

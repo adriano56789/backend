@@ -183,7 +183,7 @@ export const initSocket = (server: any) => {
         });
         
         socket.on('send_gift', async (data) => {
-            console.log(` [GIFT] Gift event received:`, data);
+            console.log(`🎁 [GIFT] Evento recebido: Presente ${data.giftName} (x${data.quantity}) de ${data.fromUserId} para ${data.toUserId}`);
             
             // Garantir que o remetente está na sala da stream
             if (data.streamId) {
@@ -193,12 +193,14 @@ export const initSocket = (server: any) => {
             // Adicionar EXP para o usuário que enviou o presente
             try {
                 const { UserLevelService } = await import('./services/UserLevelService');
+                console.log(`📤 [GIFT] Enviando update de EXP para o banco (User ${data.fromUserId})...`);
                 const expResult = await UserLevelService.addExp({
                     userId: data.fromUserId,
                     amount: Math.max(1, Math.floor(data.giftPrice * data.quantity)),
                     reason: `Gift: ${data.giftName} x${data.quantity}`,
                     streamId: data.streamId
                 });
+                console.log(`✅ [GIFT] EXP persistido. Novo total: ${expResult.totalExp}`);
                 // Emitir atualização de nível em tempo real
                 const userRoom = `user_${data.fromUserId}`;
                 io.to(userRoom).emit('level_updated', {
@@ -228,18 +230,28 @@ export const initSocket = (server: any) => {
                 if (data.fromUserId && totalValue > 0) {
                     const { User } = await import('./models/index');
                     // Deduzir diamantes e incrementar enviados
-                    await User.findOneAndUpdate(
+                    console.log(`📤 [GIFT] Deduzindo ${totalValue} diamantes do remetente ${data.fromUserId} (Usando nome/id)...`);
+                    const senderUpdate = await User.findOneAndUpdate(
                         { id: data.fromUserId },
-                        { $inc: { diamonds: -totalValue, enviados: totalValue } }
+                        { $inc: { diamonds: -totalValue, enviados: totalValue } },
+                        { new: true }
                     );
+
+                    if (!senderUpdate) {
+                        console.error(`❌ [GIFT] REMETENTE NÃO ENCONTRADO: ${data.fromUserId}`);
+                    } else {
+                        console.log(`✅ [GIFT] Saldo do remetente persistido. Novo saldo: ${senderUpdate.diamonds}. updatedAt: ${senderUpdate.updatedAt}`);
+                    }
+
                     // Emitir atualização de saldo para o remetente
                     const userRoom = `user_${data.fromUserId}`;
-                    const updatedSender = await User.findOne({ id: data.fromUserId }).select('diamonds enviados receptores earnings').lean();
+                    const updatedSender = await User.findOne({ id: data.fromUserId }).select('diamonds enviados receptores earnings updatedAt').lean();
+
                     if (updatedSender) {
                         io.to(userRoom).emit('diamonds_updated', {
                             userId: data.fromUserId,
-                            diamonds: updatedSender.diamonds,
-                            enviados: updatedSender.enviados,
+                            diamonds: (updatedSender as any).diamonds,
+                            enviados: (updatedSender as any).enviados,
                             change: -totalValue,
                             timestamp: new Date().toISOString(),
                             source: 'gift_sent'
@@ -249,21 +261,32 @@ export const initSocket = (server: any) => {
                             stats: updatedSender
                         });
                     }
+
                     // Se houver streamId, atualizar também o receptor (host da stream)
                     if (data.streamId) {
                         const { Streamer } = await import('./models/Streamer');
                         const stream = await Streamer.findOne({ id: data.streamId }).select('hostId').lean();
                         if (stream && stream.hostId && stream.hostId !== data.fromUserId) {
-                            await User.findOneAndUpdate(
+                            console.log(`📤 [GIFT] Adicionando ${totalValue} ganhos para o host ${stream.hostId}...`);
+                            const receiverUpdate = await User.findOneAndUpdate(
                                 { id: stream.hostId },
-                                { $inc: { receptores: totalValue, diamonds: totalValue, earnings: totalValue } }
+                                { $inc: { receptores: totalValue, diamonds: totalValue, earnings: totalValue } },
+                                { new: true }
                             );
-                            const updatedReceiver = await User.findOne({ id: stream.hostId }).select('diamonds enviados receptores earnings').lean();
+
+                            if (!receiverUpdate) {
+                                console.warn(`⚠️ [GIFT] HOST NÃO ENCONTRADO por id: ${stream.hostId}`);
+                            } else {
+                                console.log(`✅ [GIFT] Ganhos do host persistidos. Novo total: ${receiverUpdate.earnings}. updatedAt: ${receiverUpdate.updatedAt}`);
+                            }
+
+                            const updatedReceiver = await User.findOne({ id: stream.hostId }).select('diamonds enviados receptores earnings updatedAt').lean();
+
                             if (updatedReceiver) {
                                 io.to(`user_${stream.hostId}`).emit('diamonds_updated', {
                                     userId: stream.hostId,
-                                    diamonds: updatedReceiver.diamonds,
-                                    receptores: updatedReceiver.receptores,
+                                    diamonds: (updatedReceiver as any).diamonds,
+                                    receptores: (updatedReceiver as any).receptores,
                                     change: totalValue,
                                     timestamp: new Date().toISOString(),
                                     source: 'gift_received'

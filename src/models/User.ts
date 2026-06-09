@@ -25,7 +25,11 @@ export interface IUser extends Document {
   level: number;
   xp?: number;
   rank?: number;
-  location?: string;
+  location?: { type: string; coordinates: [number, number] }; // GeoJSON [longitude, latitude]
+  latitude?: number;
+  longitude?: number;
+  city?: string;
+  state?: string;
   distance?: string;
   fans: number;
   following: number;
@@ -110,6 +114,10 @@ const UserSchema: Schema = new Schema({
   xp: { type: Number, default: 0 },
   rank: { type: Number },
   location: { type: Schema.Types.Mixed },
+  latitude: { type: Number },
+  longitude: { type: Number },
+  city: { type: String },
+  state: { type: String },
   distance: { type: String },
   fans: { type: Number, default: 0 },
   following: { type: Number, default: 0 },

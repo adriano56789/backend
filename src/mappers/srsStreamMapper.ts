@@ -38,6 +38,10 @@ export interface StreamerDocument {
     playbackUrl?: string;
     rtmpIngestUrl?: string;
     startTime?: Date;
+    latitude?: number;
+    longitude?: number;
+    city?: string;
+    state?: string;
 }
 
 export interface FrontendStreamFormat {
@@ -97,6 +101,10 @@ export interface ProtectedStreamFormat {
     isPrivate: boolean;
     quality: string;
     playbackUrl?: string;
+    latitude?: number;
+    longitude?: number;
+    city?: string;
+    state?: string;
 }
 
 /**
@@ -231,19 +239,23 @@ export function mapSrsStreamToFrontend(
  */
 export function mapStreamToProtected(stream: StreamerDocument): ProtectedStreamFormat {
     return {
-        id: generateProtectedId(stream.name || stream.hostId), // ID com nome real do host
+        id: generateProtectedId(stream.name || stream.hostId),
         name: stream.name,
         avatar: stream.avatar,
         viewers: stream.viewers,
         diamonds: stream.diamonds || 0,
         isLive: stream.isLive || false,
-        country: stream.country || 'XX', // Ocultar país real
-        location: stream.location || 'Hidden', // Ocultar localização
+        country: stream.country || 'XX',
+        location: stream.location || 'Hidden',
         message: stream.message || '',
         tags: stream.tags || [],
         isPrivate: stream.isPrivate || false,
         quality: stream.quality || 'HD',
-        playbackUrl: stream.playbackUrl || '' // Permite reprodução mas não ingestão
+        playbackUrl: stream.playbackUrl || '',
+        latitude: stream.latitude,
+        longitude: stream.longitude,
+        city: stream.city,
+        state: stream.state
     };
 }
 
@@ -368,19 +380,23 @@ export interface MongoStreamerDocument {
  */
 export function mapStreamToProtectedFlexible(stream: MongoStreamerDocument): ProtectedStreamFormat {
     return {
-        id: generateProtectedId(stream.name || stream.hostId), // ID com nome real do host
+        id: generateProtectedId(stream.name || stream.hostId),
         name: stream.name,
         avatar: stream.avatar,
         viewers: stream.viewers || 0,
         diamonds: stream.diamonds || 0,
         isLive: stream.isLive || false,
-        country: stream.country || 'XX', // Ocultar país real
-        location: stream.location || 'Hidden', // Ocultar localização
+        country: stream.country || 'XX',
+        location: stream.location || 'Hidden',
         message: stream.message || '',
         tags: stream.tags || [],
         isPrivate: stream.isPrivate || false,
         quality: stream.quality || 'HD',
-        playbackUrl: stream.playbackUrl || '' // Permite reprodução mas não ingestão
+        playbackUrl: stream.playbackUrl || '',
+        latitude: stream.latitude,
+        longitude: stream.longitude,
+        city: stream.city,
+        state: stream.state
     };
 }
 
