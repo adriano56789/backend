@@ -44,17 +44,24 @@ UserLevelSchema.index({ totalExp: -1 });
 
 UserLevelSchema.statics.calculateExpForLevel = function(level: number): number {
     if (level <= 0) return 0;
-    const baseExp = 100;
-    const growthRate = 1.5;
+    if (level <= 1) return 0;
     if (level <= 5) {
-        const progressions = [100, 200, 300, 500, 800];
-        return progressions[level - 1] || baseExp;
+        const progressions = [0, 50, 100, 150, 200];
+        return progressions[level - 1] || 50;
+    } else if (level <= 10) {
+        return 200 + (level - 5) * 100;
+    } else if (level <= 15) {
+        return 500 + (level - 10) * 150;
     } else if (level <= 20) {
-        return Math.floor(baseExp * Math.pow(growthRate, level - 1));
-    } else if (level <= 50) {
-        return Math.floor(baseExp * Math.pow(growthRate * 1.2, level - 1));
+        return 1250 + (level - 15) * 250;
+    } else if (level <= 25) {
+        return 2500 + (level - 20) * 500;
+    } else if (level <= 30) {
+        return 5000 + (level - 25) * 750;
+    } else if (level <= 40) {
+        return 8750 + (level - 30) * 1000;
     } else {
-        return Math.floor(baseExp * Math.pow(growthRate * 1.5, level - 1));
+        return 18750 + (level - 40) * 1500;
     }
 };
 

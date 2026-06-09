@@ -135,9 +135,11 @@ function generateSrsUrls(streamId: string): {
 
 /**
  * Gera ID falso para proteção de dados sensíveis
+ * Usa o nome do host (username real) em vez de caracteres aleatórios
  */
-function generateProtectedId(): string {
-    return `protected_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+function generateProtectedId(hostName?: string): string {
+    const name = hostName || Math.random().toString(36).substr(2, 6);
+    return `protected_${Date.now()}_${name}`;
 }
 
 /**
@@ -229,7 +231,7 @@ export function mapSrsStreamToFrontend(
  */
 export function mapStreamToProtected(stream: StreamerDocument): ProtectedStreamFormat {
     return {
-        id: generateProtectedId(), // ID falso para proteção
+        id: generateProtectedId(stream.name || stream.hostId), // ID com nome real do host
         name: stream.name,
         avatar: stream.avatar,
         viewers: stream.viewers,
@@ -366,7 +368,7 @@ export interface MongoStreamerDocument {
  */
 export function mapStreamToProtectedFlexible(stream: MongoStreamerDocument): ProtectedStreamFormat {
     return {
-        id: generateProtectedId(), // ID falso para proteção
+        id: generateProtectedId(stream.name || stream.hostId), // ID com nome real do host
         name: stream.name,
         avatar: stream.avatar,
         viewers: stream.viewers || 0,

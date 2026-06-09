@@ -126,7 +126,7 @@ export const initSocket = (server: any) => {
                         const { UserLevelService } = await import('./services/UserLevelService');
                         const expResult = await UserLevelService.addExp({
                             userId: giftData.fromUserId,
-                            amount: Math.max(1, Math.floor(giftData.giftPrice * giftData.quantity * 0.1)),
+                            amount: Math.max(1, Math.floor(giftData.giftPrice * giftData.quantity)),
                             reason: `Gift: ${giftData.giftName} x${giftData.quantity}`,
                             streamId: event.streamId
                         });
@@ -159,6 +159,11 @@ export const initSocket = (server: any) => {
         socket.on('send_chat_message', async (data) => {
             console.log(` [CHAT] Chat message received:`, data);
             
+            // Garantir que o remetente está na sala da stream
+            if (data.streamId) {
+                socket.join(data.streamId);
+            }
+            
             // Codificar usando Protobuf e enviar como binário
             const buffer = BackendProtobufService.encodeChatEvent(
                 data.streamId,
@@ -180,12 +185,17 @@ export const initSocket = (server: any) => {
         socket.on('send_gift', async (data) => {
             console.log(` [GIFT] Gift event received:`, data);
             
+            // Garantir que o remetente está na sala da stream
+            if (data.streamId) {
+                socket.join(data.streamId);
+            }
+            
             // Adicionar EXP para o usuário que enviou o presente
             try {
                 const { UserLevelService } = await import('./services/UserLevelService');
                 const expResult = await UserLevelService.addExp({
                     userId: data.fromUserId,
-                    amount: Math.max(1, Math.floor(data.giftPrice * data.quantity * 0.1)), // Mínimo 1 EXP
+                    amount: Math.max(1, Math.floor(data.giftPrice * data.quantity)),
                     reason: `Gift: ${data.giftName} x${data.quantity}`,
                     streamId: data.streamId
                 });
@@ -239,6 +249,12 @@ export const initSocket = (server: any) => {
         
         socket.on('user_joined', async (data) => {
             console.log(` [USER] User joined received:`, data);
+            
+            // Juntar socket à sala da stream para receber broadcasts em tempo real
+            if (data.streamId) {
+                socket.join(data.streamId);
+                console.log(` [USER] Socket ${socket.id} joined room ${data.streamId}`);
+            }
             
             // Adicionar EXP por entrar na stream
             try {
