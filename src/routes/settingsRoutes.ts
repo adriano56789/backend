@@ -371,7 +371,7 @@ router.get('/permissions/camera/:id', async (req, res) => {
             return res.status(404).json({ error: 'User not found' });
         }
         
-        res.json({ status: user.locationPermission || 'granted' });
+        res.json({ status: user.cameraPermissionStatus || 'granted' });
     } catch (error: any) {
         console.error('Error getting camera permissions:', error);
         res.status(500).json({ error: error.message });
@@ -390,7 +390,7 @@ router.post('/permissions/camera/:id', async (req, res) => {
         const updatedUser = await updateUserByRealId(
             User, 
             userId, 
-            { locationPermission: status }
+            { cameraPermissionStatus: status }
         );
         
         res.json({ success: !!updatedUser, status: status });
@@ -408,7 +408,7 @@ router.get('/permissions/microphone/:id', async (req, res) => {
             return res.status(404).json({ error: 'User not found' });
         }
         
-        res.json({ status: user.locationPermission || 'granted' });
+        res.json({ status: user.microphonePermissionStatus || 'granted' });
     } catch (error: any) {
         console.error('Error getting microphone permissions:', error);
         res.status(500).json({ error: error.message });
@@ -421,13 +421,13 @@ router.post('/permissions/microphone/:id', async (req, res) => {
         const userId = req.params.id;
         
         if (!status || !['granted', 'denied', 'prompt'].includes(status)) {
-            return res.status(400).json({ error: 'Invalid permission status' });
+            return status(400).json({ error: 'Invalid permission status' });
         }
         
         const updatedUser = await updateUserByRealId(
             User, 
             userId, 
-            { locationPermission: status }
+            { microphonePermissionStatus: status }
         );
         
         res.json({ success: !!updatedUser, status: status });
