@@ -157,7 +157,7 @@ router.post('/confirm', FraudDetectionMiddleware.detectFraud, async (req, res) =
                 amount: order.amount,
                 timestamp: new Date()
             });
-            io.to(order.userId).emit('diamonds_updated', {
+            io.to('user_' + order.userId).emit('diamonds_updated', {
                 userId: order.userId,
                 diamonds: user.diamonds,
                 xp: user.xp
