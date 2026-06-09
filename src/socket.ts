@@ -222,6 +222,64 @@ export const initSocket = (server: any) => {
                 console.error(' [GIFT] Error adding EXP:', error);
             }
             
+            // Atualizar saldo de diamantes, enviados e receptores em tempo real
+            try {
+                const totalValue = Math.max(1, Math.floor((data.giftPrice || 0) * (data.quantity || 1)));
+                if (data.fromUserId && totalValue > 0) {
+                    const { User } = await import('./models/index');
+                    // Deduzir diamantes e incrementar enviados
+                    await User.findOneAndUpdate(
+                        { id: data.fromUserId },
+                        { $inc: { diamonds: -totalValue, enviados: totalValue } }
+                    );
+                    // Emitir atualização de saldo para o remetente
+                    const userRoom = `user_${data.fromUserId}`;
+                    const updatedSender = await User.findOne({ id: data.fromUserId }).select('diamonds enviados receptores earnings').lean();
+                    if (updatedSender) {
+                        io.to(userRoom).emit('diamonds_updated', {
+                            userId: data.fromUserId,
+                            diamonds: updatedSender.diamonds,
+                            enviados: updatedSender.enviados,
+                            change: -totalValue,
+                            timestamp: new Date().toISOString(),
+                            source: 'gift_sent'
+                        });
+                        io.to(userRoom).emit('user_stats_updated', {
+                            userId: data.fromUserId,
+                            stats: updatedSender
+                        });
+                    }
+                    // Se houver streamId, atualizar também o receptor (host da stream)
+                    if (data.streamId) {
+                        const { Streamer } = await import('./models/Streamer');
+                        const stream = await Streamer.findOne({ id: data.streamId }).select('hostId').lean();
+                        if (stream && stream.hostId && stream.hostId !== data.fromUserId) {
+                            await User.findOneAndUpdate(
+                                { id: stream.hostId },
+                                { $inc: { receptores: totalValue, diamonds: totalValue, earnings: totalValue } }
+                            );
+                            const updatedReceiver = await User.findOne({ id: stream.hostId }).select('diamonds enviados receptores earnings').lean();
+                            if (updatedReceiver) {
+                                io.to(`user_${stream.hostId}`).emit('diamonds_updated', {
+                                    userId: stream.hostId,
+                                    diamonds: updatedReceiver.diamonds,
+                                    receptores: updatedReceiver.receptores,
+                                    change: totalValue,
+                                    timestamp: new Date().toISOString(),
+                                    source: 'gift_received'
+                                });
+                                io.to(`user_${stream.hostId}`).emit('user_stats_updated', {
+                                    userId: stream.hostId,
+                                    stats: updatedReceiver
+                                });
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error(' [GIFT] Error updating diamond balance:', error);
+            }
+            
             // Codificar usando Protobuf e enviar como binário
             const buffer = BackendProtobufService.encodeGiftEvent(
                 data.streamId,
