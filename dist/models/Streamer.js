@@ -93,7 +93,11 @@ const StreamerSchema = new mongoose_1.Schema({
     webrtcSessionId: { type: String },
     srsClientId: { type: String },
     srsPublishData: { type: Object },
-    srsUnpublishData: { type: Object }
+    srsUnpublishData: { type: Object },
+    latitude: { type: Number },
+    longitude: { type: Number },
+    city: { type: String },
+    state: { type: String }
 }, { timestamps: true });
 // Create indexes
 StreamerSchema.index({ isLive: 1, category: 1 });

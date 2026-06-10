@@ -93,13 +93,8 @@ exports.UserRoutes.get('/:id', async (req, res) => {
             query = { _id: paramId };
         }
         else {
-            // Senão, buscar pelo id customizado
-            query = {
-                $or: [
-                    { id: paramId },
-                    { identification: paramId }
-                ]
-            };
+            // Buscar pelo nome de usuário (que agora é o campo id)
+            query = { id: paramId };
         }
         const user = await models_1.User.findOne(query).lean();
         if (user) {
@@ -118,10 +113,27 @@ exports.UserRoutes.get('/:id', async (req, res) => {
                     }
                 }).catch(console.error); // Não falhar se não conseguir persistir
             }
-            // Função de limpeza robusta para remover completamente campos internos do Mongoose
-            // Usar .toObject() ou .lean() se user for documento Mongoose
+            // Calcular distância do usuário atual até este perfil
+            if (currentUserId && currentUserId !== user.id && user.location?.coordinates) {
+                try {
+                    const currentUser = await models_1.User.findOne({ id: currentUserId }).select('location').lean();
+                    if (currentUser?.location?.coordinates) {
+                        const [lng2, lat2] = user.location.coordinates;
+                        const [lng1, lat1] = currentUser.location.coordinates;
+                        const R = 6371;
+                        const dLat = ((lat2 - lat1) * Math.PI) / 180;
+                        const dLng = ((lng2 - lng1) * Math.PI) / 180;
+                        const a = Math.sin(dLat / 2) ** 2 +
+                            Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) *
+                                Math.sin(dLng / 2) ** 2;
+                        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+                        const km = R * c;
+                        user.distance = `${km.toFixed(0)} km de distância`;
+                    }
+                }
+                catch { /* distance stays as-is */ }
+            }
             const userObj = typeof user.toObject === 'function' ? user.toObject() : user;
-            // Usar standardizeUserResponse que já faz o mapeamento seguro dos campos
             return res.json((0, userResponse_1.standardizeUserResponse)(userObj));
         }
         res.status(404).json({ error: 'User not found' });

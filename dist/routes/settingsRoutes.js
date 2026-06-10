@@ -315,7 +315,7 @@ router.get('/permissions/camera/:id', async (req, res) => {
         if (!user) {
             return res.status(404).json({ error: 'User not found' });
         }
-        res.json({ status: user.locationPermission || 'granted' });
+        res.json({ status: user.cameraPermissionStatus || 'granted' });
     }
     catch (error) {
         console.error('Error getting camera permissions:', error);
@@ -329,7 +329,7 @@ router.post('/permissions/camera/:id', async (req, res) => {
         if (!status || !['granted', 'denied', 'prompt'].includes(status)) {
             return res.status(400).json({ error: 'Invalid permission status' });
         }
-        const updatedUser = await (0, idHelper_1.updateUserByRealId)(models_1.User, userId, { locationPermission: status });
+        const updatedUser = await (0, idHelper_1.updateUserByRealId)(models_1.User, userId, { cameraPermissionStatus: status });
         res.json({ success: !!updatedUser, status: status });
     }
     catch (error) {
@@ -343,7 +343,7 @@ router.get('/permissions/microphone/:id', async (req, res) => {
         if (!user) {
             return res.status(404).json({ error: 'User not found' });
         }
-        res.json({ status: user.locationPermission || 'granted' });
+        res.json({ status: user.microphonePermissionStatus || 'granted' });
     }
     catch (error) {
         console.error('Error getting microphone permissions:', error);
@@ -355,9 +355,9 @@ router.post('/permissions/microphone/:id', async (req, res) => {
         const { status } = req.body;
         const userId = req.params.id;
         if (!status || !['granted', 'denied', 'prompt'].includes(status)) {
-            return res.status(400).json({ error: 'Invalid permission status' });
+            return status(400).json({ error: 'Invalid permission status' });
         }
-        const updatedUser = await (0, idHelper_1.updateUserByRealId)(models_1.User, userId, { locationPermission: status });
+        const updatedUser = await (0, idHelper_1.updateUserByRealId)(models_1.User, userId, { microphonePermissionStatus: status });
         res.json({ success: !!updatedUser, status: status });
     }
     catch (error) {

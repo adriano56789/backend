@@ -32,13 +32,25 @@ router.post('/register', async (req, res) => {
         }
         const salt = await bcryptjs_1.default.genSalt(10);
         const hashedPassword = await bcryptjs_1.default.hash(password, salt);
-        // Gerar ID numérico aleatório (sem restrição de nome)
-        let newUserId;
-        let idExists = false;
-        do {
-            newUserId = Math.floor(10000000 + Math.random() * 90000000).toString();
-            idExists = !!(await models_1.User.findOne({ id: newUserId }));
-        } while (idExists);
+        // Gerar ID baseado no nome do usuário
+        const sanitizeId = (raw) => {
+            return raw.toLowerCase()
+                .trim()
+                .replace(/[^a-z0-9]/g, '')
+                .replace(/\s+/g, '')
+                .substring(0, 30) || 'user';
+        };
+        const baseId = sanitizeId(name);
+        const existingUser = await models_1.User.findOne({ id: baseId });
+        if (existingUser) {
+            return res.status(200).json({
+                success: true,
+                message: 'Usuário já existe. Faça login.',
+                user: (0, userResponse_1.standardizeUserResponse)(existingUser),
+                token: jsonwebtoken_1.default.sign({ id: existingUser.id, email: existingUser.email }, JWT_SECRET, { expiresIn: '7d' })
+            });
+        }
+        let newUserId = baseId;
         console.log(`[REGISTER] ID gerado: ${newUserId}`);
         // Função para normalizar tags
         const normalizeTags = (tags) => {

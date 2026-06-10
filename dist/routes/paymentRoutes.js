@@ -94,7 +94,7 @@ router.post('/webhook/purchase', async (req, res) => {
                         amount: order.amount,
                         newBalance: user.diamonds
                     });
-                    io.to(order.userId).emit('diamonds_updated', {
+                    io.to('user_' + order.userId).emit('diamonds_updated', {
                         diamonds: user.diamonds,
                         change: order.diamonds
                     });

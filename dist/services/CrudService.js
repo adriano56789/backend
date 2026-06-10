@@ -92,9 +92,11 @@ class CrudService {
             if (!this.validateCollection(collection)) {
                 return this.errorResponse('Coleção não permitida');
             }
+            console.log(`📝 [CRUD-CREATE] Evento recebido para coleção: ${collection}`);
             const documentData = { ...data, createdAt: new Date(), updatedAt: new Date() };
             const modelOrCollection = this.getCollectionOrModel(collection);
             let result;
+            console.log(`📤 [CRUD-CREATE] Enviando insert para o banco...`);
             // Se for um Model Mongoose
             if (this.isModelClass(modelOrCollection)) {
                 result = await modelOrCollection.create(documentData);
@@ -103,18 +105,20 @@ class CrudService {
                 // Se for coleção direta
                 result = await modelOrCollection.insertOne(documentData);
                 const createdDocument = { _id: result.insertedId, ...documentData };
+                console.log(`✅ [CRUD-CREATE] Resposta MongoDB recebida. Novo ID: ${result.insertedId}`);
                 return this.successResponse({
                     data: createdDocument,
                     insertedId: result.insertedId.toString()
                 }, 'Documento criado com sucesso');
             }
+            console.log(`✅ [CRUD-CREATE] Resposta MongoDB recebida. Novo ID: ${result._id}`);
             return this.successResponse({
                 data: result,
                 insertedId: result._id?.toString()
             }, 'Documento criado com sucesso');
         }
         catch (error) {
-            console.error('Erro ao criar documento:', error);
+            console.error('❌ [CRUD-CREATE] Erro ao criar documento:', error);
             return this.errorResponse('Erro ao criar documento: ' + error.message);
         }
     }
@@ -126,6 +130,7 @@ class CrudService {
             if (!Array.isArray(documents)) {
                 return this.errorResponse('Documents deve ser um array');
             }
+            console.log(`📝 [CRUD-CREATE-MANY] Evento recebido para coleção: ${collection} (${documents.length} documentos)`);
             const documentsWithTimestamp = documents.map(doc => ({
                 ...doc,
                 createdAt: new Date(),
@@ -133,6 +138,7 @@ class CrudService {
             }));
             const modelOrCollection = this.getCollectionOrModel(collection);
             let result;
+            console.log(`📤 [CRUD-CREATE-MANY] Enviando insertMany para o banco...`);
             // Se for um Model Mongoose
             if (this.isModelClass(modelOrCollection)) {
                 result = await modelOrCollection.insertMany(documentsWithTimestamp);
@@ -140,6 +146,7 @@ class CrudService {
             else {
                 // Se for coleção direta
                 result = await modelOrCollection.insertMany(documentsWithTimestamp);
+                console.log(`✅ [CRUD-CREATE-MANY] Resposta MongoDB recebida. Inseridos: ${result.insertedCount}`);
                 return this.successResponse({
                     data: documentsWithTimestamp.map((doc, index) => ({
                         _id: result.insertedIds[index],
@@ -149,13 +156,14 @@ class CrudService {
                     insertedCount: result.insertedCount
                 }, `${result.insertedCount} documentos criados com sucesso`);
             }
+            console.log(`✅ [CRUD-CREATE-MANY] Resposta MongoDB recebida. Inseridos: ${result.length}`);
             return this.successResponse({
                 data: result,
                 insertedCount: result.length
             }, `${result.length} documentos criados com sucesso`);
         }
         catch (error) {
-            console.error('Erro ao criar múltiplos documentos:', error);
+            console.error('❌ [CRUD-CREATE-MANY] Erro ao criar múltiplos documentos:', error);
             return this.errorResponse('Erro ao criar documentos: ' + error.message);
         }
     }
@@ -367,14 +375,17 @@ class CrudService {
             if (!this.validateCollection(collection)) {
                 return this.errorResponse('Coleção não permitida');
             }
+            console.log(`📝 [CRUD-UPDATE] Evento de atualização recebido para ${collection} ID: ${id}`);
             const data = { ...updateData, updatedAt: new Date() };
             const modelOrCollection = this.getCollectionOrModel(collection);
             let result;
             let updatedDocument;
+            console.log(`📤 [CRUD-UPDATE] Enviando update para o banco...`);
             // Se for um Model Mongoose
             if (this.isModelClass(modelOrCollection)) {
                 result = await modelOrCollection.findOneAndUpdate({ _id: id }, { $set: data }, { new: true });
                 if (!result) {
+                    console.warn(`⚠️ [CRUD-UPDATE] Documento não encontrado no banco.`);
                     return this.errorResponse('Documento não encontrado');
                 }
                 updatedDocument = result;
@@ -383,18 +394,20 @@ class CrudService {
                 // Se for coleção direta
                 result = await modelOrCollection.updateOne({ _id: new mongodb_1.ObjectId(id) }, { $set: data });
                 if (result.matchedCount === 0) {
+                    console.warn(`⚠️ [CRUD-UPDATE] Documento não encontrado no banco.`);
                     return this.errorResponse('Documento não encontrado');
                 }
                 // Buscar documento atualizado
                 updatedDocument = await modelOrCollection.findOne({ _id: new mongodb_1.ObjectId(id) });
             }
+            console.log(`✅ [CRUD-UPDATE] Resposta MongoDB recebida. Documento persistido com updatedAt: ${updatedDocument.updatedAt}`);
             return this.successResponse({
                 data: updatedDocument,
                 modifiedCount: result?.modifiedCount || 1
             }, 'Documento atualizado com sucesso');
         }
         catch (error) {
-            console.error('Erro ao atualizar documento:', error);
+            console.error('❌ [CRUD-UPDATE] Erro ao atualizar documento:', error);
             return this.errorResponse('Erro ao atualizar documento: ' + error.message);
         }
     }
@@ -406,9 +419,11 @@ class CrudService {
             if (!filter || !update) {
                 return this.errorResponse('Filter e update são obrigatórios');
             }
+            console.log(`📝 [CRUD-UPDATE-MANY] Evento recebido para coleção: ${collection}`);
             const updateData = { ...update, updatedAt: new Date() };
             const modelOrCollection = this.getCollectionOrModel(collection);
             let result;
+            console.log(`📤 [CRUD-UPDATE-MANY] Enviando updateMany para o banco...`);
             // Se for um Model Mongoose
             if (this.isModelClass(modelOrCollection)) {
                 result = await modelOrCollection.updateMany(filter, { $set: updateData });
@@ -417,13 +432,14 @@ class CrudService {
                 // Se for coleção direta
                 result = await modelOrCollection.updateMany(filter, { $set: updateData });
             }
+            console.log(`✅ [CRUD-UPDATE-MANY] Resposta MongoDB recebida. Modificados: ${result.modifiedCount}`);
             return this.successResponse({
                 modifiedCount: result.modifiedCount,
                 matchedCount: result.matchedCount
             }, `${result.modifiedCount} documentos atualizados`);
         }
         catch (error) {
-            console.error('Erro ao atualizar múltiplos documentos:', error);
+            console.error('❌ [CRUD-UPDATE-MANY] Erro ao atualizar múltiplos documentos:', error);
             return this.errorResponse('Erro ao atualizar documentos: ' + error.message);
         }
     }
@@ -435,6 +451,7 @@ class CrudService {
             if (!filter || !update) {
                 return this.errorResponse('Filter e update são obrigatórios');
             }
+            console.log(`📝 [CRUD-UPSERT] Evento recebido para coleção: ${collection}`);
             const updateData = {
                 ...update,
                 updatedAt: new Date(),
@@ -443,6 +460,7 @@ class CrudService {
             const modelOrCollection = this.getCollectionOrModel(collection);
             let result;
             let document;
+            console.log(`📤 [CRUD-UPSERT] Enviando upsert para o banco...`);
             // Se for um Model Mongoose
             if (this.isModelClass(modelOrCollection)) {
                 result = await modelOrCollection.findOneAndUpdate(filter, {
@@ -460,6 +478,7 @@ class CrudService {
                 // Buscar documento
                 document = await modelOrCollection.findOne(filter);
             }
+            console.log(`✅ [CRUD-UPSERT] Resposta MongoDB recebida. Novo valor persistido.`);
             return this.successResponse({
                 data: document,
                 upsertedId: result.upsertedId ? result.upsertedId.toString() : undefined,
@@ -468,7 +487,7 @@ class CrudService {
             }, result?.upsertedCount > 0 ? 'Documento criado com sucesso' : 'Documento atualizado com sucesso');
         }
         catch (error) {
-            console.error('Erro no upsert:', error);
+            console.error('❌ [CRUD-UPSERT] Erro no upsert:', error);
             return this.errorResponse('Erro no upsert: ' + error.message);
         }
     }

@@ -60,7 +60,11 @@ const UserSchema = new mongoose_1.Schema({
     level: { type: Number, default: 1 },
     xp: { type: Number, default: 0 },
     rank: { type: Number },
-    location: { type: String },
+    location: { type: mongoose_1.Schema.Types.Mixed },
+    latitude: { type: Number },
+    longitude: { type: Number },
+    city: { type: String },
+    state: { type: String },
     distance: { type: String },
     fans: { type: Number, default: 0 },
     following: { type: Number, default: 0 },
@@ -123,4 +127,6 @@ const UserSchema = new mongoose_1.Schema({
 }, { timestamps: true });
 // Create text index for search
 UserSchema.index({ name: 'text', displayName: 'text', bio: 'text', profession: 'text' });
+// Create 2dsphere index for geospatial queries
+UserSchema.index({ location: '2dsphere' });
 exports.User = mongoose_1.default.model('User', UserSchema);

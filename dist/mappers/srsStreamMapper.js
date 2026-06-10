@@ -44,9 +44,11 @@ function generateSrsUrls(streamId) {
 }
 /**
  * Gera ID falso para proteção de dados sensíveis
+ * Usa o nome do host (username real) em vez de caracteres aleatórios
  */
-function generateProtectedId() {
-    return `protected_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+function generateProtectedId(hostName) {
+    const name = hostName || Math.random().toString(36).substr(2, 6);
+    return `protected_${Date.now()}_${name}`;
 }
 /**
  * Mapper principal: Transforma dados SRS para formato completo do frontend
@@ -122,19 +124,23 @@ function mapSrsStreamToFrontend(srsStream, overrideData = {}) {
  */
 function mapStreamToProtected(stream) {
     return {
-        id: generateProtectedId(), // ID falso para proteção
+        id: generateProtectedId(stream.name || stream.hostId),
         name: stream.name,
         avatar: stream.avatar,
         viewers: stream.viewers,
         diamonds: stream.diamonds || 0,
         isLive: stream.isLive || false,
-        country: stream.country || 'XX', // Ocultar país real
-        location: stream.location || 'Hidden', // Ocultar localização
+        country: stream.country || 'XX',
+        location: stream.location || 'Hidden',
         message: stream.message || '',
         tags: stream.tags || [],
         isPrivate: stream.isPrivate || false,
         quality: stream.quality || 'HD',
-        playbackUrl: stream.playbackUrl || '' // Permite reprodução mas não ingestão
+        playbackUrl: stream.playbackUrl || '',
+        latitude: stream.latitude,
+        longitude: stream.longitude,
+        city: stream.city,
+        state: stream.state
     };
 }
 /**
@@ -196,19 +202,23 @@ function validateStreamerDocument(data) {
  */
 function mapStreamToProtectedFlexible(stream) {
     return {
-        id: generateProtectedId(), // ID falso para proteção
+        id: generateProtectedId(stream.name || stream.hostId),
         name: stream.name,
         avatar: stream.avatar,
         viewers: stream.viewers || 0,
         diamonds: stream.diamonds || 0,
         isLive: stream.isLive || false,
-        country: stream.country || 'XX', // Ocultar país real
-        location: stream.location || 'Hidden', // Ocultar localização
+        country: stream.country || 'XX',
+        location: stream.location || 'Hidden',
         message: stream.message || '',
         tags: stream.tags || [],
         isPrivate: stream.isPrivate || false,
         quality: stream.quality || 'HD',
-        playbackUrl: stream.playbackUrl || '' // Permite reprodução mas não ingestão
+        playbackUrl: stream.playbackUrl || '',
+        latitude: stream.latitude,
+        longitude: stream.longitude,
+        city: stream.city,
+        state: stream.state
     };
 }
 /**

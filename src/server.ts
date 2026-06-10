@@ -61,6 +61,7 @@ import videoStreamRoutes from './routes/videoStreamRoutes'; // NOVO - API de Str
 import srsRoutes from './routes/srsRoutes'; // Callbacks SRS
 import appVersionRoutes from './routes/appVersionRoutes'; // NOVO - Sistema de controle de versão
 import crudRoutes from './routes/crudRoutes';
+import liveInviteRoutes from './routes/liveInviteRoutes';
 import UserStatusManager from './middleware/UserStatusManager';
 import { blockBase64Middleware } from './middleware/blockBase64';
 import { mqttBridge } from './services/MqttBridge';
@@ -395,6 +396,7 @@ app.use('/api', metadataRoutes); // handles /api/ranking, /api/gifts, /api/regio
 app.use('/api', liveRoutes); // handles /api/live, /api/streams, /api/rtc, /api/lives, /api/permissions
 app.use('/api', settingsRoutes); // handles /api/settings, /api/notifications/settings
 app.use('/api/pk', pkRoutes);
+app.use('/api/live', liveInviteRoutes); // NOVO - Convites Co-Host/PK com SRS SFU WebRTC
 app.use('/api/interactions', interactionRoutes); // handles /api/interactions/presents, /api/interactions/streams
 app.use('/api/photos', photoRoutes); // handles /api/photos/:id/like
 app.use('/api', activityRoutes); // NOVO - Sistema de Atividades

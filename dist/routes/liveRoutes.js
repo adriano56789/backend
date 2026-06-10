@@ -1647,7 +1647,11 @@ router.post('/streams', async (req, res) => {
                 streamStatus: 'active',
                 startTime: new Date(),
                 viewers: 0,
-                country: finalCountry
+                country: finalCountry,
+                latitude: user.latitude,
+                longitude: user.longitude,
+                city: user.city,
+                state: user.state
             }
         }, { upsert: true, new: true, setDefaultsOnInsert: true });
         console.log(`[STREAMS-POST] Stream criada/atualizada: id=${stream.id}, isLive=${stream.isLive}, country=${stream.country}`);
@@ -2040,7 +2044,7 @@ router.get('/:streamId', async (req, res) => {
  *
  * Finaliza uma live
  */
-router.post('/:streamId/end', async (req, res) => {
+router.post('/live/:streamId/end', async (req, res) => {
     try {
         const userId = (0, auth_1.getUserIdFromToken)(req);
         const { streamId } = req.params;

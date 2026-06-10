@@ -122,7 +122,7 @@ router.post('/mercadopago', async (req, res) => {
                 console.log(`[WEBHOOK] Compra registrada no histórico para usuário ${order.userId}`);
                 // Emitir WebSocket para atualizar frontend em tempo real
                 if (io) {
-                    io.to(order.userId).emit('diamonds_updated', {
+                    io.to('user_' + order.userId).emit('diamonds_updated', {
                         userId: order.userId,
                         diamonds: user.diamonds,
                         change: order.diamonds,

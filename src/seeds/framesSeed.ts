@@ -119,7 +119,7 @@ export async function seedFrames() {
     // Inserir os frames
     const result = await framesCollection.insertMany(framesData as any);
     
-    console.log(`✅ [SEED-FRAMES] ${result.insertedIds.length} frames inseridos com sucesso!`);
+    console.log(`✅ [SEED-FRAMES] ${Object.keys(result.insertedIds).length} frames inseridos com sucesso!`);
     
     // Log dos IDs inseridos
     Object.entries(result.insertedIds).forEach(([idx, id]) => {
@@ -132,3 +132,4 @@ export async function seedFrames() {
 }
 
 export default seedFrames;
+

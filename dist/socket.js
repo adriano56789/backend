@@ -137,7 +137,7 @@ const initSocket = (server) => {
                         const { UserLevelService } = await Promise.resolve().then(() => __importStar(require('./services/UserLevelService')));
                         const expResult = await UserLevelService.addExp({
                             userId: giftData.fromUserId,
-                            amount: Math.max(1, Math.floor(giftData.giftPrice * giftData.quantity * 0.1)),
+                            amount: Math.max(1, Math.floor(giftData.giftPrice * giftData.quantity)),
                             reason: `Gift: ${giftData.giftName} x${giftData.quantity}`,
                             streamId: event.streamId
                         });
@@ -169,6 +169,10 @@ const initSocket = (server) => {
         // Eventos JSON existentes (mantidos para compatibilidade)
         socket.on('send_chat_message', async (data) => {
             console.log(` [CHAT] Chat message received:`, data);
+            // Garantir que o remetente está na sala da stream
+            if (data.streamId) {
+                socket.join(data.streamId);
+            }
             // Codificar usando Protobuf e enviar como binário
             const buffer = ProtobufService_1.BackendProtobufService.encodeChatEvent(data.streamId, data.userId, data.userName, data.userAvatar, data.message);
             if (buffer) {
@@ -179,16 +183,22 @@ const initSocket = (server) => {
             }
         });
         socket.on('send_gift', async (data) => {
-            console.log(` [GIFT] Gift event received:`, data);
+            console.log(`🎁 [GIFT] Evento recebido: Presente ${data.giftName} (x${data.quantity}) de ${data.fromUserId} para ${data.toUserId}`);
+            // Garantir que o remetente está na sala da stream
+            if (data.streamId) {
+                socket.join(data.streamId);
+            }
             // Adicionar EXP para o usuário que enviou o presente
             try {
                 const { UserLevelService } = await Promise.resolve().then(() => __importStar(require('./services/UserLevelService')));
+                console.log(`📤 [GIFT] Enviando update de EXP para o banco (User ${data.fromUserId})...`);
                 const expResult = await UserLevelService.addExp({
                     userId: data.fromUserId,
-                    amount: Math.max(1, Math.floor(data.giftPrice * data.quantity * 0.1)), // Mínimo 1 EXP
+                    amount: Math.max(1, Math.floor(data.giftPrice * data.quantity)),
                     reason: `Gift: ${data.giftName} x${data.quantity}`,
                     streamId: data.streamId
                 });
+                console.log(`✅ [GIFT] EXP persistido. Novo total: ${expResult.totalExp}`);
                 // Emitir atualização de nível em tempo real
                 const userRoom = `user_${data.fromUserId}`;
                 io.to(userRoom).emit('level_updated', {
@@ -212,6 +222,72 @@ const initSocket = (server) => {
             catch (error) {
                 console.error(' [GIFT] Error adding EXP:', error);
             }
+            // Atualizar saldo de diamantes, enviados e receptores em tempo real
+            try {
+                const totalValue = Math.max(1, Math.floor((data.giftPrice || 0) * (data.quantity || 1)));
+                if (data.fromUserId && totalValue > 0) {
+                    const { User } = await Promise.resolve().then(() => __importStar(require('./models/index')));
+                    // Deduzir diamantes e incrementar enviados
+                    console.log(`📤 [GIFT] Deduzindo ${totalValue} diamantes do remetente ${data.fromUserId} (Usando nome/id)...`);
+                    const senderUpdate = await User.findOneAndUpdate({ id: data.fromUserId }, { $inc: { diamonds: -totalValue, enviados: totalValue } }, { new: true });
+                    if (!senderUpdate) {
+                        console.error(`❌ [GIFT] REMETENTE NÃO ENCONTRADO: ${data.fromUserId}`);
+                    }
+                    else {
+                        console.log(`✅ [GIFT] Saldo do remetente persistido. Novo saldo: ${senderUpdate.diamonds}. updatedAt: ${senderUpdate.updatedAt}`);
+                    }
+                    // Emitir atualização de saldo para o remetente
+                    const userRoom = `user_${data.fromUserId}`;
+                    const updatedSender = await User.findOne({ id: data.fromUserId }).select('diamonds enviados receptores earnings updatedAt').lean();
+                    if (updatedSender) {
+                        io.to(userRoom).emit('diamonds_updated', {
+                            userId: data.fromUserId,
+                            diamonds: updatedSender.diamonds,
+                            enviados: updatedSender.enviados,
+                            change: -totalValue,
+                            timestamp: new Date().toISOString(),
+                            source: 'gift_sent'
+                        });
+                        io.to(userRoom).emit('user_stats_updated', {
+                            userId: data.fromUserId,
+                            stats: updatedSender
+                        });
+                    }
+                    // Se houver streamId, atualizar também o receptor (host da stream)
+                    if (data.streamId) {
+                        const { Streamer } = await Promise.resolve().then(() => __importStar(require('./models/Streamer')));
+                        const stream = await Streamer.findOne({ id: data.streamId }).select('hostId').lean();
+                        if (stream && stream.hostId && stream.hostId !== data.fromUserId) {
+                            console.log(`📤 [GIFT] Adicionando ${totalValue} ganhos para o host ${stream.hostId}...`);
+                            const receiverUpdate = await User.findOneAndUpdate({ id: stream.hostId }, { $inc: { receptores: totalValue, diamonds: totalValue, earnings: totalValue } }, { new: true });
+                            if (!receiverUpdate) {
+                                console.warn(`⚠️ [GIFT] HOST NÃO ENCONTRADO por id: ${stream.hostId}`);
+                            }
+                            else {
+                                console.log(`✅ [GIFT] Ganhos do host persistidos. Novo total: ${receiverUpdate.earnings}. updatedAt: ${receiverUpdate.updatedAt}`);
+                            }
+                            const updatedReceiver = await User.findOne({ id: stream.hostId }).select('diamonds enviados receptores earnings updatedAt').lean();
+                            if (updatedReceiver) {
+                                io.to(`user_${stream.hostId}`).emit('diamonds_updated', {
+                                    userId: stream.hostId,
+                                    diamonds: updatedReceiver.diamonds,
+                                    receptores: updatedReceiver.receptores,
+                                    change: totalValue,
+                                    timestamp: new Date().toISOString(),
+                                    source: 'gift_received'
+                                });
+                                io.to(`user_${stream.hostId}`).emit('user_stats_updated', {
+                                    userId: stream.hostId,
+                                    stats: updatedReceiver
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            catch (error) {
+                console.error(' [GIFT] Error updating diamond balance:', error);
+            }
             // Codificar usando Protobuf e enviar como binário
             const buffer = ProtobufService_1.BackendProtobufService.encodeGiftEvent(data.streamId, data.fromUserId, data.fromUserName, data.fromUserAvatar, data.toUserId, data.toUserName, data.toUserAvatar, data.giftId, data.giftName, data.giftIcon, data.giftPrice, data.quantity);
             if (buffer) {
@@ -223,6 +299,11 @@ const initSocket = (server) => {
         });
         socket.on('user_joined', async (data) => {
             console.log(` [USER] User joined received:`, data);
+            // Juntar socket à sala da stream para receber broadcasts em tempo real
+            if (data.streamId) {
+                socket.join(data.streamId);
+                console.log(` [USER] Socket ${socket.id} joined room ${data.streamId}`);
+            }
             // Adicionar EXP por entrar na stream
             try {
                 const { UserLevelService } = await Promise.resolve().then(() => __importStar(require('./services/UserLevelService')));

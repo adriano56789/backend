@@ -6,14 +6,21 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const models_1 = require("../models");
 const router = express_1.default.Router();
+console.log('[FRAME-ROUTES] Carregando rotas de frames...');
 // Listar todos os frames disponíveis
 router.get('/frames', async (req, res) => {
     try {
-        const frames = await models_1.Frame.find({ isActive: true });
-        res.json(frames);
+        console.log('[FRAME-ROUTES] GET /frames chamado');
+        const frames = await models_1.Frame.find({ isActive: true }).exec();
+        const framesList = frames.map((f) => {
+            const data = f.toObject ? f.toObject() : f;
+            // Remover referências circulares fazendo um parse/stringify
+            return JSON.parse(JSON.stringify(data));
+        });
+        res.json(framesList);
     }
     catch (error) {
-        console.error('Erro ao buscar frames:', error);
+        console.error('[FRAME-ROUTES] Erro ao buscar frames:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -26,7 +33,7 @@ router.post('/frames/:frameId/purchase', async (req, res) => {
             return res.status(400).json({ error: 'User ID required' });
         }
         // Buscar frame da loja
-        const frame = await models_1.Frame.findOne({ id: frameId, isActive: true });
+        const frame = await models_1.Frame.findOne({ _id: frameId, isActive: true }).exec();
         if (!frame) {
             return res.status(404).json({ error: 'Frame não encontrado' });
         }
@@ -36,12 +43,12 @@ router.post('/frames/:frameId/purchase', async (req, res) => {
             frameId,
             isActive: true,
             expirationDate: { $gt: new Date() }
-        });
+        }).exec();
         if (existingActive) {
             return res.status(400).json({ error: 'Você já possui este frame ativo' });
         }
         // Verificar diamonds do usuário
-        const user = await models_1.User.findOne({ id: userId });
+        const user = await models_1.User.findOne({ id: userId }).exec();
         if (!user || user.diamonds < frame.price) {
             return res.status(400).json({ error: 'Diamonds insuficientes' });
         }
@@ -72,7 +79,7 @@ router.post('/frames/:frameId/purchase', async (req, res) => {
         });
         res.json({
             success: true,
-            userFrame,
+            userFrame: JSON.parse(JSON.stringify(userFrame.toObject ? userFrame.toObject() : userFrame)),
             userDiamonds: user.diamonds,
             expirationDate
         });
@@ -91,8 +98,9 @@ router.get('/frames/user/:userId', async (req, res) => {
             userId,
             isActive: true,
             expirationDate: { $gt: new Date() }
-        }).populate('frameId');
-        res.json(userFrames);
+        }).exec();
+        const framesList = userFrames.map((f) => JSON.parse(JSON.stringify(f.toObject ? f.toObject() : f)));
+        res.json(framesList);
     }
     catch (error) {
         console.error('Erro ao buscar frames do usuário:', error);
@@ -113,7 +121,7 @@ router.post('/frames/:frameId/equip', async (req, res) => {
             frameId,
             isActive: true,
             expirationDate: { $gt: new Date() }
-        });
+        }).exec();
         if (!userFrame) {
             return res.status(404).json({ error: 'Frame não encontrado ou expirado' });
         }
@@ -123,10 +131,10 @@ router.post('/frames/:frameId/equip', async (req, res) => {
         userFrame.isEquipped = true;
         await userFrame.save();
         // Atualizar activeFrameId do usuário
-        await models_1.User.findOneAndUpdate({ id: userId }, { $set: { activeFrameId: frameId } });
+        await models_1.User.findOneAndUpdate({ id: userId }, { $set: { activeFrameId: frameId, updatedAt: new Date() } }).exec();
         res.json({
             success: true,
-            equippedFrame: userFrame,
+            equippedFrame: JSON.parse(JSON.stringify(userFrame.toObject ? userFrame.toObject() : userFrame)),
             message: 'Frame equipado com sucesso'
         });
     }
@@ -144,8 +152,9 @@ router.get('/frames/current/:userId', async (req, res) => {
             isActive: true,
             isEquipped: true,
             expirationDate: { $gt: new Date() }
-        }).populate('frameId');
-        res.json(currentFrame);
+        }).exec();
+        const frameData = currentFrame ? JSON.parse(JSON.stringify(currentFrame.toObject ? currentFrame.toObject() : currentFrame)) : null;
+        res.json(frameData);
     }
     catch (error) {
         console.error('Erro ao buscar frame atual:', error);

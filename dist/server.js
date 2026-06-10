@@ -36,7 +36,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getIO = void 0;
 exports.registerFfmpegProcess = registerFfmpegProcess;
 const express_1 = __importDefault(require("express"));
 const http_1 = __importDefault(require("http"));
@@ -101,6 +100,7 @@ const videoStreamRoutes_1 = __importDefault(require("./routes/videoStreamRoutes"
 const srsRoutes_1 = __importDefault(require("./routes/srsRoutes")); // Callbacks SRS
 const appVersionRoutes_1 = __importDefault(require("./routes/appVersionRoutes")); // NOVO - Sistema de controle de versão
 const crudRoutes_1 = __importDefault(require("./routes/crudRoutes"));
+const liveInviteRoutes_1 = __importDefault(require("./routes/liveInviteRoutes"));
 const UserStatusManager_1 = __importDefault(require("./middleware/UserStatusManager"));
 const blockBase64_1 = require("./middleware/blockBase64");
 const MqttBridge_1 = require("./services/MqttBridge");
@@ -419,6 +419,7 @@ app.use('/api', metadataRoutes_1.default); // handles /api/ranking, /api/gifts, 
 app.use('/api', liveRoutes_1.default); // handles /api/live, /api/streams, /api/rtc, /api/lives, /api/permissions
 app.use('/api', settingsRoutes_1.default); // handles /api/settings, /api/notifications/settings
 app.use('/api/pk', pkRoutes_1.default);
+app.use('/api/live', liveInviteRoutes_1.default); // NOVO - Convites Co-Host/PK com SRS SFU WebRTC
 app.use('/api/interactions', interactionRoutes_1.default); // handles /api/interactions/presents, /api/interactions/streams
 app.use('/api/photos', photoRoutes_1.default); // handles /api/photos/:id/like
 app.use('/api', activityRoutes_1.default); // NOVO - Sistema de Atividades
@@ -547,8 +548,9 @@ io.on('connection', (socket) => {
             // Atualizar status no banco (sempre atualizar o currentStreamId)
             const models = await Promise.resolve().then(() => __importStar(require('./models')));
             if (isFirstConnection || isChangingStream) {
-                await models.User.findOneAndUpdate({ id: userId }, { $set: { isOnline: true, currentStreamId: streamId, lastSeen: new Date().toISOString() } });
-                console.log(`🟢 [USER_STATUS] Usuário ${userId} definido como online na stream ${streamId}`);
+                console.log(`📤 [JOIN_STREAM] Enviando update de status para o banco (User ${userId})...`);
+                const updateResult = await models.User.findOneAndUpdate({ id: userId }, { $set: { isOnline: true, currentStreamId: streamId, lastSeen: new Date().toISOString() } }, { new: true });
+                console.log(`✅ [JOIN_STREAM] Resposta MongoDB recebida. Status atualizado: ${updateResult?.isOnline}, streamId: ${updateResult?.currentStreamId}`);
             }
             const onlineUsersInStream = Array.from(onlineUsers.values())
                 .filter((user) => user.streamId === streamId)
@@ -587,7 +589,10 @@ io.on('connection', (socket) => {
             const viewerCount = onlineUsersInStream.length;
             try {
                 const { Streamer } = await Promise.resolve().then(() => __importStar(require('./models/Streamer')));
-                await Streamer.findOneAndUpdate({ id: streamId }, { $set: { viewers: viewerCount } }).catch(() => { });
+                console.log(`📤 [JOIN_STREAM] Atualizando contagem de viewers para ${viewerCount} na stream ${streamId}...`);
+                await Streamer.findOneAndUpdate({ id: streamId }, { $set: { viewers: viewerCount } }).then(() => {
+                    console.log(`✅ [JOIN_STREAM] Contagem de viewers persistida no banco.`);
+                });
             }
             catch (e) {
                 // Falha silenciosa — não travar o join por causa do DB
@@ -1290,43 +1295,8 @@ io.on('connection', (socket) => {
         }
     });
 });
-const getIO = () => io;
-exports.getIO = getIO;
-// � DESATIVADO: Limpeza automática que estava zerando diamantes
-// Limpeza manual pode ser feita quando necessário
-// const cleanupInactiveStreams = async () => {
-//     try {
-//         console.log('🧹 [LIMPEZA] Verificando streams inativas...');
-//         
-//         // Limpar streams com 0 viewers há mais de 5 minutos
-//         const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-//         
-//         const result = await Streamer.updateMany(
-//             {
-//                 isLive: true,
-//                 streamStatus: 'active',
-//                 viewers: 0,
-//                 updatedAt: { $lt: fiveMinutesAgo }
-//             },
-//             {
-//                 $set: {
-//                     isLive: false,
-//                     streamStatus: 'ended',
-//                     endedAt: new Date()
-//                 }
-//             }
-//         );
-//         
-//         if (result.modifiedCount > 0) {
-//             console.log(`🧹 [LIMPEZA] ${result.modifiedCount} streams inativas marcadas como encerradas`);
-//         }
-//         
-//     } catch (error) {
-//         console.error('❌ [LIMPEZA] Erro ao limpar streams inativas:', error);
-//     }
-// };
-// 🔧 DESATIVADO: Não executar limpeza automática para proteger diamantes
-// setInterval(cleanupInactiveStreams, 5 * 60 * 1000); // 5 minutos
+// REMOVIDO: getIO duplicado (já existe em socket.ts e server.ts)
+// export const getIO = () => io;
 // Iniciar servidor WebSocket na porta 3001 separadamente
 let wsServer;
 if (isHttps) {
