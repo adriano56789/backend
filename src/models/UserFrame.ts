@@ -159,7 +159,7 @@ export async function findFrameDetail(collection: Collection, userFrameId: strin
         { _id: new ObjectId(userFrameId) },
         { projection: PROJ_DETAIL }
     );
-    return doc as IUserFrameDetail | null;
+    return doc as unknown as IUserFrameDetail | null;
 }
 
 export async function equipUserFrame(collection: Collection, userId: string, userFrameId: string) {
