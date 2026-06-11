@@ -1,37 +1,4 @@
 "use strict";
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
-    }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -157,16 +124,6 @@ async function processGiftSend(fromUserId, toUserId, giftId, quantity, streamId,
             await models_1.Streamer.findOneAndUpdate({ id: toUserId }, { $inc: { diamonds: totalCost } }, { upsert: true } // Criar se não existir
             );
             console.log(`💎 [LIVE GIFT] ${totalCost} diamantes adicionados à live ${streamId} e widget da streamer ${toUserId}.`);
-            // 🔧 SALVAR NO STREAM SESSION: acumular moedas para o resumo da live
-            try {
-                const { incrementCoins } = await Promise.resolve().then(() => __importStar(require('../models/StreamSession')));
-                const db = (0, db_1.getDb)();
-                await incrementCoins(db.collection('streamsessions'), streamId, totalCost);
-                console.log(`💾 [STREAM SESSION] ${totalCost} moedas salvas no StreamSession ${streamId}`);
-            }
-            catch (sessionErr) {
-                console.warn(`⚠️ [STREAM SESSION] Erro ao salvar moedas: ${sessionErr}`);
-            }
         }
         // 🔧 MELHOR PRÁTICA: Atualizar earnings/receptores com $inc (atômico)
         await models_1.User.findOneAndUpdate({ id: toUserId }, {

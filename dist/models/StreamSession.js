@@ -14,7 +14,6 @@ exports.incrementViewers = incrementViewers;
 exports.incrementCoins = incrementCoins;
 exports.incrementGifts = incrementGifts;
 exports.incrementMessages = incrementMessages;
-exports.incrementFollowers = incrementFollowers;
 exports.batchIncrement = batchIncrement;
 exports.findHostHistory = findHostHistory;
 exports.findByPeriod = findByPeriod;
@@ -38,10 +37,7 @@ async function findOrCreateSession(collection, streamId, hostId) {
             coins: 0,
             giftsReceived: 0,
             messagesCount: 0,
-            peakViewers: 0,
-            followers: 0,
-            members: 0,
-            fans: 0
+            peakViewers: 0
         }
     }, { upsert: true, returnDocument: 'after' });
     return result.value;
@@ -64,7 +60,7 @@ function findList(collection, limit, filters) {
     if (filters?.minViewers)
         query.viewers = { $gte: filters.minViewers };
     const cursor = collection.find(query, {
-        projection: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, followers: 1, members: 1, fans: 1, totalDuration: 1 },
+        projection: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, totalDuration: 1 },
         sort: { startTime: -1 }
     });
     if (limit)
@@ -78,7 +74,7 @@ function findDetail(collection, streamId, hostId) {
     if (hostId)
         query.hostId = hostId;
     return collection.findOne(query, {
-        projection: { streamId: 1, hostId: 1, viewers: 1, coins: 1, isStreamMuted: 1, isMicrophoneMuted: 1, isAutoFollowEnabled: 1, isAutoPrivateInviteEnabled: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, followers: 1, members: 1, fans: 1, totalDuration: 1, createdAt: 1, updatedAt: 1 }
+        projection: { streamId: 1, hostId: 1, viewers: 1, coins: 1, isStreamMuted: 1, isMicrophoneMuted: 1, isAutoFollowEnabled: 1, isAutoPrivateInviteEnabled: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, totalDuration: 1, createdAt: 1, updatedAt: 1 }
     });
 }
 function findStats(collection, streamId, hostId) {
@@ -88,21 +84,21 @@ function findStats(collection, streamId, hostId) {
     if (hostId)
         query.hostId = hostId;
     return collection.findOne(query, {
-        projection: { streamId: 1, hostId: 1, viewers: 1, coins: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, followers: 1, members: 1, fans: 1, totalDuration: 1 }
+        projection: { streamId: 1, hostId: 1, viewers: 1, coins: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, totalDuration: 1 }
     });
 }
 function findActiveSession(collection, streamId, projection = 'basic') {
     const projections = {
         basic: { streamId: 1, hostId: 1, viewers: 1, startTime: 1, endTime: 1, totalDuration: 1 },
-        list: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, followers: 1, members: 1, fans: 1, totalDuration: 1 },
-        detail: { streamId: 1, hostId: 1, viewers: 1, coins: 1, isStreamMuted: 1, isMicrophoneMuted: 1, isAutoFollowEnabled: 1, isAutoPrivateInviteEnabled: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, followers: 1, members: 1, fans: 1, totalDuration: 1, createdAt: 1, updatedAt: 1 }
+        list: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, totalDuration: 1 },
+        detail: { streamId: 1, hostId: 1, viewers: 1, coins: 1, isStreamMuted: 1, isMicrophoneMuted: 1, isAutoFollowEnabled: 1, isAutoPrivateInviteEnabled: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, totalDuration: 1, createdAt: 1, updatedAt: 1 }
     };
     return collection.findOne({ streamId, endTime: { $exists: false } }, { projection: projections[projection] });
 }
 function findActiveSessionsByHost(collection, hostId, limit = 10, projection = 'basic') {
     const projections = {
         basic: { streamId: 1, hostId: 1, viewers: 1, startTime: 1, endTime: 1, totalDuration: 1 },
-        list: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, followers: 1, members: 1, fans: 1, totalDuration: 1 }
+        list: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, totalDuration: 1 }
     };
     return collection.find({ hostId, endTime: { $exists: false } }, {
         projection: projections[projection],
@@ -115,7 +111,7 @@ function findEndedSessions(collection, hostId, limit = 50, projection = 'basic')
         query.hostId = hostId;
     const projections = {
         basic: { streamId: 1, hostId: 1, viewers: 1, startTime: 1, endTime: 1, totalDuration: 1 },
-        list: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, followers: 1, members: 1, fans: 1, totalDuration: 1 }
+        list: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, totalDuration: 1 }
     };
     return collection.find(query, {
         projection: projections[projection],
@@ -137,9 +133,6 @@ async function incrementGifts(collection, streamId, delta = 1) {
 async function incrementMessages(collection, streamId, delta = 1) {
     return collection.updateOne({ streamId, endTime: { $exists: false } }, { $inc: { messagesCount: delta } });
 }
-async function incrementFollowers(collection, streamId, delta = 1) {
-    return collection.updateOne({ streamId, endTime: { $exists: false } }, { $inc: { followers: delta } });
-}
 async function batchIncrement(collection, streamId, updates) {
     const incrementOps = {};
     if (updates.viewers)
@@ -150,12 +143,6 @@ async function batchIncrement(collection, streamId, updates) {
         incrementOps.giftsReceived = updates.giftsReceived;
     if (updates.messagesCount)
         incrementOps.messagesCount = updates.messagesCount;
-    if (updates.followers)
-        incrementOps.followers = updates.followers;
-    if (updates.members)
-        incrementOps.members = updates.members;
-    if (updates.fans)
-        incrementOps.fans = updates.fans;
     return collection.updateOne({ streamId, endTime: { $exists: false } }, { $inc: incrementOps });
 }
 function findHostHistory(collection, hostId, limit = 50, projection = 'basic', activeOnly = false) {
@@ -164,8 +151,8 @@ function findHostHistory(collection, hostId, limit = 50, projection = 'basic', a
         query.endTime = { $exists: false };
     const projections = {
         basic: { streamId: 1, hostId: 1, viewers: 1, startTime: 1, endTime: 1, totalDuration: 1 },
-        list: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, followers: 1, members: 1, fans: 1, totalDuration: 1 },
-        detail: { streamId: 1, hostId: 1, viewers: 1, coins: 1, isStreamMuted: 1, isMicrophoneMuted: 1, isAutoFollowEnabled: 1, isAutoPrivateInviteEnabled: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, followers: 1, members: 1, fans: 1, totalDuration: 1, createdAt: 1, updatedAt: 1 }
+        list: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, totalDuration: 1 },
+        detail: { streamId: 1, hostId: 1, viewers: 1, coins: 1, isStreamMuted: 1, isMicrophoneMuted: 1, isAutoFollowEnabled: 1, isAutoPrivateInviteEnabled: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, totalDuration: 1, createdAt: 1, updatedAt: 1 }
     };
     return collection.find(query, {
         projection: projections[projection],
@@ -175,7 +162,7 @@ function findHostHistory(collection, hostId, limit = 50, projection = 'basic', a
 function findByPeriod(collection, hostId, startDate, endDate, projection = 'basic') {
     const projections = {
         basic: { streamId: 1, hostId: 1, viewers: 1, startTime: 1, endTime: 1, totalDuration: 1 },
-        list: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, followers: 1, members: 1, fans: 1, totalDuration: 1 }
+        list: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, totalDuration: 1 }
     };
     return collection.find({ hostId, startTime: { $gte: startDate, $lte: endDate } }, {
         projection: projections[projection],
@@ -268,8 +255,8 @@ async function findPaginated(collection, page = 1, limit = 20, filters, projecti
         query.endTime = { $exists: false };
     const projections = {
         basic: { streamId: 1, hostId: 1, viewers: 1, startTime: 1, endTime: 1, totalDuration: 1 },
-        list: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, followers: 1, members: 1, fans: 1, totalDuration: 1 },
-        detail: { streamId: 1, hostId: 1, viewers: 1, coins: 1, isStreamMuted: 1, isMicrophoneMuted: 1, isAutoFollowEnabled: 1, isAutoPrivateInviteEnabled: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, followers: 1, members: 1, fans: 1, totalDuration: 1, createdAt: 1, updatedAt: 1 }
+        list: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, totalDuration: 1 },
+        detail: { streamId: 1, hostId: 1, viewers: 1, coins: 1, isStreamMuted: 1, isMicrophoneMuted: 1, isAutoFollowEnabled: 1, isAutoPrivateInviteEnabled: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, totalDuration: 1, createdAt: 1, updatedAt: 1 }
     };
     const [data, total] = await Promise.all([
         collection.find(query, {
@@ -333,7 +320,7 @@ function findPopularSessions(collection, limit = 20, projection = 'basic', days)
     }
     const projections = {
         basic: { streamId: 1, hostId: 1, viewers: 1, startTime: 1, endTime: 1, totalDuration: 1 },
-        list: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, followers: 1, members: 1, fans: 1, totalDuration: 1 }
+        list: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, totalDuration: 1 }
     };
     return collection.find(query, {
         projection: projections[projection],
@@ -348,7 +335,7 @@ function findTopEarningSessions(collection, limit = 20, projection = 'list', day
     }
     const projections = {
         basic: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, totalDuration: 1 },
-        list: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, followers: 1, members: 1, fans: 1, totalDuration: 1 }
+        list: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, totalDuration: 1 }
     };
     return collection.find(query, {
         projection: projections[projection],
