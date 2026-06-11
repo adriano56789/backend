@@ -40,12 +40,12 @@ SDK_REPO_URL="https://github.com/adriano56789/sdk-nodejs.git"
 SDK_DIR="/var/www/sdk-nodejs"
 if [ -d "$SDK_DIR/.git" ]; then
     cd "$SDK_DIR"
-    git fetch origin main
-    git reset --hard "origin/main"
+    git fetch origin master
+    git reset --hard "origin/master"
     git clean -fd
 else
     rm -rf "$SDK_DIR"
-    git clone --depth 1 -b main "$SDK_REPO_URL" "$SDK_DIR"
+    git clone --depth 1 -b master "$SDK_REPO_URL" "$SDK_DIR"
 fi
 cd "$SDK_DIR"
 npm install --legacy-peer-deps

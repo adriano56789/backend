@@ -3,7 +3,7 @@ set -euo pipefail
 
 SDK_REPO_URL="https://github.com/adriano56789/sdk-nodejs.git"
 SDK_DIR="/var/www/sdk-nodejs"
-SDK_BRANCH="main"
+SDK_BRANCH="master"
 
 info()  { echo -e "\033[0;32m[INFO]\033[0m $1"; }
 err()   { echo -e "\033[0;31m[ERR]\033[0m $1"; }
