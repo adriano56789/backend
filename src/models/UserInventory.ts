@@ -171,7 +171,7 @@ export async function findInventoryDetail(collection: Collection, inventoryId: s
         { _id: new ObjectId(inventoryId) },
         { projection: PROJ_DETAIL }
     );
-    return doc as unknown as IUserInventoryDetail | null;
+    return doc as IUserInventoryDetail | null;
 }
 
 export async function equipInventoryItem(collection: Collection, userId: string, inventoryId: string) {
