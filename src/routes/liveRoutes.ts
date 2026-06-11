@@ -5417,6 +5417,25 @@ router.post('/streams/:id/end-session', async (req, res) => {
 
 
 
+        // 🔧 BUSCAR DADOS ACUMULADOS DO STREAM SESSION para ter valores reais do banco
+        let sessionStats: any = null;
+        try {
+            const { findStats } = await import('../models/StreamSession');
+            const db = getDb();
+            sessionStats = await findStats(db.collection('streamsessions') as any, streamId);
+        } catch (sessionErr) {
+            console.warn(`⚠️ [END-SESSION] Erro ao buscar StreamSession: ${sessionErr}`);
+        }
+
+        // Usar dados reais do banco (fallback para o que o frontend enviou)
+        const realCoins = sessionStats?.coins ?? session?.coins ?? 0;
+        const realViewers = sessionStats?.peakViewers ?? session?.peakViewers ?? stream?.viewers ?? 0;
+        const realFollowers = sessionStats?.followers ?? session?.followers ?? 0;
+        const realMembers = sessionStats?.members ?? session?.members ?? 0;
+        const realFans = sessionStats?.fans ?? session?.fans ?? 0;
+        const realGifts = sessionStats?.giftsReceived ?? session?.giftsReceived ?? 0;
+        const realMessages = sessionStats?.messagesCount ?? session?.messagesCount ?? 0;
+
         if (!stream) {
 
             console.warn(`��ᴩ� Stream ${streamId} n+�o encontrada, mas continuando para limpar estado do usu+�rio`);
@@ -5497,15 +5516,19 @@ router.post('/streams/:id/end-session', async (req, res) => {
 
                 duration: durationStr,
 
-                peakViewers: session?.peakViewers || stream.viewers || 0,
+                peakViewers: realViewers,
 
-                totalCoins: session?.coins || 0,
+                totalCoins: realCoins,
 
-                totalFollowers: session?.followers || 0,
+                totalGifts: realGifts,
 
-                totalMembers: session?.members || 0,
+                totalMessages: realMessages,
 
-                totalFans: session?.fans || 0,
+                totalFollowers: realFollowers,
+
+                totalMembers: realMembers,
+
+                totalFans: realFans,
 
                 category: stream.category,
 
@@ -5667,6 +5690,18 @@ router.post('/streams/:id/end-session', async (req, res) => {
 
 
 
+        // 🔧 Retornar dados reais do resumo para o frontend usar no EndStreamSummaryScreen
+        const summary = {
+            streamId,
+            viewers: realViewers,
+            duration: totalSeconds,
+            coins: realCoins,
+            followers: realFollowers,
+            members: realMembers,
+            fans: realFans,
+            user: stream ? { name: stream.name, avatarUrl: stream.avatar } : { name: '', avatarUrl: '' }
+        };
+
         res.json({
 
             success: true,
@@ -5683,7 +5718,9 @@ router.post('/streams/:id/end-session', async (req, res) => {
 
             },
 
-            history: historyEntry
+            history: historyEntry,
+
+            summary
 
         });
 

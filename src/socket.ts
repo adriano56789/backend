@@ -324,6 +324,49 @@ export const initSocket = (server: any) => {
                 // (io.emit monkey-patched em server.ts publica automaticamente no MQTT)
                 io.to(data.streamId).emit('binary_data', buffer);
                 
+                // Também emitir evento JSON para garantir sincronização cross-cliente
+                // Este é o caminho principal para o frontend (live_gift_received)
+                const totalValue = Math.max(1, Math.floor((data.giftPrice || 0) * (data.quantity || 1)));
+                io.to(data.streamId).emit('live_gift_received', {
+                    from: {
+                        id: data.fromUserId || '',
+                        name: data.fromUserName || '',
+                        avatarUrl: data.fromUserAvatar || '',
+                        level: data.fromUserLevel || 1,
+                        identification: data.fromUserId || '',
+                    },
+                    toUser: {
+                        id: data.toUserId || '',
+                        name: data.toUserName || '',
+                    },
+                    gift: {
+                        name: data.giftName || '',
+                        price: data.giftPrice || 0,
+                        icon: data.giftIcon || '🎁',
+                        category: data.giftCategory || 'Popular',
+                    },
+                    quantity: data.quantity || 1,
+                    totalValue,
+                    roomId: data.streamId || '',
+                    timestamp: Date.now(),
+                });
+                
+                // Atualizar contador de moedas da live para todos na sala
+                try {
+                    const { Streamer } = await import('./models/Streamer');
+                    const stream = await Streamer.findOne({ id: data.streamId }).select('diamonds').lean();
+                    if (stream) {
+                        io.to(data.streamId).emit('live_coins_updated', {
+                            streamId: data.streamId,
+                            coins: (stream as any).diamonds || 0,
+                            totalCoins: (stream as any).diamonds || 0,
+                            timestamp: new Date().toISOString(),
+                        });
+                    }
+                } catch (err) {
+                    console.warn(' [GIFT] Error fetching live coins:', err);
+                }
+                
                 console.log(` [PROTOBUF] Gift event encoded and broadcasted:`, buffer.length, 'bytes');
             }
         });

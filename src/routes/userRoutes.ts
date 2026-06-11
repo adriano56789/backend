@@ -9,6 +9,7 @@ import { standardizeUserResponse, standardizeUsersList } from '../utils/userResp
 import { findUserByAnyId, updateUserByRealId } from '../utils/idHelper';
 
 import { blockProtection } from '../middleware/appOwnerProtection';
+import { getDb } from '../config/db';
 
 
 
@@ -560,6 +561,34 @@ UserRoutes.post('/:id/toggle-follow', async (req, res) => {
             });
 
 
+
+            // 🔧 INCREMENTAR SEGUIDORES NO STREAM SESSION se streamId estiver presente
+            const { streamId } = req.body;
+            if (streamId) {
+                try {
+                    const { incrementFollowers } = await import('../models/StreamSession');
+                    const db = getDb();
+                    await incrementFollowers(db.collection('streamsessions') as any, streamId);
+                } catch (sessionErr) {
+                    console.warn(`⚠️ [STREAM SESSION] Erro ao incrementar seguidores: ${sessionErr}`);
+                }
+            }
+
+            // 🔔 Notificar o streamer via WebSocket sobre novo seguidor
+            try {
+                const io = req.app.get('io');
+                if (io) {
+                    const follower = await User.findOne({ id: followerId }).select('id name avatarUrl');
+                    io.to(`user_${followingId}`).emit('new_follower', {
+                        followerId,
+                        followerName: follower?.name || 'Unknown',
+                        followerAvatar: follower?.avatarUrl || '',
+                        timestamp: new Date().toISOString()
+                    });
+                }
+            } catch (wsErr) {
+                console.warn(`⚠️ [TOGGLE-FOLLOW] Erro ao notificar WebSocket: ${wsErr}`);
+            }
 
             res.json({
 

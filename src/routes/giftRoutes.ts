@@ -162,6 +162,16 @@ async function processGiftSend(fromUserId: string, toUserId: string, giftId: str
             );
             
             console.log(`💎 [LIVE GIFT] ${totalCost} diamantes adicionados à live ${streamId} e widget da streamer ${toUserId}.`);
+
+            // 🔧 SALVAR NO STREAM SESSION: acumular moedas para o resumo da live
+            try {
+                const { incrementCoins } = await import('../models/StreamSession');
+                const db = getDb();
+                await incrementCoins(db.collection('streamsessions') as any, streamId, totalCost);
+                console.log(`💾 [STREAM SESSION] ${totalCost} moedas salvas no StreamSession ${streamId}`);
+            } catch (sessionErr) {
+                console.warn(`⚠️ [STREAM SESSION] Erro ao salvar moedas: ${sessionErr}`);
+            }
         }
 
         // 🔧 MELHOR PRÁTICA: Atualizar earnings/receptores com $inc (atômico)

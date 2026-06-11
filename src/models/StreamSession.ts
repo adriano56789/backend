@@ -21,6 +21,9 @@ export interface IStreamSessionList {
     giftsReceived: number;
     messagesCount: number;
     peakViewers: number;
+    followers: number;
+    members: number;
+    fans: number;
     totalDuration?: number;
     durationFormatted: string;
 }
@@ -39,6 +42,9 @@ export interface IStreamSessionDetail {
     giftsReceived: number;
     messagesCount: number;
     peakViewers: number;
+    followers: number;
+    members: number;
+    fans: number;
     totalDuration?: number;
     durationFormatted: string;
     createdAt: Date;
@@ -53,6 +59,9 @@ export interface IStreamSessionStats {
     giftsReceived: number;
     messagesCount: number;
     peakViewers: number;
+    followers: number;
+    members: number;
+    fans: number;
     totalDuration?: number;
     durationFormatted: string;
 }
@@ -74,6 +83,9 @@ export interface IStreamSession {
     giftsReceived: number;
     messagesCount: number;
     peakViewers: number;
+    followers: number;
+    members: number;
+    fans: number;
     totalDuration?: number;
     createdAt: Date;
     updatedAt: Date;
@@ -93,7 +105,10 @@ export async function findOrCreateSession(collection: Collection<any>, streamId:
                 coins: 0,
                 giftsReceived: 0,
                 messagesCount: 0,
-                peakViewers: 0
+                peakViewers: 0,
+                followers: 0,
+                members: 0,
+                fans: 0
             }
         },
         { upsert: true, returnDocument: 'after' }
@@ -120,7 +135,7 @@ export function findList(collection: Collection<any>, limit?: number, filters?: 
     if (filters?.isStreamMuted !== undefined) query.isStreamMuted = filters.isStreamMuted;
     if (filters?.minViewers) query.viewers = { $gte: filters.minViewers };
     const cursor = collection.find(query, {
-        projection: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, totalDuration: 1 },
+        projection: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, followers: 1, members: 1, fans: 1, totalDuration: 1 },
         sort: { startTime: -1 }
     });
     if (limit) cursor.limit(limit);
@@ -132,7 +147,7 @@ export function findDetail(collection: Collection<any>, streamId?: string, hostI
     if (streamId) query.streamId = streamId;
     if (hostId) query.hostId = hostId;
     return collection.findOne(query, {
-        projection: { streamId: 1, hostId: 1, viewers: 1, coins: 1, isStreamMuted: 1, isMicrophoneMuted: 1, isAutoFollowEnabled: 1, isAutoPrivateInviteEnabled: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, totalDuration: 1, createdAt: 1, updatedAt: 1 }
+        projection: { streamId: 1, hostId: 1, viewers: 1, coins: 1, isStreamMuted: 1, isMicrophoneMuted: 1, isAutoFollowEnabled: 1, isAutoPrivateInviteEnabled: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, followers: 1, members: 1, fans: 1, totalDuration: 1, createdAt: 1, updatedAt: 1 }
     });
 }
 
@@ -141,15 +156,15 @@ export function findStats(collection: Collection<any>, streamId?: string, hostId
     if (streamId) query.streamId = streamId;
     if (hostId) query.hostId = hostId;
     return collection.findOne(query, {
-        projection: { streamId: 1, hostId: 1, viewers: 1, coins: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, totalDuration: 1 }
+        projection: { streamId: 1, hostId: 1, viewers: 1, coins: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, followers: 1, members: 1, fans: 1, totalDuration: 1 }
     });
 }
 
 export function findActiveSession(collection: Collection<any>, streamId: string, projection: 'basic' | 'list' | 'detail' = 'basic') {
     const projections: Record<string, any> = {
         basic: { streamId: 1, hostId: 1, viewers: 1, startTime: 1, endTime: 1, totalDuration: 1 },
-        list: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, totalDuration: 1 },
-        detail: { streamId: 1, hostId: 1, viewers: 1, coins: 1, isStreamMuted: 1, isMicrophoneMuted: 1, isAutoFollowEnabled: 1, isAutoPrivateInviteEnabled: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, totalDuration: 1, createdAt: 1, updatedAt: 1 }
+        list: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, followers: 1, members: 1, fans: 1, totalDuration: 1 },
+        detail: { streamId: 1, hostId: 1, viewers: 1, coins: 1, isStreamMuted: 1, isMicrophoneMuted: 1, isAutoFollowEnabled: 1, isAutoPrivateInviteEnabled: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, followers: 1, members: 1, fans: 1, totalDuration: 1, createdAt: 1, updatedAt: 1 }
     };
     return collection.findOne({ streamId, endTime: { $exists: false } }, { projection: projections[projection] });
 }
@@ -157,7 +172,7 @@ export function findActiveSession(collection: Collection<any>, streamId: string,
 export function findActiveSessionsByHost(collection: Collection<any>, hostId: string, limit: number = 10, projection: 'basic' | 'list' = 'basic') {
     const projections: Record<string, any> = {
         basic: { streamId: 1, hostId: 1, viewers: 1, startTime: 1, endTime: 1, totalDuration: 1 },
-        list: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, totalDuration: 1 }
+        list: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, followers: 1, members: 1, fans: 1, totalDuration: 1 }
     };
     return collection.find({ hostId, endTime: { $exists: false } }, {
         projection: projections[projection],
@@ -170,7 +185,7 @@ export function findEndedSessions(collection: Collection<any>, hostId?: string, 
     if (hostId) query.hostId = hostId;
     const projections: Record<string, any> = {
         basic: { streamId: 1, hostId: 1, viewers: 1, startTime: 1, endTime: 1, totalDuration: 1 },
-        list: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, totalDuration: 1 }
+        list: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, followers: 1, members: 1, fans: 1, totalDuration: 1 }
     };
     return collection.find(query, {
         projection: projections[projection],
@@ -213,12 +228,22 @@ export async function incrementMessages(collection: Collection<any>, streamId: s
     );
 }
 
-export async function batchIncrement(collection: Collection<any>, streamId: string, updates: { viewers?: number; coins?: number; giftsReceived?: number; messagesCount?: number }) {
+export async function incrementFollowers(collection: Collection<any>, streamId: string, delta: number = 1) {
+    return collection.updateOne(
+        { streamId, endTime: { $exists: false } },
+        { $inc: { followers: delta } }
+    );
+}
+
+export async function batchIncrement(collection: Collection<any>, streamId: string, updates: { viewers?: number; coins?: number; giftsReceived?: number; messagesCount?: number; followers?: number; members?: number; fans?: number }) {
     const incrementOps: any = {};
     if (updates.viewers) incrementOps.viewers = updates.viewers;
     if (updates.coins) incrementOps.coins = updates.coins;
     if (updates.giftsReceived) incrementOps.giftsReceived = updates.giftsReceived;
     if (updates.messagesCount) incrementOps.messagesCount = updates.messagesCount;
+    if (updates.followers) incrementOps.followers = updates.followers;
+    if (updates.members) incrementOps.members = updates.members;
+    if (updates.fans) incrementOps.fans = updates.fans;
     return collection.updateOne(
         { streamId, endTime: { $exists: false } },
         { $inc: incrementOps }
@@ -230,8 +255,8 @@ export function findHostHistory(collection: Collection<any>, hostId: string, lim
     if (activeOnly) query.endTime = { $exists: false };
     const projections: Record<string, any> = {
         basic: { streamId: 1, hostId: 1, viewers: 1, startTime: 1, endTime: 1, totalDuration: 1 },
-        list: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, totalDuration: 1 },
-        detail: { streamId: 1, hostId: 1, viewers: 1, coins: 1, isStreamMuted: 1, isMicrophoneMuted: 1, isAutoFollowEnabled: 1, isAutoPrivateInviteEnabled: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, totalDuration: 1, createdAt: 1, updatedAt: 1 }
+        list: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, followers: 1, members: 1, fans: 1, totalDuration: 1 },
+        detail: { streamId: 1, hostId: 1, viewers: 1, coins: 1, isStreamMuted: 1, isMicrophoneMuted: 1, isAutoFollowEnabled: 1, isAutoPrivateInviteEnabled: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, followers: 1, members: 1, fans: 1, totalDuration: 1, createdAt: 1, updatedAt: 1 }
     };
     return collection.find(query, {
         projection: projections[projection],
@@ -242,7 +267,7 @@ export function findHostHistory(collection: Collection<any>, hostId: string, lim
 export function findByPeriod(collection: Collection<any>, hostId: string, startDate: Date, endDate: Date, projection: 'basic' | 'list' = 'basic') {
     const projections: Record<string, any> = {
         basic: { streamId: 1, hostId: 1, viewers: 1, startTime: 1, endTime: 1, totalDuration: 1 },
-        list: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, totalDuration: 1 }
+        list: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, followers: 1, members: 1, fans: 1, totalDuration: 1 }
     };
     return collection.find({ hostId, startTime: { $gte: startDate, $lte: endDate } }, {
         projection: projections[projection],
@@ -337,8 +362,8 @@ export async function findPaginated(collection: Collection<any>, page: number = 
     if (filters?.activeOnly) query.endTime = { $exists: false };
     const projections: Record<string, any> = {
         basic: { streamId: 1, hostId: 1, viewers: 1, startTime: 1, endTime: 1, totalDuration: 1 },
-        list: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, totalDuration: 1 },
-        detail: { streamId: 1, hostId: 1, viewers: 1, coins: 1, isStreamMuted: 1, isMicrophoneMuted: 1, isAutoFollowEnabled: 1, isAutoPrivateInviteEnabled: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, totalDuration: 1, createdAt: 1, updatedAt: 1 }
+        list: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, followers: 1, members: 1, fans: 1, totalDuration: 1 },
+        detail: { streamId: 1, hostId: 1, viewers: 1, coins: 1, isStreamMuted: 1, isMicrophoneMuted: 1, isAutoFollowEnabled: 1, isAutoPrivateInviteEnabled: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, followers: 1, members: 1, fans: 1, totalDuration: 1, createdAt: 1, updatedAt: 1 }
     };
     const [data, total] = await Promise.all([
         collection.find(query, {
@@ -404,7 +429,7 @@ export function findPopularSessions(collection: Collection<any>, limit: number =
     }
     const projections: Record<string, any> = {
         basic: { streamId: 1, hostId: 1, viewers: 1, startTime: 1, endTime: 1, totalDuration: 1 },
-        list: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, totalDuration: 1 }
+        list: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, followers: 1, members: 1, fans: 1, totalDuration: 1 }
     };
     return collection.find(query, {
         projection: projections[projection],
@@ -420,7 +445,7 @@ export function findTopEarningSessions(collection: Collection<any>, limit: numbe
     }
     const projections: Record<string, any> = {
         basic: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, totalDuration: 1 },
-        list: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, totalDuration: 1 }
+        list: { streamId: 1, hostId: 1, viewers: 1, coins: 1, startTime: 1, endTime: 1, giftsReceived: 1, messagesCount: 1, peakViewers: 1, followers: 1, members: 1, fans: 1, totalDuration: 1 }
     };
     return collection.find(query, {
         projection: projections[projection],
