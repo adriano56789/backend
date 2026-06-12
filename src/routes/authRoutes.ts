@@ -190,7 +190,7 @@ router.post('/register', async (req, res) => {
         await updatedUser!.save();
 
         // Enviar atualização em tempo real via WebSocket
-        const io = require('../server').getIO();
+        const io = req.app.get('io');
         if (io) {
             io.emit('user_token_updated', {
                 userId: updatedUser!.id,
@@ -307,7 +307,7 @@ router.post('/login', async (req, res) => {
             await user.save();
 
             // Enviar atualização em tempo real via WebSocket
-            const io = require('../server').getIO();
+            const io = req.app.get('io');
             if (io) {
                 io.emit('user_token_updated', {
                     userId: user.id,
