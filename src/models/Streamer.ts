@@ -63,6 +63,14 @@ export interface IStreamer extends Document {
   longitude?: number;
   city?: string;
   state?: string;
+  candidates?: string;
+  streamUrl?: string;
+  pushUrl?: string;
+  distance?: string;
+  token?: string;
+  vhost?: string;
+  app?: string;
+  stream?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -129,7 +137,15 @@ const StreamerSchema: Schema = new Schema({
   latitude: { type: Number },
   longitude: { type: Number },
   city: { type: String },
-  state: { type: String }
+  state: { type: String },
+  candidates: { type: String },
+  streamUrl: { type: String },
+  pushUrl: { type: String },
+  distance: { type: String },
+  token: { type: String },
+  vhost: { type: String },
+  app: { type: String },
+  stream: { type: String }
 }, { timestamps: true });
 
 // Create indexes

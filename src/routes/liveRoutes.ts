@@ -244,7 +244,7 @@ router.post('/token/user/online/infos', async (req, res) => {
 
         // Verificar se existe stream realmente ativa
 
-        const hasActiveStream = await Streamer.findOne({ 
+        const hasActiveStream: any = await Streamer.findOne({ 
 
             hostId: userId, 
 
@@ -2657,7 +2657,7 @@ router.post('/streams/:id/join', async (req, res) => {
 
         // Buscar stream
 
-        const stream = await Streamer.findOne({ id });
+        const stream: any = await Streamer.findOne({ id });
 
         if (!stream) {
 
@@ -2691,7 +2691,7 @@ router.post('/streams/:id/join', async (req, res) => {
 
         // Buscar dados do espectador
 
-        const viewer = await User.findOne({ id: userId });
+        const viewer: any = await User.findOne({ id: userId });
 
         if (!viewer) {
 
@@ -2808,7 +2808,7 @@ router.post('/streams/:id/publish-token', async (req, res) => {
 
         // Buscar stream
 
-        const stream = await Streamer.findOne({ id, hostId: userId });
+        const stream: any = await Streamer.findOne({ id, hostId: userId });
 
         if (!stream) {
 
@@ -2935,7 +2935,7 @@ router.post('/streams/:id/end', async (req, res) => {
 
         // Buscar stream - primeiro tentar com hostId, depois só com ID
 
-        let stream = await Streamer.findOne({ id, hostId: userId });
+        let stream: any = await Streamer.findOne({ id, hostId: userId });
 
         
 
@@ -3073,7 +3073,7 @@ router.post('/streams', async (req, res) => {
             return res.status(401).json({ success: false, error: 'Unauthorized' });
         }
 
-        const user = await User.findOne({ id: hostId });
+        const user: any = await User.findOne({ id: hostId });
         if (!user) {
             return res.status(404).json({ success: false, error: 'Host not found' });
         }
@@ -3155,7 +3155,7 @@ router.get('/streams', async (req, res) => {
         // Enriquecer com dados do host
         const enrichedStreams = await Promise.all(
             streams.map(async (stream) => {
-                const host = await User.findOne({ id: stream.hostId }).lean();
+                const host: any = await User.findOne({ id: stream.hostId }).lean();
                 return {
                     ...stream,
                     host: host ? {
@@ -3385,7 +3385,7 @@ router.delete('/rtc/v1/stop', async (req, res) => {
 
         // Buscar stream (fallback se hostId não bater)
 
-        let stream = await Streamer.findOne({ id: streamId, hostId: userId });
+        let stream: any = await Streamer.findOne({ id: streamId, hostId: userId });
 
         if (!stream) {
 
@@ -3539,7 +3539,7 @@ router.post('/stream-association', async (req, res) => {
 
         // Buscar usuário
 
-        const user = await User.findOne({ id: userId });
+        const user: any = await User.findOne({ id: userId });
 
         if (!user) {
 
@@ -3750,7 +3750,7 @@ router.get('/:streamId', async (req, res) => {
   try {
     const { streamId } = req.params;
 
-    const stream = await Streamer.findOne({
+    const stream: any = await Streamer.findOne({
       $or: [
         { id: streamId },
         { roomId: streamId }
@@ -3872,7 +3872,7 @@ router.get('/stream-info', async (req, res) => {
 
         // Buscar informações adicionais do usuário
 
-        const user = await User.findOne({ id: association.userId });
+        const user: any = await User.findOne({ id: association.userId });
 
         if (!user) {
 
@@ -3983,7 +3983,7 @@ router.post('/live/end', async (req, res) => {
 
         // Buscar stream ativa do usu+�rio
 
-        const activeStream = await Streamer.findOne({ 
+        const activeStream: any = await Streamer.findOne({ 
 
             hostId: userId,
 
@@ -4067,7 +4067,7 @@ router.post('/live/end', async (req, res) => {
         }
 
         // Encerrar PK battle ativa se existir
-        const activeBattle = await Battle.findOne({
+        const activeBattle: any = await Battle.findOne({
             $or: [
                 { streamerA: userId },
                 { streamerB: userId }
@@ -4482,7 +4482,7 @@ router.put('/streams/:id', async (req, res) => {
 
         // Verificar se stream existe
 
-        const existingStream = await Streamer.findOne({ id });
+        const existingStream: any = await Streamer.findOne({ id });
 
         if (!existingStream) {
 
@@ -4553,7 +4553,7 @@ router.get('/streams/:id/urls', async (req: express.Request, res: express.Respon
         const { id: streamId } = req.params;
 
         // Verificar se a stream pertence ao usu+�rio
-        const stream = await Streamer.findOne({ id: streamId, hostId: userId });
+        const stream: any = await Streamer.findOne({ id: streamId, hostId: userId });
         
         if (!stream) {
             return ResponseHelper.error(res, 'Stream n+�o encontrada ou n+�o pertence ao usu+�rio', 404);
@@ -4586,7 +4586,7 @@ router.post('/streams/:id/urls', async (req: express.Request, res: express.Respo
         const { rtmpIngestUrl, srtIngestUrl, playbackUrl, streamKey } = req.body;
 
         // Verificar se a stream pertence ao usu+�rio
-        const stream = await Streamer.findOne({ id: streamId, hostId: userId });
+        const stream: any = await Streamer.findOne({ id: streamId, hostId: userId });
         
         if (!stream) {
             return ResponseHelper.error(res, 'Stream n+�o encontrada ou n+�o pertence ao usu+�rio', 404);
@@ -4996,11 +4996,11 @@ router.get('/streams/:id/online-users', async (req, res) => {
 
             
 
-            const stream = await Streamer.findOne({ id: streamId });
+            const stream: any = await Streamer.findOne({ id: streamId });
 
             if (stream && stream.hostId) {
 
-                const host = await User.findOne({ id: stream.hostId }).select('id name avatarUrl identification level activeFrameId frameExpiration');
+                const host: any = await User.findOne({ id: stream.hostId }).select('id name avatarUrl identification level activeFrameId frameExpiration');
 
                 if (host) {
 
@@ -5067,7 +5067,7 @@ router.get('/streams/:streamId/join', async (req, res) => {
         }
 
         // Verificar se stream existe
-        const streamer = await Streamer.findOne({ id: streamId });
+        const streamer: any = await Streamer.findOne({ id: streamId });
         if (!streamer) {
             return res.status(404).json({ success: false, error: 'Stream n+�o encontrada' });
         }
@@ -5149,7 +5149,7 @@ router.get('/streams/:id/balance', async (req, res) => {
 
         // Buscar streamer pelo ID
 
-        const streamer = await Streamer.findOne({ id: streamId });
+        const streamer: any = await Streamer.findOne({ id: streamId });
 
         
 
@@ -5230,7 +5230,7 @@ router.post('/streams/:streamId/leave', async (req, res) => {
 
         // Verificar se o usu+�rio existe
 
-        const user = await User.findOne({ id: userId });
+        const user: any = await User.findOne({ id: userId });
 
         if (!user) {
 
@@ -5413,7 +5413,7 @@ router.post('/streams/:id/end-session', async (req, res) => {
 
         // 1. Buscar a stream antes de atualizar
 
-        const stream = await Streamer.findOne({ id: streamId });
+        const stream: any = await Streamer.findOne({ id: streamId });
 
 
 
@@ -5769,7 +5769,7 @@ router.delete('/cards/:streamId', async (req, res) => {
 
         // 1. Buscar a stream
 
-        const stream = await Streamer.findOne({ id: streamId });
+        const stream: any = await Streamer.findOne({ id: streamId });
 
 
 
@@ -5880,7 +5880,7 @@ router.post('/streams/:id/gift', async (req, res) => {
 
         // Find stream to get receiver
 
-        const stream = await Streamer.findOne({ id: req.params.id });
+        const stream: any = await Streamer.findOne({ id: req.params.id });
 
         if (!stream) return res.status(404).json({ error: 'Stream not found' });
 
@@ -6183,7 +6183,7 @@ router.put('/streams/:id/quality', async (req, res) => {
 
         // 1. Validar se o stream existe
 
-        const streamer = await Streamer.findOne({ id: streamId });
+        const streamer: any = await Streamer.findOne({ id: streamId });
 
         if (!streamer) {
 
@@ -6351,7 +6351,7 @@ router.post('/stark/live/start', async (req, res) => {
 
         // Buscar usu+�rio para verificar exist+�ncia
 
-        const user = await User.findOne({ id: userId });
+        const user: any = await User.findOne({ id: userId });
 
         if (!user) {
 
@@ -6384,7 +6384,7 @@ router.post('/stark/live/start', async (req, res) => {
 
         // Criar nova transmiss+�o
 
-        const newLive = await Streamer.create({
+        const newLive: any = await Streamer.create({
 
             id: liveId,
 
@@ -6508,7 +6508,7 @@ router.post('/streams/start', async (req, res) => {
         const { title, name, category = 'general' } = req.body;
         const liveTitle = title || name || 'Ao Vivo';
 
-        const user = await User.findOne({ id: userId });
+        const user: any = await User.findOne({ id: userId });
         if (!user) {
             return res.status(404).json({ error: 'Usu+�rio n+�o encontrado', status: 'user_not_found' });
         }
@@ -6522,7 +6522,7 @@ router.post('/streams/start', async (req, res) => {
         const backendApi = 'https://api.livego.store/api/video/http';
 
         // Criar registro provis+�rio ��� isLive: false at+� SRS on_publish
-        const stream = await Streamer.create({
+        const stream: any = await Streamer.create({
             id: liveId,
             hostId: userId,
             name: user.name,
@@ -6582,13 +6582,13 @@ router.post('/lives/start', async (req, res) => {
             return res.status(400).json({ error: 'streamId +� obrigat+�rio', status: 'invalid_request' });
         }
 
-        const user = await User.findOne({ id: userId });
+        const user: any = await User.findOne({ id: userId });
         if (!user) {
             return res.status(404).json({ error: 'Usu+�rio n+�o encontrado', status: 'user_not_found' });
         }
 
         // Buscar stream existente por streamKey ou criar provis+�rio
-        let stream = await Streamer.findOne({ streamKey: streamId });
+        let stream: any = await Streamer.findOne({ streamKey: streamId });
         if (!stream) {
             stream = await Streamer.findOne({ id: streamId });
         }
@@ -6691,7 +6691,7 @@ router.get('/lives/:id', async (req, res) => {
 
         // Usar ID real diretamente (sem mapeamento)
 
-        const streamer = await Streamer.findOne({ id });
+        const streamer: any = await Streamer.findOne({ id });
 
         
 
@@ -6886,7 +6886,7 @@ router.get('/live/following', async (req, res) => {
 
         const User = await import('../models').then(m => m.User);
 
-        const user = await User.findOne({ id: userId });
+        const user: any = await User.findOne({ id: userId });
 
 
 
@@ -7022,7 +7022,7 @@ router.post('/streams/:id/like', async (req: express.Request, res: express.Respo
 
         // Verificar se stream existe
 
-        const stream = await Streamer.findOne({ id: streamId });
+        const stream: any = await Streamer.findOne({ id: streamId });
 
         if (!stream) {
 
@@ -7072,7 +7072,7 @@ router.post('/streams/:id/like', async (req: express.Request, res: express.Respo
 
         // Obter contagem atualizada
 
-        const updatedStream = await Streamer.findOne({ id: streamId });
+        const updatedStream: any = await Streamer.findOne({ id: streamId });
 
         const totalLikes = updatedStream?.likes || 0;
 
@@ -7179,7 +7179,7 @@ router.delete('/streams/:id/like', async (req: express.Request, res: express.Res
 
         // Obter contagem atualizada
 
-        const updatedStream = await Streamer.findOne({ id: streamId });
+        const updatedStream: any = await Streamer.findOne({ id: streamId });
 
         const totalLikes = updatedStream?.likes || 0;
 
@@ -7270,7 +7270,7 @@ router.post('/streams/:streamId/end', async (req: express.Request, res: express.
 
         // Buscar stream espec+�fica
 
-        const stream = await Streamer.findOne({ id: streamId });
+        const stream: any = await Streamer.findOne({ id: streamId });
 
         
 
@@ -7590,7 +7590,7 @@ router.post('/streams/:streamId/heartbeat', async (req: express.Request, res: ex
 
         // Buscar stream espec+�fica
 
-        const stream = await Streamer.findOne({ id: streamId });
+        const stream: any = await Streamer.findOne({ id: streamId });
 
         
 
@@ -7779,7 +7779,7 @@ router.post('/admin/streams/:streamId/force-end', async (req: express.Request, r
 
         // Buscar stream
 
-        const stream = await Streamer.findOne({ id: streamId });
+        const stream: any = await Streamer.findOne({ id: streamId });
 
         
 
@@ -8119,7 +8119,7 @@ router.post('/streams/prepare', async (req, res) => {
 
         // Buscar usu+�rio
 
-        const user = await User.findOne({ id: userId });
+        const user: any = await User.findOne({ id: userId });
 
         if (!user) {
 
@@ -8160,7 +8160,7 @@ router.post('/streams/prepare', async (req, res) => {
 
         // Criar stream com status "preparing"
 
-        const newStream = await Streamer.create({
+        const newStream: any = await Streamer.create({
 
             id: streamId,
 
@@ -8291,7 +8291,7 @@ router.post('/streams/:id/start', async (req, res) => {
 
         // Buscar stream
 
-        const stream = await Streamer.findOne({ id, hostId: userId });
+        const stream: any = await Streamer.findOne({ id, hostId: userId });
 
         if (!stream) {
 

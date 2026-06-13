@@ -81,7 +81,7 @@ router.post('/register', async (req, res) => {
             residence: (residence || "").trim(),
             tags: normalizeTags(tags),
             profession: (profession || "").trim(),
-            location: (location || "").trim(),
+            location: null, // Garantir que seja null para evitar erro no índice 2dsphere do MongoDB
             distance: (distance || "").trim(),
             birthday: (birthday || "01/01/1990").trim(),
             emotional_status: (emotional_status || "0").trim(),
@@ -145,7 +145,7 @@ router.post('/register', async (req, res) => {
         updatedUser.token = token;
         await updatedUser.save();
         // Enviar atualização em tempo real via WebSocket
-        const io = require('../server').getIO();
+        const io = req.app.get('io');
         if (io) {
             io.emit('user_token_updated', {
                 userId: updatedUser.id,
@@ -247,7 +247,7 @@ router.post('/login', async (req, res) => {
             }
             await user.save();
             // Enviar atualização em tempo real via WebSocket
-            const io = require('../server').getIO();
+            const io = req.app.get('io');
             if (io) {
                 io.emit('user_token_updated', {
                     userId: user.id,

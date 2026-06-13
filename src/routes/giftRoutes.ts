@@ -111,8 +111,8 @@ async function processGiftSend(fromUserId: string, toUserId: string, giftId: str
         console.log(`🎁 [PROCESSING] Iniciando processamento: ${fromUserId} -> ${toUserId} (${quantity}x ${giftId})`);
         
         // Buscar usuários
-        const fromUser = await User.findOne({ id: fromUserId });
-        const toUser = await User.findOne({ id: toUserId });
+        const fromUser: any = await User.findOne({ id: fromUserId });
+        const toUser: any = await User.findOne({ id: toUserId });
         const gift = await Gift.findOne({ id: giftId });
         
         if (!fromUser || !toUser || !gift) {
@@ -555,7 +555,7 @@ router.post('/notify-live-start', async (req, res) => {
         const { userId, streamId, streamName } = req.body;
         
         // Buscar usuário
-        const user = await User.findOne({ id: userId });
+        const user: any = await User.findOne({ id: userId });
         if (!user) {
             return res.status(404).json({ error: 'Usuário não encontrado' });
         }
@@ -654,7 +654,7 @@ router.post('/streams/:streamId/gift', async (req, res) => {
     const quantity = amount || 1;
 
     // Verificar saldo
-    const fromUser = await User.findOne({ id: fromUserId });
+    const fromUser: any = await User.findOne({ id: fromUserId });
     if (!fromUser) {
       return res.status(404).json({ error: 'Usuário não encontrado' });
     }

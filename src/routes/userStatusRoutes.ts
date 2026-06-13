@@ -42,7 +42,7 @@ router.get('/users/:id/status', async (req: Request, res: Response) => {
             userId: userStatus?.userId || id,
             isOnline: userStatus?.isOnline || false,
             lastSeen: userStatus?.lastSeen,
-            updated_at: userStatus?.updatedAt || new Date()
+            updatedAt: userStatus?.updatedAt || new Date()
         });
     } catch (error: any) {
         console.error('Erro ao buscar status do usuário:', error);

@@ -33,7 +33,7 @@ router.get('/', async (req, res) => {
 // GET /api/pk/:battleId — detalhes de uma batalha
 router.get('/:battleId', async (req, res) => {
   try {
-    const battle = await Battle.findById(req.params.battleId)
+    const battle: any = await Battle.findById(req.params.battleId)
       .populate('streamerA', 'id name displayName avatarUrl')
       .populate('streamerB', 'id name displayName avatarUrl')
       .populate('winner', 'id name displayName avatarUrl');
@@ -106,7 +106,7 @@ router.post('/start', async (req, res) => {
       return res.status(404).json({ error: 'Um dos usuários não foi encontrado' });
     }
 
-    const battle = await Battle.create({
+    const battle: any = await Battle.create({
       streamerA: challenger._id,
       streamerB: opponent._id,
       status: 'active',
@@ -114,7 +114,7 @@ router.post('/start', async (req, res) => {
       startedAt: new Date()
     });
 
-    const populated = await Battle.findById(battle._id)
+    const populated: any = await Battle.findById(battle._id)
       .populate('streamerA', 'id name displayName avatarUrl')
       .populate('streamerB', 'id name displayName avatarUrl');
 
@@ -132,7 +132,7 @@ router.post('/start', async (req, res) => {
     const pkDuration = (durationSeconds || 300) * 1000;
     const autoEndTimer = setTimeout(async () => {
       try {
-        const currentBattle = await Battle.findById(battle._id);
+        const currentBattle: any = await Battle.findById(battle._id);
         if (!currentBattle || currentBattle.status !== 'active') return;
 
         let winnerId: string | null = null;
@@ -208,7 +208,7 @@ router.post('/vote', async (req, res) => {
       return res.status(400).json({ error: 'battleId e streamerId são obrigatórios' });
     }
 
-    const battle = await Battle.findById(battleId);
+    const battle: any = await Battle.findById(battleId);
     if (!battle || battle.status !== 'active') {
       return res.status(400).json({ error: 'Batalha não está ativa' });
     }
@@ -242,7 +242,7 @@ router.post('/end/:battleId', async (req, res) => {
     const { battleId } = req.params;
     const { winnerId } = req.body;
 
-    const battle = await Battle.findById(battleId);
+    const battle: any = await Battle.findById(battleId);
     if (!battle) {
       return res.status(404).json({ error: 'Batalha não encontrada' });
     }

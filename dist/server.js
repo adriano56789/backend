@@ -38,6 +38,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.registerFfmpegProcess = registerFfmpegProcess;
 const express_1 = __importDefault(require("express"));
+const helmet_1 = __importDefault(require("helmet"));
 const http_1 = __importDefault(require("http"));
 const https_1 = __importDefault(require("https"));
 const fs_1 = __importDefault(require("fs"));
@@ -127,7 +128,9 @@ function killAllFfmpegProcesses() {
 // ────────────────────────────────────────────────────────────────────
 const app = (0, express_1.default)();
 app.set('trust proxy', 1);
-app.set('etag', false); // Desabilitar ETag para sempre retornar 200 em vez de 304
+app.set('etag', false);
+// 🔒 Security headers (defense in depth)
+app.use((0, helmet_1.default)({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: 'cross-origin' } })); // Desabilitar ETag para sempre retornar 200 em vez de 304
 // Log de depuração para todas as requisições
 app.use((req, res, next) => {
     console.log(`[DEBUG] ${new Date().toISOString()} - ${req.method} ${req.url}`);

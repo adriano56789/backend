@@ -2,7 +2,7 @@ const { MongoClient, ObjectId } = require('mongodb');
 const fs = require('fs');
 const path = require('path');
 
-const MONGO_URI = 'mongodb://admin:adriano123@72.60.249.175:27017/api?authSource=admin';
+const MONGO_URI = 'mongodb://admin:adriano123@127.0.0.1:27017/api?authSource=admin';
 const DB_NAME = 'api';
 const API_JSON_DIR = 'C:/Users/adria/OneDrive/Documentos/Área de Trabalho/front-end2/api.json';
 
@@ -23,6 +23,7 @@ function convertKeys(obj) {
       if (val.$regularExpression) { result[key] = new RegExp(val.$regularExpression.pattern, val.$regularExpression.options || ''); continue; }
     }
     result[key] = convertKeys(val);
+    
   }
   return result;
 }
@@ -49,13 +50,20 @@ async function main() {
       if (data.length === 0) { console.log(`  ${file}: vazio`); continue; }
       data = convertKeys(data);
       const col = db.collection(collectionName);
-      await col.deleteMany({});
-      try {
-        await col.insertMany(data, { ordered: false });
-        console.log(`  ${file} -> ${collectionName}: ${data.length} documentos`);
-      } catch (e) {
-        console.log(`  ${file} -> ${collectionName}: ${data.length} docs (${e.message.split('\n')[0]})`);
+      let imported = 0;
+      for (const doc of data) {
+        const filter = doc._id ? { _id: doc._id } : (doc.id ? { id: doc.id } : {});
+        try {
+          const exists = await col.findOne(filter);
+          if (!exists) {
+            await col.insertOne(doc);
+            imported++;
+          }
+        } catch (e) {
+          // ignorar duplicatas
+        }
       }
+      console.log(`  ${file} -> ${collectionName}: ${imported} importados (${data.length - imported} já existiam)`);
     }
     console.log('Importação concluída!');
   } catch (err) {

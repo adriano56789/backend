@@ -43,6 +43,7 @@ const auth_1 = require("../middleware/auth");
 const userResponse_1 = require("../utils/userResponse");
 const idHelper_1 = require("../utils/idHelper");
 const appOwnerProtection_1 = require("../middleware/appOwnerProtection");
+const db_1 = require("../config/db");
 exports.UserRoutes = express_1.default.Router();
 exports.UserRoutes.get('/me', auth_1.protect, async (req, res) => {
     try {
@@ -148,16 +149,24 @@ exports.UserRoutes.delete('/:id', async (req, res) => {
     await models_1.User.deleteOne({ id: req.params.id });
     res.json({ success: true });
 });
-exports.UserRoutes.patch('/:id', async (req, res) => {
-    const user = await models_1.User.findOneAndUpdate({ id: req.params.id }, req.body, { new: true });
-    if (user && req.body.avatarUrl) {
-        const io = req.app.get('io');
-        if (io)
-            io.emit('avatar_updated', { userId: user.id, avatarUrl: user.avatarUrl, timestamp: new Date().toISOString() });
+exports.UserRoutes.patch("/:id", async (req, res) => {
+    try {
+        const user = await models_1.User.findOneAndUpdate({ id: req.params.id }, req.body, { new: true });
+        if (!user) {
+            return res.status(404).json({ error: "Usuário não encontrado" });
+        }
+        if (req.body.avatarUrl) {
+            const io = req.app.get("io");
+            if (io)
+                io.emit("avatar_updated", { userId: user.id, avatarUrl: user.avatarUrl, timestamp: new Date().toISOString() });
+        }
+        res.json({ success: true, user: (0, userResponse_1.standardizeUserResponse)(user) });
     }
-    res.json({ success: !!user, user: (0, userResponse_1.standardizeUserResponse)(user) });
+    catch (error) {
+        console.error("Erro ao atualizar perfil do usuário:", error);
+        res.status(500).json({ error: error.message || "Erro interno ao atualizar perfil" });
+    }
 });
-// DELETE /api/users/:userId/photos/:photoId - Remover foto (User.obras + ProfilePhoto)
 exports.UserRoutes.delete('/:userId/photos/:photoId', async (req, res) => {
     try {
         const { userId, photoId } = req.params;
@@ -303,6 +312,34 @@ exports.UserRoutes.post('/:id/toggle-follow', async (req, res) => {
                 $push: { followersList: followerId },
                 isFollowed: true
             });
+            // 🔧 INCREMENTAR SEGUIDORES NO STREAM SESSION se streamId estiver presente
+            const { streamId } = req.body;
+            if (streamId) {
+                try {
+                    const { incrementFollowers } = await Promise.resolve().then(() => __importStar(require('../models/StreamSession')));
+                    const db = (0, db_1.getDb)();
+                    await incrementFollowers(db.collection('streamsessions'), streamId);
+                }
+                catch (sessionErr) {
+                    console.warn(`⚠️ [STREAM SESSION] Erro ao incrementar seguidores: ${sessionErr}`);
+                }
+            }
+            // 🔔 Notificar o streamer via WebSocket sobre novo seguidor
+            try {
+                const io = req.app.get('io');
+                if (io) {
+                    const follower = await models_1.User.findOne({ id: followerId }).select('id name avatarUrl');
+                    io.to(`user_${followingId}`).emit('new_follower', {
+                        followerId,
+                        followerName: follower?.name || 'Unknown',
+                        followerAvatar: follower?.avatarUrl || '',
+                        timestamp: new Date().toISOString()
+                    });
+                }
+            }
+            catch (wsErr) {
+                console.warn(`⚠️ [TOGGLE-FOLLOW] Erro ao notificar WebSocket: ${wsErr}`);
+            }
             res.json({
                 success: true,
                 isFollowing: true,

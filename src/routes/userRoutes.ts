@@ -140,7 +140,7 @@ UserRoutes.get('/:id', async (req, res) => {
 
                 await User.findOneAndUpdate(
 
-                    { id: currentUserId },
+                    { id: user.id },
 
                     { 
 
@@ -219,25 +219,22 @@ UserRoutes.delete('/:id', async (req, res) => {
 
 });
 
-UserRoutes.patch('/:id', async (req, res) => {
-
-    const user = await User.findOneAndUpdate({ id: req.params.id }, req.body, { new: true });
-
-    if (user && req.body.avatarUrl) {
-
-        const io = req.app.get('io');
-
-        if (io) io.emit('avatar_updated', { userId: user.id, avatarUrl: user.avatarUrl, timestamp: new Date().toISOString() });
-
+UserRoutes.patch("/:id", async (req, res) => {
+    try {
+        const user = await User.findOneAndUpdate({ id: req.params.id }, req.body, { new: true });
+        if (!user) {
+            return res.status(404).json({ error: "Usuário não encontrado" });
+        }
+        if (req.body.avatarUrl) {
+            const io = req.app.get("io");
+            if (io) io.emit("avatar_updated", { userId: user.id, avatarUrl: user.avatarUrl, timestamp: new Date().toISOString() });
+        }
+        res.json({ success: true, user: standardizeUserResponse(user) });
+    } catch (error: any) {
+        console.error("Erro ao atualizar perfil do usuário:", error);
+        res.status(500).json({ error: error.message || "Erro interno ao atualizar perfil" });
     }
-
-    res.json({ success: !!user, user: standardizeUserResponse(user) });
-
 });
-
-
-
-// DELETE /api/users/:userId/photos/:photoId - Remover foto (User.obras + ProfilePhoto)
 
 UserRoutes.delete('/:userId/photos/:photoId', async (req, res) => {
 
@@ -1642,6 +1639,18 @@ UserRoutes.post('/:id/visit', async (req, res) => {
             }
 
         );
+
+
+
+        // Incrementar contador de visualizações no perfil visitado
+
+        await User.findOneAndUpdate(
+
+            { id: profileId },
+
+            { $inc: { profileViews: 1 } }
+
+        ).catch(console.error);
 
 
 

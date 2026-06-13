@@ -4,6 +4,9 @@ import jwt from 'jsonwebtoken';
 import { User } from '../models';
 import { connectDB } from '../config/db';
 import { standardizeUserResponse } from '../utils/userResponse';
+import { activityLogger } from '../middleware/ActivityLogger';
+import { ActivityType } from '../models/UserActivity';
+import { getUserIdFromToken } from '../middleware/auth';
 
 const router = express.Router();
 if (!process.env.JWT_SECRET) { throw new Error('[AUTH] JWT_SECRET environment variable is required'); }
@@ -110,7 +113,7 @@ router.post('/register', async (req, res) => {
             residence: (residence || "").trim(),
             tags: normalizeTags(tags),
             profession: (profession || "").trim(),
-            location: (location || "").trim(),
+            location: null, // Garantir que seja null para evitar erro no índice 2dsphere do MongoDB
             distance: (distance || "").trim(),
             birthday: (birthday || "01/01/1990").trim(),
             emotional_status: (emotional_status || "0").trim(),
@@ -189,6 +192,16 @@ router.post('/register', async (req, res) => {
         updatedUser!.token = token;
         await updatedUser!.save();
 
+        // Registrar atividade de criação de conta
+        activityLogger.logManualActivity({
+            userId: updatedUser!.id,
+            activityType: ActivityType.REGISTER,
+            targetType: 'system',
+            metadata: { email: updatedUser!.email, name: updatedUser!.name },
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent']
+        }).catch(err => console.error('[ACTIVITY] Erro ao registrar criação de conta:', err));
+
         // Enviar atualização em tempo real via WebSocket
         const io = req.app.get('io');
         if (io) {
@@ -242,6 +255,15 @@ router.post('/login', async (req, res) => {
                 user.lastSeen = new Date();
                 await user.save();
 
+                activityLogger.logManualActivity({
+                    userId: user.id,
+                    activityType: ActivityType.LOGIN,
+                    targetType: 'system',
+                    metadata: { loginMethod: 'bearer_token' },
+                    ipAddress: req.ip,
+                    userAgent: req.headers['user-agent']
+                }).catch(() => {});
+
                 return res.json({
                     success: true,
                     token,
@@ -285,6 +307,15 @@ router.post('/login', async (req, res) => {
         }
 
         const token = jwt.sign({ id: user.id, _id: user._id }, JWT_SECRET, { expiresIn: '30d' });
+
+        activityLogger.logManualActivity({
+            userId: user.id,
+            activityType: ActivityType.LOGIN,
+            targetType: 'system',
+            metadata: { loginMethod: 'email_password' },
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent']
+        }).catch(() => {});
 
         // Update status online and token + persistir atividade
         try {
@@ -365,10 +396,10 @@ router.post('/login', async (req, res) => {
 // @route POST /api/auth/logout
 router.post('/logout', async (req, res) => {
     try {
-        const { id } = req.body;
-        if (id) {
+        const userId = req.body.id || (await getUserIdFromToken(req));
+        if (userId) {
             await User.findOneAndUpdate(
-                { id }, 
+                { id: userId }, 
                 { 
                     $set: {
                     isOnline: false, 
@@ -384,6 +415,15 @@ router.post('/logout', async (req, res) => {
                     }
                 }
             );
+
+            activityLogger.logManualActivity({
+                userId: userId,
+                activityType: ActivityType.LOGOUT,
+                targetType: 'system',
+                metadata: { logoutReason: 'user_action' },
+                ipAddress: req.ip,
+                userAgent: req.headers['user-agent']
+            }).catch(() => {});
         }
         res.json({ success: true, message: 'Logged out successfully' });
     } catch (error: any) {

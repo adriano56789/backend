@@ -2835,6 +2835,24 @@ router.post('/streams/:id/end-session', async (req, res) => {
         console.log(`���� Encerrando live ${streamId} e salvando no hist+�rico`);
         // 1. Buscar a stream antes de atualizar
         const stream = await index_1.Streamer.findOne({ id: streamId });
+        // 🔧 BUSCAR DADOS ACUMULADOS DO STREAM SESSION para ter valores reais do banco
+        let sessionStats = null;
+        try {
+            const { findStats } = await Promise.resolve().then(() => __importStar(require('../models/StreamSession')));
+            const db = (0, db_1.getDb)();
+            sessionStats = await findStats(db.collection('streamsessions'), streamId);
+        }
+        catch (sessionErr) {
+            console.warn(`⚠️ [END-SESSION] Erro ao buscar StreamSession: ${sessionErr}`);
+        }
+        // Usar dados reais do banco (fallback para o que o frontend enviou)
+        const realCoins = sessionStats?.coins ?? session?.coins ?? 0;
+        const realViewers = sessionStats?.peakViewers ?? session?.peakViewers ?? stream?.viewers ?? 0;
+        const realFollowers = sessionStats?.followers ?? session?.followers ?? 0;
+        const realMembers = sessionStats?.members ?? session?.members ?? 0;
+        const realFans = sessionStats?.fans ?? session?.fans ?? 0;
+        const realGifts = sessionStats?.giftsReceived ?? session?.giftsReceived ?? 0;
+        const realMessages = sessionStats?.messagesCount ?? session?.messagesCount ?? 0;
         if (!stream) {
             console.warn(`��ᴩ� Stream ${streamId} n+�o encontrada, mas continuando para limpar estado do usu+�rio`);
             // Mesmo que a stream n+�o exista, limpar o estado do usu+�rio
@@ -2872,11 +2890,13 @@ router.post('/streams/:id/end-session', async (req, res) => {
                 startTime: session?.startTime || new Date(stream.startTime || endTime).toISOString(),
                 endTime: new Date(endTime).toISOString(),
                 duration: durationStr,
-                peakViewers: session?.peakViewers || stream.viewers || 0,
-                totalCoins: session?.coins || 0,
-                totalFollowers: session?.followers || 0,
-                totalMembers: session?.members || 0,
-                totalFans: session?.fans || 0,
+                peakViewers: realViewers,
+                totalCoins: realCoins,
+                totalGifts: realGifts,
+                totalMessages: realMessages,
+                totalFollowers: realFollowers,
+                totalMembers: realMembers,
+                totalFans: realFans,
                 category: stream.category,
                 tags: stream.tags || [],
                 country: stream.country
@@ -2944,6 +2964,17 @@ router.post('/streams/:id/end-session', async (req, res) => {
             console.log(`���� Notifica+�+�o WebSocket enviada: stream ${streamId} encerrada`);
         }
         console.log(`ԣ� Live ${streamId} encerrada e hist+�rico salvo com sucesso`);
+        // 🔧 Retornar dados reais do resumo para o frontend usar no EndStreamSummaryScreen
+        const summary = {
+            streamId,
+            viewers: realViewers,
+            duration: totalSeconds,
+            coins: realCoins,
+            followers: realFollowers,
+            members: realMembers,
+            fans: realFans,
+            user: stream ? { name: stream.name, avatarUrl: stream.avatar } : { name: '', avatarUrl: '' }
+        };
         res.json({
             success: true,
             user: updatedUser || {},
@@ -2952,7 +2983,8 @@ router.post('/streams/:id/end-session', async (req, res) => {
                 isLive: false,
                 endTime: new Date(endTime).toISOString()
             },
-            history: historyEntry
+            history: historyEntry,
+            summary
         });
     }
     catch (error) {

@@ -1,4 +1,7 @@
 import express from 'express';
+import helmet from 'helmet';
+
+
 import http from 'http';
 import https from 'https';
 import fs from 'fs';
@@ -91,7 +94,10 @@ function killAllFfmpegProcesses() {
 
 const app = express();
 app.set('trust proxy', 1);
-app.set('etag', false); // Desabilitar ETag para sempre retornar 200 em vez de 304
+app.set('etag', false);
+
+// 🔒 Security headers (defense in depth)
+app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: 'cross-origin' } })); // Desabilitar ETag para sempre retornar 200 em vez de 304
 
 // Log de depuração para todas as requisições
 app.use((req, res, next) => {
@@ -200,16 +206,16 @@ connectDB().then(async () => {
     initializeActivityHooks();
     activityEventService.initialize(io);
 
-    server.listen(port, '0.0.0.0', () => {
-        console.log(`🌍 API Server started on http://0.0.0.0:${port}`);
+    server.listen(port, '127.0.0.1', () => {
+        console.log(`🌍 API Server started on http://127.0.0.1:${port}`);
     });
 }).catch(error => {
     console.error('❌ [DB] Falha na conexão com MongoDB:', error.message);
     if (!isDev) {
         process.exit(1);
     } else {
-        server.listen(port, '0.0.0.0', () => {
-            console.log(`🌍 API Server started on http://0.0.0.0:${port} (SEM BANCO)`);
+        server.listen(port, '127.0.0.1', () => {
+            console.log(`🌍 API Server started on http://127.0.0.1:${port} (SEM BANCO)`);
         });
     }
 });
@@ -1664,9 +1670,9 @@ wsIo.on('connection', (socket) => {
 });
 // ────────────────────────────────────────────────────────────────────
 
-wsServer.listen(wsPort, '0.0.0.0', () => {
+wsServer.listen(wsPort, '127.0.0.1', () => {
     const protocol = isHttps ? 'https' : 'http';
-    console.log(`🔌 WebSocket server (Socket.IO) started on ${protocol}://0.0.0.0:${wsPort}`);
+    console.log(`🔌 WebSocket server (Socket.IO) started on ${protocol}://127.0.0.1:${wsPort}`);
     console.log(`🔐 Ready for ${isHttps ? 'secure ' : ''}WebSocket connections`);
     console.log(`📡 Following LiveGo pattern with real-time events`);
 });

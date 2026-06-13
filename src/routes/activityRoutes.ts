@@ -396,6 +396,7 @@ function getActivityCategory(activityType: ActivityType): string {
         [ActivityType.UPDATE_PROFILE]: 'profile',
         [ActivityType.CHANGE_AVATAR]: 'profile',
         [ActivityType.UPDATE_STATUS]: 'profile',
+        [ActivityType.REGISTER]: 'system',
         [ActivityType.LOGIN]: 'system',
         [ActivityType.LOGOUT]: 'system',
         [ActivityType.CHANGE_SETTINGS]: 'system',

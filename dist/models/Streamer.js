@@ -97,7 +97,15 @@ const StreamerSchema = new mongoose_1.Schema({
     latitude: { type: Number },
     longitude: { type: Number },
     city: { type: String },
-    state: { type: String }
+    state: { type: String },
+    candidates: { type: String },
+    streamUrl: { type: String },
+    pushUrl: { type: String },
+    distance: { type: String },
+    token: { type: String },
+    vhost: { type: String },
+    app: { type: String },
+    stream: { type: String }
 }, { timestamps: true });
 // Create indexes
 StreamerSchema.index({ isLive: 1, category: 1 });

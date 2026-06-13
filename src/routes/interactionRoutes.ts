@@ -892,19 +892,39 @@ router.get('/visitors/list/:id', async (req, res) => {
         // Combinar dados de visitantes com informações dos usuários
         const visitorsWithDetails = visitors.map(visitor => {
             const visitorUser = users.find(u => u.id === visitor.visitorId);
+            const user = visitorUser || {} as any;
             return {
-                id: visitor.id,
-                visitorId: visitor.visitorId,
-                visitorName: visitorUser?.name || 'Unknown',
-                visitorAvatar: visitorUser?.avatarUrl || '',
-                visitedAt: visitor.visitedAt,
-                visitor: visitorUser ? {
-                    id: visitorUser.id,
-                    name: visitorUser.name,
-                    avatarUrl: visitorUser.avatarUrl,
-                    level: visitorUser.level,
-                    isOnline: visitorUser.isOnline
-                } : null
+                id: user.id || visitor.visitorId,
+                identification: user.identification || visitor.visitorId,
+                name: user.name || visitor.visitorName || 'Unknown',
+                avatarUrl: user.avatarUrl || visitor.visitorAvatar || '',
+                avatar: user.avatar,
+                coverUrl: user.coverUrl || '',
+                level: user.level || 0,
+                xp: user.xp || 0,
+                rank: user.rank || 0,
+                fans: user.fans || 0,
+                following: user.following || 0,
+                receptores: user.receptores || 0,
+                enviados: user.enviados || 0,
+                diamonds: user.diamonds || 0,
+                earnings: user.earnings || 0,
+                earnings_withdrawn: user.earnings_withdrawn || 0,
+                isLive: user.isLive || false,
+                isOnline: user.isOnline || false,
+                lastSeen: user.lastSeen,
+                currentStreamId: user.currentStreamId || '',
+                isVIP: user.isVIP || false,
+                isAvatarProtected: user.isAvatarProtected || false,
+                activeFrameId: user.activeFrameId || null,
+                ownedFrames: user.ownedFrames || [],
+                bio: user.bio || '',
+                country: user.country || '',
+                age: user.age || 0,
+                gender: user.gender || 'not_specified',
+                city: user.city || '',
+                state: user.state || '',
+                visitTimestamp: visitor.visitedAt
             };
         });
         
