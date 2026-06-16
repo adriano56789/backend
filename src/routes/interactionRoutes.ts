@@ -885,13 +885,16 @@ router.get('/visitors/list/:id', async (req, res) => {
             return res.json([]);
         }
 
-        // Buscar dados completos dos visitantes
+        // Buscar dados completos dos visitantes (por name OU id)
         const visitorIds = [...new Set(visitors.map(v => v.visitorId))];
-        const users = await User.find({ id: { $in: visitorIds } });
+        const users = await User.find({ $or: [
+            { name: { $in: visitorIds } },
+            { id: { $in: visitorIds } }
+        ] });
         
         // Combinar dados de visitantes com informações dos usuários
         const visitorsWithDetails = visitors.map(visitor => {
-            const visitorUser = users.find(u => u.id === visitor.visitorId);
+            const visitorUser = users.find(u => u.id === visitor.visitorId || u.name === visitor.visitorId);
             const user = visitorUser || {} as any;
             return {
                 id: user.id || visitor.visitorId,
