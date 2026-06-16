@@ -25,6 +25,7 @@ import adminRoutes from './routes/adminRoutes';
 import metadataRoutes from './routes/metadataRoutes';
 import settingsRoutes from './routes/settingsRoutes';
 import liveRoutes from './routes/liveRoutes';
+import visitorRoutes from './routes/visitorRoutes';
 import pkRoutes from './routes/pkRoutes';
 import interactionRoutes from './routes/interactionRoutes';
 import authRoutes from './routes/authRoutes';
@@ -398,6 +399,7 @@ app.use('/api', settingsRoutes); // handles /api/settings, /api/notifications/se
 app.use('/api/pk', pkRoutes);
 app.use('/api/live', liveInviteRoutes); // NOVO - Convites Co-Host/PK com SRS SFU WebRTC
 app.use('/api/interactions', interactionRoutes); // handles /api/interactions/presents, /api/interactions/streams
+app.use('/api/visitors', visitorRoutes); // NOVO - Registro de visitas por nome
 app.use('/api/photos', photoRoutes); // handles /api/photos/:id/like
 app.use('/api', activityRoutes); // NOVO - Sistema de Atividades
 app.use('/api/video', videoStreamRoutes); // NOVO - API de Streaming de Vídeo
