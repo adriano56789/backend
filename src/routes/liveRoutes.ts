@@ -2780,14 +2780,25 @@ router.post('/streams/:id/join', async (req, res) => {
 
 
 
-        // Atualizar currentStreamId do usuário
+        // Atualizar currentStreamId do usuário e incrementar livesJoined
 
         await User.findOneAndUpdate(
             { id: userId },
-            { $set: { currentStreamId: id, isOnline: true } }
+            {
+                $set: { currentStreamId: id, isOnline: true },
+                $inc: { livesJoined: 1 },
+                $push: {
+                    recentActivities: {
+                        action: 'live_join',
+                        resource: 'streaming',
+                        timestamp: new Date(),
+                        endpoint: '/api/streams/:id/join'
+                    }
+                }
+            }
         );
 
-        console.log(`[STREAM-JOIN] Usuário ${userId} entrou na live ${id}`);
+        console.log(`[STREAM-JOIN] Usuário ${userId} entrou na live ${id}, livesJoined incrementado`);
 
 
 
@@ -3187,8 +3198,22 @@ router.post('/streams', async (req, res) => {
 
         console.log(`[STREAMS-POST] Stream criada/atualizada: id=${stream.id}, isLive=${stream.isLive}, country=${stream.country}`);
 
-        await User.findOneAndUpdate({ id: hostId }, { isLive: true, currentStreamId: streamId });
-        console.log(`[STREAMS-POST] Usuário ${hostId} marcado como isLive: true`);
+        await User.findOneAndUpdate(
+            { id: hostId },
+            {
+                $set: { isLive: true, currentStreamId: streamId },
+                $inc: { totalLives: 1 },
+                $push: {
+                    recentActivities: {
+                        action: 'live_start',
+                        resource: 'streaming',
+                        timestamp: new Date(),
+                        endpoint: '/api/streams'
+                    }
+                }
+            }
+        );
+        console.log(`[STREAMS-POST] Usuário ${hostId} marcado como isLive: true, totalLives incrementado`);
 
         const io = req.app.get('io');
         if (io) {

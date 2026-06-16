@@ -250,9 +250,18 @@ router.post('/login', async (req, res) => {
                     return res.status(401).json({ error: 'Usuário não encontrado' });
                 }
 
-                // Update online status
+                // Update online status, login count, last login
                 user.isOnline = true;
                 user.lastSeen = new Date();
+                user.loginCount = (user.loginCount || 0) + 1;
+                user.lastLogin = new Date();
+                if (!user.recentActivities) user.recentActivities = [];
+                user.recentActivities.push({
+                    action: 'login',
+                    resource: 'user_authentication',
+                    timestamp: new Date(),
+                    endpoint: '/api/auth/login'
+                });
                 await user.save();
 
                 activityLogger.logManualActivity({
