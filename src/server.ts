@@ -635,17 +635,14 @@ io.on('connection', (socket) => {
                 total: counts.fans + counts.visitors
             });
 
-            // Persistir viewer count no banco (sem bloquear o socket)
+            // Persistir viewer count e contagem de fãs/visitantes no banco
             const viewerCount = onlineUsersInStream.length;
             try {
                 const { Streamer } = await import('./models/Streamer');
-                console.log(`📤 [JOIN_STREAM] Atualizando contagem de viewers para ${viewerCount} na stream ${streamId}...`);
                 await Streamer.findOneAndUpdate(
                     { id: streamId },
-                    { $set: { viewers: viewerCount } }
-                ).then(() => {
-                    console.log(`✅ [JOIN_STREAM] Contagem de viewers persistida no banco.`);
-                });
+                    { $set: { viewers: viewerCount, onlineFans: counts.fans, onlineVisitors: counts.visitors } }
+                );
             } catch (e) {
                 // Falha silenciosa — não travar o join por causa do DB
             }
@@ -798,11 +795,12 @@ io.on('connection', (socket) => {
                         count: onlineUsersInStream.length
                     });
 
-                    // Persistir viewer count no banco
+                    // Persistir viewer count e contagem de fãs/visitantes no banco
                     const count = onlineUsersInStream.length;
+                    const streamCounts = onlineTracker.getCounts(userEntry.streamId);
                     models.Streamer.findOneAndUpdate(
                         { id: userEntry.streamId },
-                        { $set: { viewers: count } }
+                        { $set: { viewers: count, onlineFans: streamCounts.fans, onlineVisitors: streamCounts.visitors } }
                     ).catch(() => {});
                 }
 

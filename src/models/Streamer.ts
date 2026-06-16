@@ -88,6 +88,8 @@ const StreamerSchema: Schema = new Schema({
   icon: { type: String },
   country: { type: String },
   viewers: { type: Number, default: 0 },
+  onlineFans: { type: Number, default: 0 },
+  onlineVisitors: { type: Number, default: 0 },
   isPrivate: { type: Boolean, default: false },
   quality: { type: String, default: 'HD' },
   demoVideoUrl: { type: String },
