@@ -41,6 +41,8 @@ import statusRoutes from './routes/statusRoutes';
 import followersRoutes from './routes/followersRoutes';
 import friendshipRoutes from './routes/friendshipRoutes';
 import blockRoutes from './routes/blockRoutes';
+import statsRoutes from './routes/statsRoutes';
+import { onlineTracker } from './services/OnlineTracker';
 import locationRoutes from './routes/locationRoutes';
 import shopRoutes from './routes/shopRoutes';
 import frameRoutes from './routes/frameRoutes';
@@ -404,6 +406,7 @@ app.use('/api/photos', photoRoutes); // handles /api/photos/:id/like
 app.use('/api', activityRoutes); // NOVO - Sistema de Atividades
 app.use('/api/video', videoStreamRoutes); // NOVO - API de Streaming de Vídeo
 app.use('/api', videoStreamRoutes); // RTC routes (/api/rtc/v1/publish, /api/rtc/v1/stop)
+app.use('/api/stats', statsRoutes); // NOVO - Estatísticas em tempo real
 
 
 // Rota para analytics - receber eventos via sendBeacon
@@ -590,6 +593,17 @@ io.on('connection', (socket) => {
                 }
             } catch (_) {}
 
+            // Obter hostId da stream para classificar fã vs visitante
+            let hostId = '';
+            try {
+                const streamDoc = await models.Streamer.findOne({ id: streamId }).select('hostId').lean();
+                if (streamDoc) hostId = (streamDoc as any).hostId || '';
+            } catch (_) {}
+
+            // Registrar no OnlineTracker e obter contagens atualizadas
+            const counts = await onlineTracker.userJoin(streamId, userId, hostId);
+
+            // Emitir evento de join para toda a sala
             io.to(streamId).emit('user_joined_stream', {
                 userId,
                 userName,
@@ -597,6 +611,28 @@ io.on('connection', (socket) => {
                 userLevel,
                 streamId,
                 timestamp: new Date().toISOString()
+            });
+
+            // Emitir evento de presença para todos na stream
+            io.to(streamId).emit('user:join', {
+                userId,
+                userName,
+                userAvatar,
+                userLevel,
+                streamId,
+                role: userId === hostId ? 'host' : counts.role,
+                fans: counts.fans,
+                visitors: counts.visitors,
+                total: counts.fans + counts.visitors,
+                timestamp: new Date().toISOString()
+            });
+
+            // Broadcast atualização de contagem para todos na stream
+            io.to(streamId).emit('online_counts_updated', {
+                streamId,
+                fans: counts.fans,
+                visitors: counts.visitors,
+                total: counts.fans + counts.visitors
             });
 
             // Persistir viewer count no banco (sem bloquear o socket)
@@ -718,6 +754,25 @@ io.on('connection', (socket) => {
             if (!activeStreams || activeStreams.length === 0) {
                 // Notificar outros usuários na stream sobre saída (antes do DB)
                 if (userEntry.streamId) {
+                    // Atualizar OnlineTracker e emitir user:leave
+                    const leaveCounts = onlineTracker.userLeave(userEntry.streamId, userId);
+                    if (leaveCounts) {
+                        io.to(userEntry.streamId).emit('user:leave', {
+                            userId,
+                            streamId: userEntry.streamId,
+                            fans: leaveCounts.fans,
+                            visitors: leaveCounts.visitors,
+                            total: leaveCounts.fans + leaveCounts.visitors,
+                            timestamp: new Date().toISOString()
+                        });
+                        io.to(userEntry.streamId).emit('online_counts_updated', {
+                            streamId: userEntry.streamId,
+                            fans: leaveCounts.fans,
+                            visitors: leaveCounts.visitors,
+                            total: leaveCounts.fans + leaveCounts.visitors
+                        });
+                    }
+
                     io.to(userEntry.streamId).emit('user_left', {
                         userId: userId,
                         streamId: userEntry.streamId
