@@ -12,7 +12,7 @@ import { ENV, isDev } from './config/env';
 import path from 'path';
 import { connectDB } from './config/db';
 import { validateEnv } from './config/validateEnv';
-import { User, Streamer, Message, Followers, Friendship, UserLevel, UserActivity, Battle, LiveMessage } from './models/index';
+import { User, Streamer, Message, Followers, Friendship, UserLevel, UserActivity, Battle, LiveMessage, StreamParticipant } from './models/index';
 import { validateAndConvertUserId } from './middleware/idValidation';
 import { BackendProtobufService } from './services/protobuf/ProtobufService';
 import { activityEventService } from './services/ActivityEventService';
@@ -208,6 +208,18 @@ connectDB().then(async () => {
     await BackendProtobufService.init();
     initializeActivityHooks();
     activityEventService.initialize(io);
+
+    // Cleanup: remover participantes órfãos (conexões perdidas no restart)
+    try {
+        const deletedCount = await StreamParticipant.deleteMany({});
+        await Streamer.updateMany(
+            { isLive: true },
+            { $set: { onlineFans: 0, onlineVisitors: 0 } }
+        );
+        console.log(`🧹 [CLEANUP] ${deletedCount.deletedCount} participantes órfãos removidos, contadores resetados`);
+    } catch (e) {
+        console.warn('⚠️ [CLEANUP] Erro ao limpar participantes:', e);
+    }
 
     server.listen(port, '127.0.0.1', () => {
         console.log(`🌍 API Server started on http://127.0.0.1:${port}`);
