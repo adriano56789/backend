@@ -3228,14 +3228,37 @@ router.get('/streams', async (req, res) => {
             country = 'all',
             limit = 50,
             offset = 0,
-            isLive = 'true'
+            isLive = 'true',
+            userId
         } = req.query;
 
         // Construir filtro
         const filter: any = {};
         if (isLive === 'true') filter.isLive = true;
-        if (category && category !== 'all' && category !== 'popular') filter.category = category;
         if (country && country !== 'all' && country !== 'ICON_GLOBE') filter.country = country;
+
+        // Se for aba "Seguindo", filtrar por usuários seguidos
+        if (category === 'followed' && userId) {
+            const follows = await Followers.find({
+                followerId: userId as string,
+                isActive: true
+            }).select('followingId').lean();
+
+            const followedIds = follows.map(f => f.followingId);
+            console.log(`[API-STREAMS] Seguindo tab: userId=${userId}, seguidos encontrados: ${followedIds.length}`);
+
+            if (followedIds.length === 0) {
+                return res.json({
+                    code: 0,
+                    msg: 'OK',
+                    data: { streams: [], total: 0 }
+                });
+            }
+
+            filter.hostId = { $in: followedIds };
+        } else if (category && category !== 'all' && category !== 'popular') {
+            filter.category = category;
+        }
 
         console.log(`[API-STREAMS] Filtro:`, JSON.stringify(filter));
         console.log(`[API-STREAMS] Query params: category=${category}, country=${country}, limit=${limit}, offset=${offset}, isLive=${isLive}`);
