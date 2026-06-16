@@ -5,7 +5,7 @@ import * as models from '../models';
 
 const MONGO_URI = process.env.MONGODB_URI || 'mongodb://admin:adriano123@127.0.0.1:27017/api?authSource=admin';
 
-const API_JSON_DIR = path.resolve(__dirname, '../../front-end2/api.json');
+const API_JSON_DIR = path.resolve(__dirname, '../../../front-end/api.json');
 
 interface FileMapping {
   filename: string;

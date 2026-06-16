@@ -211,13 +211,7 @@ connectDB().then(async () => {
     });
 }).catch(error => {
     console.error('❌ [DB] Falha na conexão com MongoDB:', error.message);
-    if (!isDev) {
-        process.exit(1);
-    } else {
-        server.listen(port, '127.0.0.1', () => {
-            console.log(`🌍 API Server started on http://127.0.0.1:${port} (SEM BANCO)`);
-        });
-    }
+    process.exit(1);
 });
 
 // Inicializar UserStatusManager para gerenciar status online
