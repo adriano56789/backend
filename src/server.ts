@@ -601,7 +601,7 @@ io.on('connection', (socket) => {
             } catch (_) {}
 
             // Registrar no OnlineTracker e obter contagens atualizadas
-            const counts = await onlineTracker.userJoin(streamId, userId, hostId);
+            const counts = await onlineTracker.userJoin(streamId, userId, hostId, userName, userAvatar);
 
             // Emitir evento de join para toda a sala
             io.to(streamId).emit('user_joined_stream', {
@@ -635,13 +635,13 @@ io.on('connection', (socket) => {
                 total: counts.fans + counts.visitors
             });
 
-            // Persistir viewer count e contagem de fãs/visitantes no banco
+            // Persistir viewer count no banco
             const viewerCount = onlineUsersInStream.length;
             try {
                 const { Streamer } = await import('./models/Streamer');
                 await Streamer.findOneAndUpdate(
                     { id: streamId },
-                    { $set: { viewers: viewerCount, onlineFans: counts.fans, onlineVisitors: counts.visitors } }
+                    { $set: { viewers: viewerCount } }
                 );
             } catch (e) {
                 // Falha silenciosa — não travar o join por causa do DB
@@ -752,7 +752,7 @@ io.on('connection', (socket) => {
                 // Notificar outros usuários na stream sobre saída (antes do DB)
                 if (userEntry.streamId) {
                     // Atualizar OnlineTracker e emitir user:leave
-                    const leaveCounts = onlineTracker.userLeave(userEntry.streamId, userId);
+                    const leaveCounts = await onlineTracker.userLeave(userEntry.streamId, userId);
                     if (leaveCounts) {
                         io.to(userEntry.streamId).emit('user:leave', {
                             userId,
@@ -795,12 +795,11 @@ io.on('connection', (socket) => {
                         count: onlineUsersInStream.length
                     });
 
-                    // Persistir viewer count e contagem de fãs/visitantes no banco
+                    // Persistir viewer count no banco
                     const count = onlineUsersInStream.length;
-                    const streamCounts = onlineTracker.getCounts(userEntry.streamId);
                     models.Streamer.findOneAndUpdate(
                         { id: userEntry.streamId },
-                        { $set: { viewers: count, onlineFans: streamCounts.fans, onlineVisitors: streamCounts.visitors } }
+                        { $set: { viewers: count } }
                     ).catch(() => {});
                 }
 

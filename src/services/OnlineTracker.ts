@@ -1,84 +1,79 @@
+import { StreamParticipant } from '../models/StreamParticipant';
 import { Followers } from '../models';
-
-interface StreamCounts {
-    fans: Set<string>;
-    visitors: Set<string>;
-}
+import { Streamer } from '../models/Streamer';
 
 class OnlineTracker {
-    private streams = new Map<string, StreamCounts>();
+    async userJoin(streamId: string, userId: string, hostId: string, userName: string, userAvatar: string): Promise<{ role: 'fan' | 'visitor' | 'host'; fans: number; visitors: number }> {
+        let role: 'fan' | 'visitor' | 'host' = 'visitor';
 
-    async userJoin(streamId: string, userId: string, hostId: string): Promise<{ role: 'fan' | 'visitor'; fans: number; visitors: number }> {
-        if (!this.streams.has(streamId)) {
-            this.streams.set(streamId, { fans: new Set(), visitors: new Set() });
-        }
-
-        const stream = this.streams.get(streamId)!;
-
-        let isFan = false;
-        if (hostId && userId !== hostId) {
-            isFan = !!(await Followers.exists({
+        if (userId === hostId) {
+            role = 'host';
+        } else {
+            const isFan = !!(await Followers.exists({
                 followerId: userId,
                 followingId: hostId,
                 isActive: true
             }));
+            role = isFan ? 'fan' : 'visitor';
         }
 
-        stream.fans.delete(userId);
-        stream.visitors.delete(userId);
+        await StreamParticipant.findOneAndUpdate(
+            { streamId, userId },
+            {
+                $set: { streamId, userId, role, userName, userAvatar, joinedAt: new Date() }
+            },
+            { upsert: true, new: true }
+        );
 
-        if (isFan) {
-            stream.fans.add(userId);
-        } else {
-            stream.visitors.add(userId);
-        }
+        const [fans, visitors] = await Promise.all([
+            StreamParticipant.countDocuments({ streamId, role: 'fan' }),
+            StreamParticipant.countDocuments({ streamId, role: 'visitor' })
+        ]);
 
-        return {
-            role: isFan ? 'fan' : 'visitor',
-            fans: stream.fans.size,
-            visitors: stream.visitors.size
-        };
+        // Persistir no documento da stream
+        await Streamer.findOneAndUpdate(
+            { id: streamId },
+            { $set: { onlineFans: fans, onlineVisitors: visitors } }
+        ).catch(() => {});
+
+        return { role, fans, visitors };
     }
 
-    userLeave(streamId: string, userId: string): { fans: number; visitors: number } | null {
-        const stream = this.streams.get(streamId);
-        if (!stream) return null;
+    async userLeave(streamId: string, userId: string): Promise<{ fans: number; visitors: number } | null> {
+        await StreamParticipant.findOneAndDelete({ streamId, userId });
 
-        stream.fans.delete(userId);
-        stream.visitors.delete(userId);
+        const [fans, visitors] = await Promise.all([
+            StreamParticipant.countDocuments({ streamId, role: 'fan' }),
+            StreamParticipant.countDocuments({ streamId, role: 'visitor' })
+        ]);
 
-        if (stream.fans.size === 0 && stream.visitors.size === 0) {
-            this.streams.delete(streamId);
-        }
+        await Streamer.findOneAndUpdate(
+            { id: streamId },
+            { $set: { onlineFans: fans, onlineVisitors: visitors } }
+        ).catch(() => {});
 
-        return {
-            fans: stream.fans.size,
-            visitors: stream.visitors.size
-        };
+        return { fans, visitors };
     }
 
-    getCounts(streamId: string): { fans: number; visitors: number; total: number } {
-        const stream = this.streams.get(streamId);
-        if (!stream) return { fans: 0, visitors: 0, total: 0 };
-        return {
-            fans: stream.fans.size,
-            visitors: stream.visitors.size,
-            total: stream.fans.size + stream.visitors.size
-        };
-    }
-
-    getAllCounts(): { fans: number; visitors: number; total: number } {
-        let fans = 0;
-        let visitors = 0;
-        for (const stream of this.streams.values()) {
-            fans += stream.fans.size;
-            visitors += stream.visitors.size;
-        }
+    async getCounts(streamId: string): Promise<{ fans: number; visitors: number; total: number }> {
+        const [fans, visitors] = await Promise.all([
+            StreamParticipant.countDocuments({ streamId, role: 'fan' }),
+            StreamParticipant.countDocuments({ streamId, role: 'visitor' })
+        ]);
         return { fans, visitors, total: fans + visitors };
     }
 
-    getStreams(): string[] {
-        return Array.from(this.streams.keys());
+    async getAllCounts(): Promise<{ fans: number; visitors: number; total: number }> {
+        const [fans, visitors] = await Promise.all([
+            StreamParticipant.countDocuments({ role: 'fan' }),
+            StreamParticipant.countDocuments({ role: 'visitor' })
+        ]);
+        return { fans, visitors, total: fans + visitors };
+    }
+
+    async getStreams(): Promise<string[]> {
+        const result = await StreamParticipant.distinct('streamId');
+        return result;
     }
 }
 

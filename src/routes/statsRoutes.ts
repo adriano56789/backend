@@ -10,7 +10,7 @@ router.get('/online', async (req, res) => {
         const { streamId } = req.query;
 
         if (streamId) {
-            const counts = onlineTracker.getCounts(streamId as string);
+            const counts = await onlineTracker.getCounts(streamId as string);
             return res.json({
                 success: true,
                 streamId,
@@ -20,8 +20,8 @@ router.get('/online', async (req, res) => {
             });
         }
 
-        const counts = onlineTracker.getAllCounts();
-        const streams = onlineTracker.getStreams();
+        const counts = await onlineTracker.getAllCounts();
+        const streams = await onlineTracker.getStreams();
 
         res.json({
             success: true,
