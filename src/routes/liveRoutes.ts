@@ -1877,7 +1877,27 @@ router.post('/srs/publish', async (req, res) => {
 
         console.log(`[SRS-PUBLISH] WebRTC URL: ${webrtcUrl}`);
 
-
+        const io = req.app.get('io');
+        if (io) {
+            io.emit('new_live', {
+                id: liveId || streamId,
+                hostId: userId,
+                name: user.name || `Live`,
+                avatar: user.avatarUrl || '',
+                isLive: true,
+                streamStatus: 'active',
+                country: user.country || 'BR',
+                viewers: 0,
+                timestamp: new Date().toISOString()
+            });
+            io.emit('stream_started', {
+                streamId: liveId || streamId,
+                hostId: userId,
+                name: user.name || `Live`,
+                avatar: user.avatarUrl || '',
+                timestamp: new Date().toISOString()
+            });
+        }
 
         // Retorno conforme padrão SRS com dados reais
 
@@ -2020,6 +2040,27 @@ router.post('/live/clear', async (req, res) => {
         );
 
         console.log(`[LIVE-CLEAR] ${clearedStreams.length} lives limpas: ${clearedStreams.join(', ')}`);
+
+        const io = req.app.get('io');
+        if (io) {
+            for (const s of activeStreams) {
+                io.emit('card_removed', {
+                    streamId: s.id || clearedStreams[0],
+                    hostId: s.hostId || userId,
+                    timestamp: new Date().toISOString()
+                });
+                io.emit('stream_ended', {
+                    streamId: s.id || clearedStreams[0],
+                    hostId: s.hostId || userId,
+                    timestamp: new Date().toISOString()
+                });
+                io.emit('stream_stopped', {
+                    streamId: s.id || clearedStreams[0],
+                    hostId: s.hostId || userId,
+                    timestamp: new Date().toISOString()
+                });
+            }
+        }
 
         return res.json({
             success: true,
@@ -2579,7 +2620,27 @@ router.post('/live/start', async (req, res) => {
 
         console.log(`[STREAM-START] Stream ${streamId} iniciada para usuário ${userId}`);
 
-
+        const io = req.app.get('io');
+        if (io) {
+            io.emit('new_live', {
+                id: newStream.id || streamId,
+                hostId: newStream.hostId || userId,
+                name: newStream.name || liveTitle || `Live de ${user.name}`,
+                avatar: newStream.avatar || user?.avatarUrl || '',
+                isLive: true,
+                streamStatus: 'active',
+                country: newStream.country || user?.country || 'BR',
+                viewers: 0,
+                timestamp: new Date().toISOString()
+            });
+            io.emit('stream_started', {
+                streamId: newStream.id || streamId,
+                hostId: newStream.hostId || userId,
+                name: newStream.name || liveTitle || `Live de ${user.name}`,
+                avatar: newStream.avatar || user?.avatarUrl || '',
+                timestamp: new Date().toISOString()
+            });
+        }
 
         res.json({
 
@@ -3015,7 +3076,24 @@ router.post('/streams/:id/end', async (req, res) => {
 
         console.log(`[STREAM-END] Stream ${id} finalizada para usuário ${userId}`);
 
-
+        const io = req.app.get('io');
+        if (io) {
+            io.emit('card_removed', {
+                streamId: stream.id || id,
+                hostId: stream.hostId || userId,
+                timestamp: new Date().toISOString()
+            });
+            io.emit('stream_ended', {
+                streamId: stream.id || id,
+                hostId: stream.hostId || userId,
+                timestamp: new Date().toISOString()
+            });
+            io.emit('stream_stopped', {
+                streamId: stream.id || id,
+                hostId: stream.hostId || userId,
+                timestamp: new Date().toISOString()
+            });
+        }
 
         res.json({
 
@@ -3111,6 +3189,28 @@ router.post('/streams', async (req, res) => {
 
         await User.findOneAndUpdate({ id: hostId }, { isLive: true, currentStreamId: streamId });
         console.log(`[STREAMS-POST] Usuário ${hostId} marcado como isLive: true`);
+
+        const io = req.app.get('io');
+        if (io) {
+            io.emit('new_live', {
+                id: stream.id || streamId,
+                hostId: stream.hostId || hostId,
+                name: stream.name || name || streamTitle,
+                avatar: stream.avatar || user?.avatarUrl || '',
+                isLive: true,
+                streamStatus: 'active',
+                country: stream.country || finalCountry || 'BR',
+                viewers: 0,
+                timestamp: new Date().toISOString()
+            });
+            io.emit('stream_started', {
+                streamId: stream.id || streamId,
+                hostId: stream.hostId || hostId,
+                name: stream.name || name || streamTitle,
+                avatar: stream.avatar || user?.avatarUrl || '',
+                timestamp: new Date().toISOString()
+            });
+        }
 
         res.json({ success: true, stream });
     } catch (error: any) {
@@ -3301,7 +3401,24 @@ router.post('/end-session', async (req, res) => {
 
         console.log(`[END-SESSION] Sessão encerrada para usuário ${userId}. Streams afetadas: ${result.modifiedCount}`);
 
-
+        const io = req.app.get('io');
+        if (io) {
+            io.emit('card_removed', {
+                streamId: '',
+                hostId: userId,
+                timestamp: new Date().toISOString()
+            });
+            io.emit('stream_ended', {
+                streamId: '',
+                hostId: userId,
+                timestamp: new Date().toISOString()
+            });
+            io.emit('stream_stopped', {
+                streamId: '',
+                hostId: userId,
+                timestamp: new Date().toISOString()
+            });
+        }
 
         res.json({
 
@@ -3449,7 +3566,24 @@ router.delete('/rtc/v1/stop', async (req, res) => {
 
         console.log(`[RTC-STOP] Status final: isLive=${stream.isLive}, streamStatus=${stream.streamStatus}`);
 
-
+        const io = req.app.get('io');
+        if (io) {
+            io.emit('card_removed', {
+                streamId: streamId || stream?.id,
+                hostId: userId || stream?.hostId,
+                timestamp: new Date().toISOString()
+            });
+            io.emit('stream_ended', {
+                streamId: streamId || stream?.id,
+                hostId: userId || stream?.hostId,
+                timestamp: new Date().toISOString()
+            });
+            io.emit('stream_stopped', {
+                streamId: streamId || stream?.id,
+                hostId: userId || stream?.hostId,
+                timestamp: new Date().toISOString()
+            });
+        }
 
         res.json({
 
@@ -3821,6 +3955,25 @@ router.post('/live/:streamId/end', async (req, res) => {
     );
 
     console.log(`🛑 [SRS] Live finalizada: streamId=${streamId}, userId=${userId}`);
+
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('card_removed', {
+        streamId: streamId || stream?.id,
+        hostId: userId || stream?.hostId,
+        timestamp: new Date().toISOString()
+      });
+      io.emit('stream_ended', {
+        streamId: streamId || stream?.id,
+        hostId: userId || stream?.hostId,
+        timestamp: new Date().toISOString()
+      });
+      io.emit('stream_stopped', {
+        streamId: streamId || stream?.id,
+        hostId: userId || stream?.hostId,
+        timestamp: new Date().toISOString()
+      });
+    }
 
     ResponseHelper.success(res, { message: 'Live finalizada com sucesso' });
 
@@ -5678,7 +5831,21 @@ router.post('/streams/:id/end-session', async (req, res) => {
 
             });
 
-
+            io.emit('card_removed', {
+                streamId: streamId || stream?.id,
+                hostId: stream?.hostId || '',
+                timestamp: new Date().toISOString()
+            });
+            io.emit('stream_ended', {
+                streamId: streamId || stream?.id,
+                hostId: stream?.hostId || '',
+                timestamp: new Date().toISOString()
+            });
+            io.emit('stream_stopped', {
+                streamId: streamId || stream?.id,
+                hostId: stream?.hostId || '',
+                timestamp: new Date().toISOString()
+            });
 
             console.log(`���� Notifica+�+�o WebSocket enviada: stream ${streamId} encerrada`);
 
@@ -5687,8 +5854,6 @@ router.post('/streams/:id/end-session', async (req, res) => {
 
 
         console.log(`ԣ� Live ${streamId} encerrada e hist+�rico salvo com sucesso`);
-
-
 
         // 🔧 Retornar dados reais do resumo para o frontend usar no EndStreamSummaryScreen
         const summary = {
@@ -6452,7 +6617,27 @@ router.post('/stark/live/start', async (req, res) => {
 
         console.log(`[STARK] Live criada - liveId: ${liveId}, streamId: ${streamId}`);
 
-
+        const io = req.app.get('io');
+        if (io) {
+            io.emit('new_live', {
+                id: newLive.id || liveId,
+                hostId: newLive.hostId || userId,
+                name: newLive.name || title || `Live de ${user.name}`,
+                avatar: newLive.avatar || user?.avatarUrl || '',
+                isLive: true,
+                streamStatus: 'active',
+                country: newLive.country || user?.country || 'BR',
+                viewers: 0,
+                timestamp: new Date().toISOString()
+            });
+            io.emit('stream_started', {
+                streamId: newLive.id || liveId,
+                hostId: newLive.hostId || userId,
+                name: newLive.name || title || `Live de ${user.name}`,
+                avatar: newLive.avatar || user?.avatarUrl || '',
+                timestamp: new Date().toISOString()
+            });
+        }
 
         // Retornar no formato exato do Buscast
 
@@ -6769,6 +6954,25 @@ router.post('/lives/:id/end', async (req, res) => {
                 lastSeen: new Date()
             } }
         );
+
+        const io = req.app.get('io');
+        if (io) {
+            io.emit('card_removed', {
+                streamId: realId,
+                hostId: userId,
+                timestamp: new Date().toISOString()
+            });
+            io.emit('stream_ended', {
+                streamId: realId,
+                hostId: userId,
+                timestamp: new Date().toISOString()
+            });
+            io.emit('stream_stopped', {
+                streamId: realId,
+                hostId: userId,
+                timestamp: new Date().toISOString()
+            });
+        }
 
         return successResponse(res, 'Stream encerrada com sucesso');
 
@@ -7387,6 +7591,16 @@ router.post('/streams/:streamId/end', async (req: express.Request, res: express.
                 hostId: stream.hostId,
                 timestamp: new Date().toISOString()
             });
+            io.emit('stream_ended', {
+                streamId: stream.id,
+                hostId: stream.hostId,
+                timestamp: new Date().toISOString()
+            });
+            io.emit('stream_stopped', {
+                streamId: stream.id,
+                hostId: stream.hostId,
+                timestamp: new Date().toISOString()
+            });
         }
 
         res.json({
@@ -7523,7 +7737,26 @@ router.post('/streams/end-all', async (req: express.Request, res: express.Respon
 
         console.log(`[STREAM-END-ALL] ${activeStreams.length} streams encerradas para usuário: ${userId}`);
 
-
+        const io = req.app.get('io');
+        if (io) {
+            for (const s of activeStreams) {
+                io.emit('card_removed', {
+                    streamId: s.id,
+                    hostId: s.hostId || userId,
+                    timestamp: new Date().toISOString()
+                });
+                io.emit('stream_ended', {
+                    streamId: s.id,
+                    hostId: s.hostId || userId,
+                    timestamp: new Date().toISOString()
+                });
+                io.emit('stream_stopped', {
+                    streamId: s.id,
+                    hostId: s.hostId || userId,
+                    timestamp: new Date().toISOString()
+                });
+            }
+        }
 
         res.json({
 
@@ -7853,7 +8086,24 @@ router.post('/admin/streams/:streamId/force-end', async (req: express.Request, r
 
         console.log(`[ADMIN-FORCE-END] Stream ${streamId} encerrada for�adamente pelo admin ${userId}`);
 
-
+        const io = req.app.get('io');
+        if (io) {
+            io.emit('card_removed', {
+                streamId: streamId || stream?.id,
+                hostId: stream?.hostId || userId,
+                timestamp: new Date().toISOString()
+            });
+            io.emit('stream_ended', {
+                streamId: streamId || stream?.id,
+                hostId: stream?.hostId || userId,
+                timestamp: new Date().toISOString()
+            });
+            io.emit('stream_stopped', {
+                streamId: streamId || stream?.id,
+                hostId: stream?.hostId || userId,
+                timestamp: new Date().toISOString()
+            });
+        }
 
         res.json({
 
@@ -8383,7 +8633,27 @@ router.post('/streams/:id/start', async (req, res) => {
 
         console.log(`[STREAM-START] Stream ${id} iniciada para usu+�rio ${userId}`);
 
-
+        const io = req.app.get('io');
+        if (io) {
+            io.emit('new_live', {
+                id: stream.id || id,
+                hostId: stream.hostId || userId,
+                name: stream.name || `Live`,
+                avatar: stream.avatar || '',
+                isLive: true,
+                streamStatus: 'active',
+                country: stream.country || 'BR',
+                viewers: 0,
+                timestamp: new Date().toISOString()
+            });
+            io.emit('stream_started', {
+                streamId: stream.id || id,
+                hostId: stream.hostId || userId,
+                name: stream.name || `Live`,
+                avatar: stream.avatar || '',
+                timestamp: new Date().toISOString()
+            });
+        }
 
         res.json({
 

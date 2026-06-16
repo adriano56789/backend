@@ -98,6 +98,25 @@ router.post('/unpublish', async (req, res) => {
                 { id: updated.hostId },
                 { $set: { isLive: false, isOnline: false, currentStreamId: null } }
             );
+
+            const io = req.app.get('io');
+            if (io) {
+                io.emit('card_removed', {
+                    streamId: realStreamKey || updated?.id,
+                    hostId: updated?.hostId || '',
+                    timestamp: new Date().toISOString()
+                });
+                io.emit('stream_ended', {
+                    streamId: realStreamKey || updated?.id,
+                    hostId: updated?.hostId || '',
+                    timestamp: new Date().toISOString()
+                });
+                io.emit('stream_stopped', {
+                    streamId: realStreamKey || updated?.id,
+                    hostId: updated?.hostId || '',
+                    timestamp: new Date().toISOString()
+                });
+            }
         }
 
         res.status(200).json({ code: 0 });

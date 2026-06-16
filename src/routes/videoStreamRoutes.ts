@@ -79,6 +79,28 @@ router.post('/stream/start', async (req, res) => {
             webrtcUrl
         });
 
+        const io = req.app.get('io');
+        if (io) {
+            io.emit('new_live', {
+                id: streamId,
+                hostId: userId,
+                name: streamer.name || title || `Live`,
+                avatar: streamer.avatar || user?.avatarUrl || '',
+                isLive: true,
+                streamStatus: 'active',
+                country: streamer.country || user?.country || 'BR',
+                viewers: 0,
+                timestamp: new Date().toISOString()
+            });
+            io.emit('stream_started', {
+                streamId: streamId,
+                hostId: userId,
+                name: streamer.name || title || `Live`,
+                avatar: streamer.avatar || user?.avatarUrl || '',
+                timestamp: new Date().toISOString()
+            });
+        }
+
         res.json({
             success: true,
             data: {
@@ -162,6 +184,25 @@ router.post('/stream/stop', async (req, res) => {
             streamId,
             userId
         });
+
+        const io = req.app.get('io');
+        if (io) {
+            io.emit('card_removed', {
+                streamId: streamId,
+                hostId: userId,
+                timestamp: new Date().toISOString()
+            });
+            io.emit('stream_ended', {
+                streamId: streamId,
+                hostId: userId,
+                timestamp: new Date().toISOString()
+            });
+            io.emit('stream_stopped', {
+                streamId: streamId,
+                hostId: userId,
+                timestamp: new Date().toISOString()
+            });
+        }
 
         res.json({
             success: true,
