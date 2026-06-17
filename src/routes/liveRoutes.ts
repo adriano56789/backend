@@ -8959,7 +8959,7 @@ router.get('/stark/live/check/:streamId', async (req, res) => {
 router.post('/stark/live/start', async (req, res) => {
     try {
         console.log('[STARK-START] Iniciando live via Stark API...');
-        const { userId, title, category } = req.body;
+        const { userId, title, category, country } = req.body;
         if (!userId || !title) {
             return res.status(400).json({ code: 1, msg: 'Parametros obrigatorios: userId, title', result: null });
         }
@@ -8972,9 +8972,11 @@ router.post('/stark/live/start', async (req, res) => {
         const srsHost = process.env.SRS_HOST || '2.25.192.154';
         const pushUrl = 'webrtc://' + srsHost + ':1935/live/' + streamId + '?txSecret=xxx&txTime=xxx';
 
+        const finalCountry = (country || user.country || 'BR').toLowerCase();
+
         await Streamer.findOneAndUpdate(
             { id: streamId },
-            { $set: { id: streamId, hostId: userId, name: user.name || userId, isLive: true, streamStatus: 'active', startTime: new Date(), streamKey: streamId, liveId: liveId, pushUrl: pushUrl, title: title } },
+            { $set: { id: streamId, hostId: userId, name: user.name || userId, isLive: true, streamStatus: 'active', startTime: new Date(), streamKey: streamId, liveId: liveId, pushUrl: pushUrl, title: title, country: finalCountry } },
             { upsert: true, new: true }
         );
 
