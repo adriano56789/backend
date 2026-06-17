@@ -1,5 +1,5 @@
 import express from 'express';
-import { Gift, GiftTransaction, Streamer, User, StreamSession, LiveNotification, Photo } from '../models';
+import { Gift, GiftTransaction, Streamer, User, StreamSession, LiveNotification, UserPhoto } from '../models';
 
 const router = express.Router();
 
@@ -157,8 +157,8 @@ router.post('/feed/photos', async (req, res) => {
             return res.status(404).json({ error: 'Usuário não encontrado' });
         }
         
-        // Criar registro da foto no feed + persistir atividade
-        const photo = await Photo.create({
+        // Criar registro da foto no feed (UserPhoto) + persistir atividade
+        const photo = await UserPhoto.create({
             id: `feed_photo_${userId}_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
             userId,
             photoUrl,
@@ -167,8 +167,7 @@ router.post('/feed/photos', async (req, res) => {
             isPublic,
             likes: 0,
             comments: 0,
-            createdAt: new Date(),
-            updatedAt: new Date()
+            postedAt: new Date()
         });
 
         // Persistir atividade de upload no feed

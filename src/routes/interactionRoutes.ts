@@ -657,27 +657,16 @@ router.get('/feed/photos', async (req, res) => {
         // Se userId for fornecido, filtrar apenas conteúdo desse usuário
         const userFilter = userId ? { userId } : {};
         
-        // Buscar conteúdo de múltiplos modelos
-        const [photoFeed, userPhotoFeed, profilePhotoFeed, videoFeed] = await Promise.all([
-            Photo.find(userId ? userFilter : {}).sort({ createdAt: -1 }).limit(15).lean(),
+        // Buscar conteúdo de múltiplos modelos — apenas upload real de usuários
+        const [userPhotoFeed, videoFeed] = await Promise.all([
             UserPhoto.find({ ...userFilter, isPublic: true }).sort({ postedAt: -1 }).limit(15).lean(),
-            ProfilePhoto.find({ ...userFilter, isActive: true, photoType: { $ne: 'avatar' } }).sort({ createdAt: -1 }).limit(10).lean(),
             UserVideo.find({ ...userFilter, isPublic: true }).sort({ postedAt: -1 }).limit(15).lean()
         ]);
 
-        console.log(`📸 [CONTENT FEED] Encontrados: ${photoFeed.length} Photo, ${userPhotoFeed.length} UserPhoto, ${profilePhotoFeed.length} ProfilePhoto, ${videoFeed.length} UserVideo`);
+        console.log(`📸 [CONTENT FEED] Encontrados: ${userPhotoFeed.length} UserPhoto, ${videoFeed.length} UserVideo`);
 
         // Combinar todos os feeds
         const allContent = [
-            // Fotos
-            ...photoFeed.map((p: any) => ({ 
-                ...p, 
-                source: 'Photo', 
-                postedAt: p.createdAt,
-                contentType: 'photo',
-                mediaUrl: p.url,
-                thumbnailUrl: p.url
-            })),
             ...userPhotoFeed.map((p: any) => ({ 
                 ...p, 
                 source: 'UserPhoto',
@@ -685,15 +674,6 @@ router.get('/feed/photos', async (req, res) => {
                 mediaUrl: p.photoUrl,
                 thumbnailUrl: p.photoUrl
             })),
-            ...profilePhotoFeed.map((p: any) => ({ 
-                ...p, 
-                source: 'ProfilePhoto', 
-                postedAt: p.createdAt,
-                contentType: 'photo',
-                mediaUrl: p.photoUrl,
-                thumbnailUrl: p.photoUrl
-            })),
-            // Vídeos
             ...videoFeed.map((v: any) => ({ 
                 ...v, 
                 source: 'UserVideo',
