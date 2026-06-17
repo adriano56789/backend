@@ -148,6 +148,7 @@ router.post('/streams/:id/private-invite', async (req, res) => {
                 streamName: stream.name,
                 hostId: stream.hostId,
                 hostName: stream.name,
+                hostAvatar: stream.avatar || '',
                 message: `Você foi convidado para a sala privada de ${stream.name}!`,
                 timestamp: new Date().toISOString()
             });
