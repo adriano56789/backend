@@ -6,7 +6,7 @@ const router = express.Router();
 
 const SRS_HOST = process.env.SRS_HOST || 'api.livego.store';
 
-router.post('/live/join', async (req, res) => {
+router.post('/join', async (req, res) => {
     try {
         const { userId, username, name, avatarUrl, streamId, socketId } = req.body;
         if (!userId || !username || !streamId) {
@@ -45,7 +45,7 @@ router.post('/live/join', async (req, res) => {
     }
 });
 
-router.get('/live/online-users', async (req, res) => {
+router.get('/online-users', async (req, res) => {
     try {
         const { streamId, mode } = req.query;
         if (!streamId) {
@@ -82,7 +82,7 @@ router.get('/live/online-users', async (req, res) => {
     }
 });
 
-router.post('/live/invite', async (req, res) => {
+router.post('/invite', async (req, res) => {
     try {
         const { inviterUsername, inviterName, inviteeUsername, inviteeName, inviteType, streamId } = req.body;
 
@@ -144,7 +144,7 @@ router.post('/live/invite', async (req, res) => {
     }
 });
 
-router.post('/live/invite/respond', async (req, res) => {
+router.post('/invite/respond', async (req, res) => {
     try {
         const { inviteId, status } = req.body;
 
@@ -212,7 +212,7 @@ router.post('/live/invite/respond', async (req, res) => {
     }
 });
 
-router.post('/live/leave', async (req, res) => {
+router.post('/leave', async (req, res) => {
     try {
         const { username, streamId } = req.body;
         if (!username) {

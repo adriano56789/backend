@@ -26,14 +26,6 @@ router.get('/presents/live/:id', async (req, res) => {
         .limit(parseInt(limit as string))
         .lean();
         
-        if (gifts.length === 0) {
-            return res.json({
-                success: true,
-                gifts: [],
-                message: 'Ninguém enviou presentes nesta live ainda'
-            });
-        }
-        
         // Agrupar por usuário para mostrar total de presentes por pessoa
         const usersGifts = gifts.reduce((acc: any, gift) => {
             const userId = gift.fromUserId;
@@ -63,6 +55,30 @@ router.get('/presents/live/:id', async (req, res) => {
             
             return acc;
         }, {});
+
+        // Também incluir usuários online (LiveUser) que não enviaram presentes
+        try {
+            const { LiveUser } = await import('../models/LiveInvite');
+            const onlineUsers = await LiveUser.find({
+                currentStreamId: streamId,
+                status: { $in: ['viewing', 'co-host', 'pk-battle', 'broadcasting'] }
+            }).lean();
+
+            for (const lu of onlineUsers) {
+                if (lu.userId && !usersGifts[lu.userId]) {
+                    usersGifts[lu.userId] = {
+                        userId: lu.userId,
+                        userName: lu.name,
+                        userAvatar: lu.avatarUrl || '',
+                        gifts: [],
+                        totalValue: 0,
+                        totalDiamonds: 0
+                    };
+                }
+            }
+        } catch (err) {
+            // Não crítico
+        }
         
         const result = Object.values(usersGifts);
         
