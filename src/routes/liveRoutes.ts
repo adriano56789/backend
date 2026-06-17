@@ -6336,6 +6336,38 @@ router.post('/streams/:id/gift', async (req, res) => {
 
 
 
+        // Emitir evento de presente recebido para todos na sala da live
+        if (io) {
+            const giftEventData = {
+                from: {
+                    id: updatedSender?.id || fromUserId,
+                    name: updatedSender?.name || 'Unknown',
+                    avatarUrl: updatedSender?.avatarUrl || '',
+                    level: updatedSender?.level || 1
+                },
+                toUser: {
+                    id: stream.hostId,
+                    name: updatedReceiver?.name || 'Unknown'
+                },
+                gift: {
+                    name: giftName,
+                    price: price,
+                    icon: gift.icon || '🎁',
+                    category: gift.category || 'Popular'
+                },
+                quantity: amount || 1,
+                totalValue,
+                roomId: req.params.id,
+                streamId: req.params.id,
+                timestamp: new Date().toISOString()
+            };
+
+            io.to(req.params.id).emit('live_gift_received', giftEventData);
+            io.to(req.params.id).emit('gift_received', giftEventData);
+            io.to(`user_${stream.hostId}`).emit('gift_received', giftEventData);
+            console.log(`🎁 [WEBSOCKET] live_gift_received emitido para sala ${req.params.id}: ${giftName} x${amount || 1}`);
+        }
+
         // Register gift transaction
 
         await GiftTransaction.create([{

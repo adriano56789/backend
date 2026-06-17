@@ -1159,8 +1159,10 @@ io.on('connection', (socket) => {
         socket.to(data.roomId).emit('receive_message', data.message);
     });
 
-    socket.on('send_gift', (data: { roomId: string, gift: any }) => {
-        io.to(data.roomId).emit('gift_received', data.gift);
+    socket.on('send_gift', (data: any) => {
+        if (data.streamId) {
+            io.to(data.streamId).emit('gift_received', data);
+        }
     });
 
     // Eventos para atualizações em tempo real
@@ -1666,6 +1668,29 @@ wsIo.on('connection', (socket) => {
 
             // Broadcast para todos na sala do stream
             wsIo.to(data.streamId).emit('new_gift', giftData);
+            wsIo.to(data.streamId).emit('live_gift_received', {
+                from: {
+                    id: data.fromUserId,
+                    name: data.fromUserName,
+                    avatarUrl: data.fromUserAvatar,
+                    level: data.fromUserLevel || 1
+                },
+                toUser: {
+                    id: data.toUserId,
+                    name: data.toUserName
+                },
+                gift: {
+                    name: data.giftName,
+                    price: data.giftPrice,
+                    icon: data.giftIcon || '🎁',
+                    category: data.giftCategory || 'Popular'
+                },
+                quantity: data.quantity,
+                totalValue: data.giftPrice * data.quantity,
+                roomId: data.streamId,
+                streamId: data.streamId,
+                timestamp: new Date().toISOString()
+            });
             console.log(`🎁 [GIFT] Real gift processed: ${data.giftName} x${data.quantity} (${data.totalValue} diamonds)`);
         } catch (error) {
             console.error(`❌ [GIFT] Error processing gift:`, error);
