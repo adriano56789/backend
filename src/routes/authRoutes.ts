@@ -152,7 +152,7 @@ router.post('/register', async (req, res) => {
         console.log(`[REGISTER] User created: id=${user.id} (${user.id.length} chars), identification=${user.identification} (${user.identification?.length} chars)`);
 
         // Gerar campos de stream usando o id manual
-        const streamKey = `stream_${user.id}`;
+        const streamKey = `${user.id}`;
         const roomId = `room_${user.id}`;
         const srsHost = process.env.SRS_HOST || 'srs';
         const rtmpIngestUrl = `rtmp://${srsHost}:1935/live`;

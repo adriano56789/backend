@@ -50,6 +50,7 @@ var ActivityType;
     ActivityType["UPDATE_PROFILE"] = "update_profile";
     ActivityType["CHANGE_AVATAR"] = "change_avatar";
     ActivityType["UPDATE_STATUS"] = "update_status";
+    ActivityType["REGISTER"] = "register";
     ActivityType["LOGIN"] = "login";
     ActivityType["LOGOUT"] = "logout";
     ActivityType["CHANGE_SETTINGS"] = "change_settings";
@@ -318,6 +319,7 @@ const typeLabels = {
     [ActivityType.UPDATE_PROFILE]: 'Atualizou perfil',
     [ActivityType.CHANGE_AVATAR]: 'Mudou avatar',
     [ActivityType.UPDATE_STATUS]: 'Atualizou status',
+    [ActivityType.REGISTER]: 'Criou conta',
     [ActivityType.LOGIN]: 'Entrou no sistema',
     [ActivityType.LOGOUT]: 'Saiu do sistema',
     [ActivityType.CHANGE_SETTINGS]: 'Alterou configurações',
@@ -360,6 +362,7 @@ const categories = {
     [ActivityType.UPDATE_PROFILE]: 'profile',
     [ActivityType.CHANGE_AVATAR]: 'profile',
     [ActivityType.UPDATE_STATUS]: 'profile',
+    [ActivityType.REGISTER]: 'system',
     [ActivityType.LOGIN]: 'system',
     [ActivityType.LOGOUT]: 'system',
     [ActivityType.CHANGE_SETTINGS]: 'system',

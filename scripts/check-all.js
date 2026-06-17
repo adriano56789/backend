@@ -1,5 +1,5 @@
 const { MongoClient } = require('mongodb');
-const uri = 'mongodb://admin:adriano123@72.60.249.175:27017/api?authSource=admin';
+const uri = 'mongodb://admin:adriano123@2.25.192.154:27017/api?authSource=admin';
 (async () => {
   const c = new MongoClient(uri);
   await c.connect();

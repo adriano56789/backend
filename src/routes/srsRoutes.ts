@@ -49,7 +49,107 @@ router.post('/publish', async (req, res) => {
             console.log(`[SRS-PUBLISH] Reconexão detectada — stream ${realStreamKey}`);
         }
 
-        console.log(`[SRS-PUBLISH] OK server=${server_id} stream=${stream} client=${client_id}`);
+        // Buscar documento Streamer existente por streamKey ou id
+        const existingStream = realStreamKey
+            ? await Streamer.findOne({
+                $or: [
+                    { streamKey: realStreamKey },
+                    { id: realStreamKey }
+                ]
+              }).lean()
+            : null;
+
+        let userId: string | null = existingStream?.hostId || null;
+
+        // Se não achou pelo Streamer, tentar pelo User (currentStreamId)
+        if (!userId && realStreamKey) {
+            const userByStream = await User.findOne({ currentStreamId: realStreamKey }).lean();
+            if (userByStream) {
+                userId = userByStream.id;
+            }
+        }
+
+        if (!userId) {
+            console.log(`[SRS-PUBLISH] Nenhum usuário encontrado para streamKey=${realStreamKey}`);
+            return res.status(200).json({ code: 0 });
+        }
+
+        const user = await User.findOne({ id: userId });
+        if (!user) {
+            console.log(`[SRS-PUBLISH] Usuário não encontrado: ${userId}`);
+            return res.status(200).json({ code: 0 });
+        }
+
+        const streamTitle = existingStream?.title || existingStream?.message || `Live de ${user.name || 'Streamer'}`;
+
+        // URLs SRS
+        const srsHost = process.env.SRS_HOST || '72.60.249.175';
+        const srsPort = process.env.SRS_RTMP_PORT || '1935';
+        const BACKEND_URL = process.env.BACKEND_URL || 'https://api.livego.store';
+        const pushUrl = `rtmp://${srsHost}:${srsPort}/${app || 'live'}/${realStreamKey}`;
+        const httpFlvUrl = `${BACKEND_URL}/api/video/http/live/${realStreamKey}.flv`;
+        const hlsUrl = `${BACKEND_URL}/api/video/http/live/${realStreamKey}.m3u8`;
+
+        // Criar/atualizar stream no banco com isLive: true
+        const streamerData = {
+            id: realStreamKey,
+            hostId: userId,
+            name: user.name || 'Streamer',
+            avatar: user.avatarUrl || '',
+            location: user.country || 'BR',
+            time: 'Ao Vivo',
+            message: streamTitle,
+            tags: existingStream?.tags || ['live'],
+            isLive: true,
+            streamStatus: 'active',
+            startTime: existingStream?.startTime || new Date(),
+            streamKey: realStreamKey,
+            title: existingStream?.title || '',
+            country: user.country || 'BR',
+            rtmpIngestUrl: existingStream?.rtmpIngestUrl || pushUrl,
+            playbackUrl: existingStream?.playbackUrl || httpFlvUrl,
+            hlsUrl: existingStream?.hlsUrl || hlsUrl,
+            vhost: vhost || '__defaultVhost__',
+            app: app || 'live',
+            stream: realStreamKey
+        };
+
+        await Streamer.findOneAndUpdate(
+            { id: realStreamKey },
+            { $set: streamerData },
+            { upsert: true, new: true }
+        );
+
+        // Atualizar status do usuário
+        await User.findOneAndUpdate(
+            { id: userId },
+            { $set: { isLive: true, currentStreamId: realStreamKey } }
+        );
+
+        console.log(`[SRS-PUBLISH] Transmissão registrada: ${realStreamKey} para usuário ${userId}`);
+
+        // Emitir eventos via socket
+        const io = req.app.get('io');
+        if (io) {
+            io.emit('new_live', {
+                id: realStreamKey,
+                hostId: userId,
+                name: user.name || 'Live',
+                avatar: user.avatarUrl || '',
+                isLive: true,
+                streamStatus: 'active',
+                country: user.country || 'BR',
+                viewers: 0,
+                timestamp: new Date().toISOString()
+            });
+            io.emit('stream_started', {
+                streamId: realStreamKey,
+                hostId: userId,
+                name: user.name || 'Live',
+                avatar: user.avatarUrl || '',
+                timestamp: new Date().toISOString()
+            });
+        }
 
         res.status(200).json({ code: 0 });
     } catch (error: any) {

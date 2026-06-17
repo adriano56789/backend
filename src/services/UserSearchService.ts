@@ -1,4 +1,6 @@
+import mongoose from 'mongoose';
 import { User, UserIndex } from '../models';
+import { searchUserIndexesByName } from '../models/UserIndex';
 
 export class UserSearchService {
     /**
@@ -68,16 +70,15 @@ export class UserSearchService {
 
             const searchTerm = query.trim().toLowerCase();
 
-            // Busca por ID exato ou por termos de busca
-            const results = await UserIndex.find({
-                isActive: true,
-                $or: [
-                    { userId: searchTerm }, // Busca por ID exato
-                    { searchTerms: { $regex: searchTerm, $options: 'i' } } // Busca por partes do nome
-                ]
-            })
-            .limit(limit)
-            .sort({ name: 1 });
+            const db = mongoose.connection.db;
+
+            if (!db) {
+                console.error("❌ MongoDB connection not available");
+                return [];
+            }
+
+            const collection = db.collection("userindexes");
+            const results = await searchUserIndexesByName(collection, searchTerm, limit, { isActive: true });
 
             return results;
         } catch (error: any) {

@@ -102,7 +102,7 @@ exports.UserRoutes.get('/:id', async (req, res) => {
             // Persistir visualização de perfil se usuário estiver autenticado e for diferente do perfil visitado
             const currentUserId = (0, auth_1.getUserIdFromToken)(req);
             if (currentUserId && currentUserId !== user.id) {
-                await models_1.User.findOneAndUpdate({ id: currentUserId }, {
+                await models_1.User.findOneAndUpdate({ id: user.id }, {
                     $inc: { profileViews: 1 },
                     $push: {
                         recentActivities: {
@@ -789,6 +789,8 @@ exports.UserRoutes.post('/:id/visit', async (req, res) => {
             upsert: true, // Criar se não existir
             new: true
         });
+        // Incrementar contador de visualizações no perfil visitado
+        await models_1.User.findOneAndUpdate({ id: profileId }, { $inc: { profileViews: 1 } }).catch(console.error);
         console.log(`✅ Visita registrada: ${userId} → ${profileId}`);
         res.json({
             success: true,
@@ -1083,10 +1085,15 @@ exports.UserRoutes.get('/:id/status', async (req, res) => {
 // POST /api/users/:id/online - Definir usuário como online
 exports.UserRoutes.post('/:id/online', async (req, res) => {
     try {
-        // 🔄 CONVERSOR DE ID: MongoDB ID → ID Real da API
         let userId = req.params.id;
-        if (req.needsIdConversion && req.originalMongoId) {
-            // Se o middleware detectou MongoDB ID, converter para ID real
+        // Busca case-insensitive: "Adri" encontra "adri"
+        let lookupUser = await models_1.User.findOne({ id: userId });
+        if (!lookupUser) {
+            lookupUser = await models_1.User.findOne({ id: { $regex: new RegExp('^' + userId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i') } });
+            if (lookupUser)
+                userId = lookupUser.id;
+        }
+        if (!lookupUser && req.needsIdConversion && req.originalMongoId) {
             const user = await (0, idHelper_1.findUserByAnyId)(models_1.User, req.originalMongoId);
             if (!user) {
                 return res.status(404).json({ error: 'Usuário não encontrado' });

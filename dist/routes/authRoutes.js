@@ -9,6 +9,9 @@ const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const models_1 = require("../models");
 const db_1 = require("../config/db");
 const userResponse_1 = require("../utils/userResponse");
+const ActivityLogger_1 = require("../middleware/ActivityLogger");
+const UserActivity_1 = require("../models/UserActivity");
+const auth_1 = require("../middleware/auth");
 const router = express_1.default.Router();
 if (!process.env.JWT_SECRET) {
     throw new Error('[AUTH] JWT_SECRET environment variable is required');
@@ -112,7 +115,7 @@ router.post('/register', async (req, res) => {
         const user = await models_1.User.create(userData);
         console.log(`[REGISTER] User created: id=${user.id} (${user.id.length} chars), identification=${user.identification} (${user.identification?.length} chars)`);
         // Gerar campos de stream usando o id manual
-        const streamKey = `stream_${user.id}`;
+        const streamKey = `${user.id}`;
         const roomId = `room_${user.id}`;
         const srsHost = process.env.SRS_HOST || 'srs';
         const rtmpIngestUrl = `rtmp://${srsHost}:1935/live`;
@@ -144,6 +147,15 @@ router.post('/register', async (req, res) => {
         const token = jsonwebtoken_1.default.sign({ id: updatedUser.id, _id: updatedUser.id }, JWT_SECRET, { expiresIn: '30d' });
         updatedUser.token = token;
         await updatedUser.save();
+        // Registrar atividade de criação de conta
+        ActivityLogger_1.activityLogger.logManualActivity({
+            userId: updatedUser.id,
+            activityType: UserActivity_1.ActivityType.REGISTER,
+            targetType: 'system',
+            metadata: { email: updatedUser.email, name: updatedUser.name },
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent']
+        }).catch(err => console.error('[ACTIVITY] Erro ao registrar criação de conta:', err));
         // Enviar atualização em tempo real via WebSocket
         const io = req.app.get('io');
         if (io) {
@@ -187,10 +199,28 @@ router.post('/login', async (req, res) => {
                 if (!user) {
                     return res.status(401).json({ error: 'Usuário não encontrado' });
                 }
-                // Update online status
+                // Update online status, login count, last login
                 user.isOnline = true;
                 user.lastSeen = new Date();
+                user.loginCount = (user.loginCount || 0) + 1;
+                user.lastLogin = new Date();
+                if (!user.recentActivities)
+                    user.recentActivities = [];
+                user.recentActivities.push({
+                    action: 'login',
+                    resource: 'user_authentication',
+                    timestamp: new Date(),
+                    endpoint: '/api/auth/login'
+                });
                 await user.save();
+                ActivityLogger_1.activityLogger.logManualActivity({
+                    userId: user.id,
+                    activityType: UserActivity_1.ActivityType.LOGIN,
+                    targetType: 'system',
+                    metadata: { loginMethod: 'bearer_token' },
+                    ipAddress: req.ip,
+                    userAgent: req.headers['user-agent']
+                }).catch(() => { });
                 return res.json({
                     success: true,
                     token,
@@ -227,6 +257,14 @@ router.post('/login', async (req, res) => {
             return res.status(401).json({ error: 'Email ou senha inválidos' });
         }
         const token = jsonwebtoken_1.default.sign({ id: user.id, _id: user._id }, JWT_SECRET, { expiresIn: '30d' });
+        ActivityLogger_1.activityLogger.logManualActivity({
+            userId: user.id,
+            activityType: UserActivity_1.ActivityType.LOGIN,
+            targetType: 'system',
+            metadata: { loginMethod: 'email_password' },
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent']
+        }).catch(() => { });
         // Update status online and token + persistir atividade
         try {
             user.isOnline = true;
@@ -306,9 +344,9 @@ router.post('/login', async (req, res) => {
 // @route POST /api/auth/logout
 router.post('/logout', async (req, res) => {
     try {
-        const { id } = req.body;
-        if (id) {
-            await models_1.User.findOneAndUpdate({ id }, {
+        const userId = req.body.id || (await (0, auth_1.getUserIdFromToken)(req));
+        if (userId) {
+            await models_1.User.findOneAndUpdate({ id: userId }, {
                 $set: {
                     isOnline: false,
                     lastSeen: new Date().toISOString()
@@ -322,6 +360,14 @@ router.post('/logout', async (req, res) => {
                     }
                 }
             });
+            ActivityLogger_1.activityLogger.logManualActivity({
+                userId: userId,
+                activityType: UserActivity_1.ActivityType.LOGOUT,
+                targetType: 'system',
+                metadata: { logoutReason: 'user_action' },
+                ipAddress: req.ip,
+                userAgent: req.headers['user-agent']
+            }).catch(() => { });
         }
         res.json({ success: true, message: 'Logged out successfully' });
     }

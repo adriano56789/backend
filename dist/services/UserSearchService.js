@@ -1,7 +1,12 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UserSearchService = void 0;
+const mongoose_1 = __importDefault(require("mongoose"));
 const models_1 = require("../models");
+const UserIndex_1 = require("../models/UserIndex");
 class UserSearchService {
     /**
      * Atualizar ou adicionar usuário no índice de busca
@@ -60,16 +65,13 @@ class UserSearchService {
                 return [];
             }
             const searchTerm = query.trim().toLowerCase();
-            // Busca por ID exato ou por termos de busca
-            const results = await models_1.UserIndex.find({
-                isActive: true,
-                $or: [
-                    { userId: searchTerm }, // Busca por ID exato
-                    { searchTerms: { $regex: searchTerm, $options: 'i' } } // Busca por partes do nome
-                ]
-            })
-                .limit(limit)
-                .sort({ name: 1 });
+            const db = mongoose_1.default.connection.db;
+            if (!db) {
+                console.error("❌ MongoDB connection not available");
+                return [];
+            }
+            const collection = db.collection("userindexes");
+            const results = await (0, UserIndex_1.searchUserIndexesByName)(collection, searchTerm, limit, { isActive: true });
             return results;
         }
         catch (error) {

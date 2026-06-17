@@ -2376,13 +2376,16 @@ UserRoutes.post('/:id/online', async (req, res) => {
 
     try {
 
-        // 🔄 CONVERSOR DE ID: MongoDB ID → ID Real da API
-
         let userId = req.params.id;
 
-        if (req.needsIdConversion && req.originalMongoId) {
+        // Busca case-insensitive: "Adri" encontra "adri"
+        let lookupUser = await User.findOne({ id: userId });
+        if (!lookupUser) {
+            lookupUser = await User.findOne({ id: { $regex: new RegExp('^' + userId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i') } });
+            if (lookupUser) userId = lookupUser.id;
+        }
 
-            // Se o middleware detectou MongoDB ID, converter para ID real
+        if (!lookupUser && req.needsIdConversion && req.originalMongoId) {
 
             const user = await findUserByAnyId(User, req.originalMongoId);
 

@@ -1,5 +1,6 @@
 import express from 'express';
 import { LiveUser, LiveInvite } from '../models/LiveInvite';
+import Streamer from '../models/Streamer';
 
 const router = express.Router();
 
@@ -46,9 +47,27 @@ router.post('/live/join', async (req, res) => {
 
 router.get('/live/online-users', async (req, res) => {
     try {
-        const { streamId } = req.query;
+        const { streamId, mode } = req.query;
         if (!streamId) {
             return res.status(400).json({ success: false, error: 'streamId é obrigatório' });
+        }
+
+        if (mode === 'battle') {
+            const liveStreamers = await Streamer.find({
+                isLive: true,
+                streamStatus: 'active',
+                hostId: { $ne: streamId }
+            }).sort({ startTime: -1 }).lean();
+
+            const users = liveStreamers.map(s => ({
+                userId: s.hostId,
+                username: s.name || s.hostId,
+                name: s.name || s.hostId,
+                avatarUrl: s.avatar || '',
+                status: 'broadcasting'
+            }));
+
+            return res.status(200).json({ success: true, users });
         }
 
         const users = await LiveUser.find({

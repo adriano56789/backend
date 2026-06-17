@@ -400,6 +400,7 @@ function getActivityCategory(activityType) {
         [UserActivity_1.ActivityType.UPDATE_PROFILE]: 'profile',
         [UserActivity_1.ActivityType.CHANGE_AVATAR]: 'profile',
         [UserActivity_1.ActivityType.UPDATE_STATUS]: 'profile',
+        [UserActivity_1.ActivityType.REGISTER]: 'system',
         [UserActivity_1.ActivityType.LOGIN]: 'system',
         [UserActivity_1.ActivityType.LOGOUT]: 'system',
         [UserActivity_1.ActivityType.CHANGE_SETTINGS]: 'system',

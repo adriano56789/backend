@@ -62,6 +62,7 @@ const adminRoutes_1 = __importDefault(require("./routes/adminRoutes"));
 const metadataRoutes_1 = __importDefault(require("./routes/metadataRoutes"));
 const settingsRoutes_1 = __importDefault(require("./routes/settingsRoutes"));
 const liveRoutes_1 = __importDefault(require("./routes/liveRoutes"));
+const visitorRoutes_1 = __importDefault(require("./routes/visitorRoutes"));
 const pkRoutes_1 = __importDefault(require("./routes/pkRoutes"));
 const interactionRoutes_1 = __importDefault(require("./routes/interactionRoutes"));
 const authRoutes_1 = __importDefault(require("./routes/authRoutes"));
@@ -77,6 +78,8 @@ const statusRoutes_1 = __importDefault(require("./routes/statusRoutes"));
 const followersRoutes_1 = __importDefault(require("./routes/followersRoutes"));
 const friendshipRoutes_1 = __importDefault(require("./routes/friendshipRoutes"));
 const blockRoutes_1 = __importDefault(require("./routes/blockRoutes"));
+const statsRoutes_1 = __importDefault(require("./routes/statsRoutes"));
+const OnlineTracker_1 = require("./services/OnlineTracker");
 const locationRoutes_1 = __importDefault(require("./routes/locationRoutes"));
 const shopRoutes_1 = __importDefault(require("./routes/shopRoutes"));
 const frameRoutes_1 = __importDefault(require("./routes/frameRoutes"));
@@ -231,19 +234,21 @@ else {
     await ProtobufService_1.BackendProtobufService.init();
     (0, ActivityHooks_1.initializeActivityHooks)();
     ActivityEventService_1.activityEventService.initialize(io);
-    server.listen(port, '0.0.0.0', () => {
-        console.log(`🌍 API Server started on http://0.0.0.0:${port}`);
+    // Cleanup: remover participantes órfãos (conexões perdidas no restart)
+    try {
+        const deletedCount = await index_1.StreamParticipant.deleteMany({});
+        await index_1.Streamer.updateMany({ isLive: true }, { $set: { onlineFans: 0, onlineVisitors: 0 } });
+        console.log(`🧹 [CLEANUP] ${deletedCount.deletedCount} participantes órfãos removidos, contadores resetados`);
+    }
+    catch (e) {
+        console.warn('⚠️ [CLEANUP] Erro ao limpar participantes:', e);
+    }
+    server.listen(port, '127.0.0.1', () => {
+        console.log(`🌍 API Server started on http://127.0.0.1:${port}`);
     });
 }).catch(error => {
     console.error('❌ [DB] Falha na conexão com MongoDB:', error.message);
-    if (!env_1.isDev) {
-        process.exit(1);
-    }
-    else {
-        server.listen(port, '0.0.0.0', () => {
-            console.log(`🌍 API Server started on http://0.0.0.0:${port} (SEM BANCO)`);
-        });
-    }
+    process.exit(1);
 });
 // Inicializar UserStatusManager para gerenciar status online
 const userStatusManager = new UserStatusManager_1.default(io);
@@ -424,10 +429,12 @@ app.use('/api', settingsRoutes_1.default); // handles /api/settings, /api/notifi
 app.use('/api/pk', pkRoutes_1.default);
 app.use('/api/live', liveInviteRoutes_1.default); // NOVO - Convites Co-Host/PK com SRS SFU WebRTC
 app.use('/api/interactions', interactionRoutes_1.default); // handles /api/interactions/presents, /api/interactions/streams
+app.use('/api/visitors', visitorRoutes_1.default); // NOVO - Registro de visitas por nome
 app.use('/api/photos', photoRoutes_1.default); // handles /api/photos/:id/like
 app.use('/api', activityRoutes_1.default); // NOVO - Sistema de Atividades
 app.use('/api/video', videoStreamRoutes_1.default); // NOVO - API de Streaming de Vídeo
 app.use('/api', videoStreamRoutes_1.default); // RTC routes (/api/rtc/v1/publish, /api/rtc/v1/stop)
+app.use('/api/stats', statsRoutes_1.default); // NOVO - Estatísticas em tempo real
 // Rota para analytics - receber eventos via sendBeacon
 app.post('/api/analytics', (req, res) => {
     try {
@@ -580,6 +587,17 @@ io.on('connection', (socket) => {
                 }
             }
             catch (_) { }
+            // Obter hostId da stream para classificar fã vs visitante
+            let hostId = '';
+            try {
+                const streamDoc = await models.Streamer.findOne({ id: streamId }).select('hostId').lean();
+                if (streamDoc)
+                    hostId = streamDoc.hostId || '';
+            }
+            catch (_) { }
+            // Registrar no OnlineTracker e obter contagens atualizadas
+            const counts = await OnlineTracker_1.onlineTracker.userJoin(streamId, userId, hostId, userName, userAvatar);
+            // Emitir evento de join para toda a sala
             io.to(streamId).emit('user_joined_stream', {
                 userId,
                 userName,
@@ -588,14 +606,31 @@ io.on('connection', (socket) => {
                 streamId,
                 timestamp: new Date().toISOString()
             });
-            // Persistir viewer count no banco (sem bloquear o socket)
+            // Emitir evento de presença para todos na stream
+            io.to(streamId).emit('user:join', {
+                userId,
+                userName,
+                userAvatar,
+                userLevel,
+                streamId,
+                role: userId === hostId ? 'host' : counts.role,
+                fans: counts.fans,
+                visitors: counts.visitors,
+                total: counts.fans + counts.visitors,
+                timestamp: new Date().toISOString()
+            });
+            // Broadcast atualização de contagem para todos na stream
+            io.to(streamId).emit('online_counts_updated', {
+                streamId,
+                fans: counts.fans,
+                visitors: counts.visitors,
+                total: counts.fans + counts.visitors
+            });
+            // Persistir viewer count no banco
             const viewerCount = onlineUsersInStream.length;
             try {
                 const { Streamer } = await Promise.resolve().then(() => __importStar(require('./models/Streamer')));
-                console.log(`📤 [JOIN_STREAM] Atualizando contagem de viewers para ${viewerCount} na stream ${streamId}...`);
-                await Streamer.findOneAndUpdate({ id: streamId }, { $set: { viewers: viewerCount } }).then(() => {
-                    console.log(`✅ [JOIN_STREAM] Contagem de viewers persistida no banco.`);
-                });
+                await Streamer.findOneAndUpdate({ id: streamId }, { $set: { viewers: viewerCount } });
             }
             catch (e) {
                 // Falha silenciosa — não travar o join por causa do DB
@@ -687,6 +722,24 @@ io.on('connection', (socket) => {
             if (!activeStreams || activeStreams.length === 0) {
                 // Notificar outros usuários na stream sobre saída (antes do DB)
                 if (userEntry.streamId) {
+                    // Atualizar OnlineTracker e emitir user:leave
+                    const leaveCounts = await OnlineTracker_1.onlineTracker.userLeave(userEntry.streamId, userId);
+                    if (leaveCounts) {
+                        io.to(userEntry.streamId).emit('user:leave', {
+                            userId,
+                            streamId: userEntry.streamId,
+                            fans: leaveCounts.fans,
+                            visitors: leaveCounts.visitors,
+                            total: leaveCounts.fans + leaveCounts.visitors,
+                            timestamp: new Date().toISOString()
+                        });
+                        io.to(userEntry.streamId).emit('online_counts_updated', {
+                            streamId: userEntry.streamId,
+                            fans: leaveCounts.fans,
+                            visitors: leaveCounts.visitors,
+                            total: leaveCounts.fans + leaveCounts.visitors
+                        });
+                    }
                     io.to(userEntry.streamId).emit('user_left', {
                         userId: userId,
                         streamId: userEntry.streamId
@@ -1503,9 +1556,9 @@ wsIo.on('connection', (socket) => {
     });
 });
 // ────────────────────────────────────────────────────────────────────
-wsServer.listen(wsPort, '0.0.0.0', () => {
+wsServer.listen(wsPort, '127.0.0.1', () => {
     const protocol = isHttps ? 'https' : 'http';
-    console.log(`🔌 WebSocket server (Socket.IO) started on ${protocol}://0.0.0.0:${wsPort}`);
+    console.log(`🔌 WebSocket server (Socket.IO) started on ${protocol}://127.0.0.1:${wsPort}`);
     console.log(`🔐 Ready for ${isHttps ? 'secure ' : ''}WebSocket connections`);
     console.log(`📡 Following LiveGo pattern with real-time events`);
 });
