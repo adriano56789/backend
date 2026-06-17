@@ -2800,6 +2800,26 @@ router.post('/streams/:id/join', async (req, res) => {
             }
         );
 
+        // Também registrar na coleção LiveUser para aparecer em /api/live/online-users
+        try {
+            const { LiveUser } = await import('../models/LiveInvite');
+            await LiveUser.findOneAndUpdate(
+                { username: viewer.name || viewer.id },
+                {
+                    userId: viewer.id,
+                    username: viewer.name || viewer.id,
+                    name: viewer.name || viewer.id,
+                    avatarUrl: viewer.avatarUrl || '',
+                    status: 'viewing',
+                    currentStreamId: id,
+                    lastActive: new Date()
+                },
+                { upsert: true, new: true }
+            );
+        } catch (liveUserErr) {
+            // Não crítico - LiveUser é apenas para exibição complementar
+        }
+
         console.log(`[STREAM-JOIN] Usuário ${userId} entrou na live ${id}, livesJoined incrementado`);
 
 
@@ -5540,6 +5560,17 @@ router.post('/streams/:streamId/leave', async (req, res) => {
 
             );
 
+        }
+
+        // Limpar LiveUser ao sair
+        try {
+            const { LiveUser } = await import('../models/LiveInvite');
+            await LiveUser.findOneAndUpdate(
+                { username: user.name || userId },
+                { $set: { status: 'idle', currentStreamId: null, lastActive: new Date() } }
+            );
+        } catch (liveUserErr) {
+            // Não crítico
         }
 
 
@@ -8948,6 +8979,26 @@ router.post('/stark/live/start', async (req, res) => {
             { id: userId },
             { $set: { isLive: true, isOnline: true, currentStreamId: streamId } }
         );
+
+        // Registrar broadcaster no LiveUser para aparecer na lista de online
+        try {
+            const { LiveUser } = await import('../models/LiveInvite');
+            await LiveUser.findOneAndUpdate(
+                { username: user.name || userId },
+                {
+                    userId,
+                    username: user.name || userId,
+                    name: user.name || userId,
+                    avatarUrl: user.avatarUrl || '',
+                    status: 'broadcasting',
+                    currentStreamId: streamId,
+                    lastActive: new Date()
+                },
+                { upsert: true, new: true }
+            );
+        } catch (liveUserErr) {
+            // Não crítico
+        }
 
         res.json({
             code: 0,

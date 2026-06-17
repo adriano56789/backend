@@ -72,7 +72,7 @@ router.get('/live/online-users', async (req, res) => {
 
         const users = await LiveUser.find({
             currentStreamId: streamId,
-            status: { $in: ['viewing', 'co-host', 'pk-battle'] }
+            status: { $in: ['viewing', 'co-host', 'pk-battle', 'broadcasting'] }
         }).sort({ lastActive: -1 });
 
         res.status(200).json({ success: true, users });
