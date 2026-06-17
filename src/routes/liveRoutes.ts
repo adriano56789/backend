@@ -3189,7 +3189,7 @@ router.post('/streams', async (req, res) => {
 
         const streamId = hostId;
         const streamTitle = name || title || `Live de ${user.name}`;
-        const finalCountry = country || user.country || 'BR';
+        const finalCountry = (country || user.country || 'BR').toLowerCase();
 
         const stream = await Streamer.findOneAndUpdate(
             { id: hostId },
@@ -3317,7 +3317,7 @@ router.get('/streams', async (req, res) => {
             filter.isLive = true;
             filter.streamStatus = { $in: ['active', 'live'] };
         }
-        if (country && country !== 'all' && country !== 'ICON_GLOBE') filter.country = country;
+        if (country && country !== 'all' && country !== 'ICON_GLOBE') filter.country = (country as string).toLowerCase();
 
         // Se for aba "Seguindo", filtrar por usuários seguidos
         if (category === 'followed' && userId) {
@@ -4735,6 +4735,7 @@ router.put('/streams/:id', async (req, res) => {
         const { id } = req.params;
 
         const updateData = req.body;
+        if (updateData.country) updateData.country = updateData.country.toLowerCase();
 
         
 
@@ -4795,6 +4796,8 @@ router.put('/streams/:id', async (req, res) => {
 });
 
 router.patch('/streams/:id', async (req, res) => {
+
+    if (req.body.country) req.body.country = req.body.country.toLowerCase();
 
     const stream = await Streamer.findOneAndUpdate({ id: req.params.id }, req.body, { new: true });
 
