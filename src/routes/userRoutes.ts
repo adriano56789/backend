@@ -955,12 +955,20 @@ UserRoutes.get('/:id/fans', async (req, res) => {
 
         // Buscar dados completos dos seguidores COM PROTEÇÃO - Usar lean() para evitar metadados Mongoose
 
-        const fans = await User.find({
+        let fans = await User.find({
 
             id: { $in: followerIds }
 
         }).select('id name avatarUrl level fans following isLive isOnline lastSeen identification')
 .lean();
+
+        // FALLBACK: se não achou por id, tenta por nome
+        if (fans.length === 0 && followerIds.length > 0) {
+            fans = await User.find({
+                name: { $in: followerIds }
+            }).select('id name avatarUrl level fans following isLive isOnline lastSeen identification')
+.lean();
+        }
 
 
 
@@ -1074,12 +1082,20 @@ UserRoutes.get('/:id/following', async (req, res) => {
 
         // Buscar dados completos dos usuários seguidos - Usar lean() para evitar metadados Mongoose
 
-        const followingUsers = await User.find({
+        let followingUsers = await User.find({
 
             id: { $in: followingIds }
 
         }).select('id name avatarUrl level fans following isLive isOnline lastSeen identification')
 .lean();
+
+        // FALLBACK: se não achou por id, tenta por nome
+        if (followingUsers.length === 0 && followingIds.length > 0) {
+            followingUsers = await User.find({
+                name: { $in: followingIds }
+            }).select('id name avatarUrl level fans following isLive isOnline lastSeen identification')
+.lean();
+        }
 
 
 
