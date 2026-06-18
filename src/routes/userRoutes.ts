@@ -1,4 +1,4 @@
-import express from 'express';
+﻿import express from 'express';
 
 import { User, Streamer, Gift, Message, PurchaseRecord, Order, Photo, Followers, Friendship, Block, ProfilePhoto } from '../models';
 
@@ -202,8 +202,8 @@ UserRoutes.get('/:id', async (req, res) => {
                 Followers.countDocuments({ followingId: user.id, isActive: true }),
                 Followers.countDocuments({ followerId: user.id, isActive: true })
             ]);
-            userObj.fans = realFans;
-            userObj.following = realFollowing;
+            userObj.fans = realFans > 0 ? realFans : (userObj.followersList?.length || 0);
+            userObj.following = realFollowing > 0 ? realFollowing : (userObj.followingList?.length || 0);
 
             return res.json(standardizeUserResponse(userObj));
         }
@@ -929,9 +929,17 @@ UserRoutes.get('/:id/fans', async (req, res) => {
 
         // Extrair IDs dos seguidores
 
-        const followerIds = follows.map((follow: any) => follow.followerId);
+        let followerIds = follows.map((follow: any) => follow.followerId);
 
-
+        // FALLBACK: se Followers vazia, buscar do User.followersList
+        if (followerIds.length === 0) {
+            try {
+                const userDoc = await User.findOne({ id: userId }).select('followersList').lean();
+                if (userDoc?.followersList?.length) {
+                    followerIds = userDoc.followersList;
+                }
+            } catch (_) {}
+        }
 
         // Buscar dados completos dos seguidores COM PROTEÇÃO - Usar lean() para evitar metadados Mongoose
 
@@ -1026,7 +1034,17 @@ UserRoutes.get('/:id/following', async (req, res) => {
 
         // Extrair IDs dos usuários seguidos
 
-        const followingIds = follows.map((follow: any) => follow.followingId);
+        let followingIds = follows.map((follow: any) => follow.followingId);
+
+        // FALLBACK: se Followers vazia, buscar do User.followingList
+        if (followingIds.length === 0) {
+            try {
+                const userDoc = await User.findOne({ id: userId }).select('followingList').lean();
+                if (userDoc?.followingList?.length) {
+                    followingIds = userDoc.followingList;
+                }
+            } catch (_) {}
+        }
 
 
 
