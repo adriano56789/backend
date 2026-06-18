@@ -970,6 +970,21 @@ UserRoutes.get('/:id/fans', async (req, res) => {
 .lean();
         }
 
+        // ULTIMO FALLBACK: retorna os IDs como objetos mínimos (nunca vazio se tem dados)
+        if (fans.length === 0 && followerIds.length > 0) {
+            fans = followerIds.map(id => ({
+                id,
+                name: id,
+                avatarUrl: '',
+                level: 1,
+                fans: 0,
+                following: 0,
+                isLive: false,
+                isOnline: false,
+                lastSeen: null
+            } as any));
+        }
+
 
 
         // 🚨 RETORNAR DADOS PROTEGIDOS - Sem informações sensíveis e sem metadados Mongoose
@@ -1095,6 +1110,21 @@ UserRoutes.get('/:id/following', async (req, res) => {
                 name: { $in: followingIds }
             }).select('id name avatarUrl level fans following isLive isOnline lastSeen identification')
 .lean();
+        }
+
+        // ULTIMO FALLBACK: retorna os IDs como objetos mínimos (nunca vazio se tem dados)
+        if (followingUsers.length === 0 && followingIds.length > 0) {
+            followingUsers = followingIds.map(id => ({
+                id,
+                name: id,
+                avatarUrl: '',
+                level: 1,
+                fans: 0,
+                following: 0,
+                isLive: false,
+                isOnline: false,
+                lastSeen: null
+            } as any));
         }
 
 
