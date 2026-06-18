@@ -3409,6 +3409,18 @@ router.get('/streams', async (req, res) => {
                 .lean();
         }
 
+        // ULTIMO FALLBACK: se ainda vazio, busca QUALQUER live ativa (ignora tudo)
+        if (cardDocs.length === 0 && isLive === 'true') {
+            cardDocs = await LiveCard.find({
+                isLive: true,
+                streamStatus: { $in: ['active', 'live'] }
+            })
+                .sort({ viewers: -1, startTime: -1 })
+                .limit(parseLimit)
+                .skip(parseOffset)
+                .lean();
+        }
+
         const streams = cardDocs.map(card => ({
             id: card.streamKey || card.hostId,
             hostId: card.hostId,
