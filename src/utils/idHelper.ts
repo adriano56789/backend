@@ -49,22 +49,10 @@ export const findUserByRealId = async (User: any, userId: string) => {
         userId = user.id;
     }
     
-    // Buscar APENAS por ID real
-    let user = await User.findOne({ id: userId });
+    // Buscar por nome (name = id, não existe id numérico)
+    let user = await User.findOne({ name: { $regex: new RegExp(`^${userId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } });
     
-    // FALLBACK: case-insensitive por ID
-    if (!user) {
-        console.log(`⚠️ [ID_HELPER] ID exato não encontrado, tentando case-insensitive: ${userId}`);
-        user = await User.findOne({ id: { $regex: new RegExp(`^${userId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } });
-    }
-
-    // FALLBACK 2: buscar por nome se ID não encontrou
-    if (!user) {
-        console.log(`⚠️ [ID_HELPER] ID não encontrado, tentando por nome: ${userId}`);
-        user = await User.findOne({ name: { $regex: new RegExp(`^${userId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } });
-    }
-
-    // FALLBACK 3: buscar por identification se ainda não encontrou
+    // FALLBACK: buscar por identification se nome não encontrou
     if (!user) {
         console.log(`⚠️ [ID_HELPER] Nome não encontrado, tentando por identification: ${userId}`);
         user = await User.findOne({ identification: userId });
@@ -126,8 +114,8 @@ export const updateUserByRealId = async (User: any, userId: string, updateData: 
         );
     }
     
-    // SEMPRE usar ID real para atualização
-    console.log(`✅ [ID_HELPER] Atualizando usuário por ID real: ${user.id}`);
+    // SEMPRE usar nome como chave (name = id, não existe id numérico)
+    console.log(`✅ [ID_HELPER] Atualizando usuário: ${user.name}`);
 
     // Garantir que os dados de atualização usam operadores atômicos do MongoDB ($set)
     const atomicUpdate = updateData.$set || updateData.$inc || updateData.$push || updateData.$pull
@@ -135,7 +123,7 @@ export const updateUserByRealId = async (User: any, userId: string, updateData: 
         : { $set: updateData };
 
     return await User.findOneAndUpdate(
-        { id: user.id }, // ID real como chave OBRIGATÓRIA
+        { name: user.name }, // name é a chave real (id = name)
         atomicUpdate,
         { ...options, returnDocument: 'after' }
     );
