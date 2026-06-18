@@ -1,9 +1,11 @@
 import express from 'express';
-import { PurchaseRecord, GiftTransaction, User, Streamer, BannedEntity } from '../models';
+import { PurchaseRecord, GiftTransaction, User, Streamer, BannedEntity, PurchaseAuditTrail } from '../models';
 import { standardizeUserResponse } from '../utils/userResponse';
 import { calculateBRLFromDiamonds } from '../utils/diamondConversion';
 import FraudDetectionMiddleware from '../middleware/fraudDetection';
 import mercadoPagoService from '../services/mercadoPagoService';
+import { protect, AuthRequest } from '../middleware/auth';
+import { paymentRateLimit } from '../middleware/rateLimit';
 
 import { ENV } from '../config/env';
 
@@ -354,11 +356,26 @@ router.post('/gifts/sync-all', async (req, res) => {
     }
 });
 // API para realizar saque real via Mercado Pago
-router.post('/withdraw/:userId', FraudDetectionMiddleware.detectFraud, async (req, res) => {
+router.post('/withdraw/:userId', protect, FraudDetectionMiddleware.detectFraud, paymentRateLimit, async (req: AuthRequest, res) => {
     try {
         const { amount } = req.body;
         const userId = req.params.userId;
-        
+
+        // Verificar se o userId do token corresponde ao userId da URL
+        if (req.user?.id !== userId) {
+            return res.status(403).json({ error: 'Acesso negado: userId não corresponde ao token' });
+        }
+
+        // AUDIT: tentativa de saque
+        await PurchaseAuditTrail.create({
+            eventType: 'fraud_attempt',
+            orderId: `withdraw_${userId}_${Date.now()}`,
+            userId,
+            ip: req.ip || '',
+            userAgent: (req.headers['user-agent'] || '').slice(0, 300),
+            metadata: { amount, action: 'withdrawal_attempt' }
+        }).catch(() => {});
+
         if (!amount || amount <= 0) {
             return res.status(400).json({ error: 'Valor de saque inválido' });
         }
@@ -581,10 +598,15 @@ router.get('/user/data/:id', async (req, res) => {
 });
 
 // Configurar método de saque do usuário
-router.post('/earnings/method/set/:id', async (req, res) => {
+router.post('/earnings/method/set/:id', protect, paymentRateLimit, async (req: AuthRequest, res) => {
     try {
         const { method, details } = req.body;
         const userId = req.params.id;
+
+        // Verificar se o userId do token corresponde
+        if (req.user?.id !== userId) {
+            return res.status(403).json({ error: 'Acesso negado' });
+        }
         
         console.log(`⚙️ [METHOD] Configurando método de saque: User=${userId}, Method=${method}`);
         
