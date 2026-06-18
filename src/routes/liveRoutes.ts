@@ -3444,6 +3444,9 @@ router.get('/streams', async (req, res) => {
                 const host: any = await User.findOne({ id: stream.hostId }).lean();
                 return {
                     ...stream,
+                    name: stream.name || host?.name || stream.hostId,
+                    avatar: stream.avatar || host?.avatarUrl || '',
+                    message: stream.title || '',
                     host: host ? {
                         id: host.id,
                         name: host.name,
@@ -3451,7 +3454,7 @@ router.get('/streams', async (req, res) => {
                         level: host.level || 1,
                         country: host.country || 'BR'
                     } : null
-                };
+                }
             })
         );
 
