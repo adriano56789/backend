@@ -1193,9 +1193,19 @@ UserRoutes.get('/:id/friends', async (req, res) => {
 
             console.log(`🔄 [FRIENDS] MongoDB ID ${req.originalMongoId} convertido para ID real: ${userId}`);
 
+        } else {
+            // Tentar buscar usuário por id exato, depois case-insensitive, depois nome
+            let user = await User.findOne({ id: userId }).select('id name friendsList').lean();
+            if (!user) {
+                user = await User.findOne({ id: { $regex: new RegExp('^' + userId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i') } }).select('id name friendsList').lean();
+            }
+            if (!user) {
+                user = await User.findOne({ name: { $regex: new RegExp('^' + userId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i') } }).select('id name friendsList').lean();
+            }
+            if (user) {
+                userId = user.id;
+            }
         }
-
-
 
         // Buscar amizades ativas do usuário
 
@@ -1211,32 +1221,59 @@ UserRoutes.get('/:id/friends', async (req, res) => {
 
         });
 
-
-
         // Extrair IDs dos amigos
 
-        const friendIds = friendships.map((friendship: any) =>
+        let friendIds = friendships.map((friendship: any) =>
 
             friendship.userId1 === userId ? friendship.userId2 : friendship.userId1
 
         );
 
-
+        // FALLBACK: se Friendship vazia, buscar do User.friendsList
+        if (friendIds.length === 0) {
+            try {
+                const userDoc = await User.findOne({ id: userId }).select('friendsList').lean();
+                if (userDoc?.friendsList?.length) {
+                    friendIds = userDoc.friendsList;
+                }
+            } catch (_) {}
+        }
 
         // Buscar dados completos dos amigos - Usar lean() para evitar metadados Mongoose
 
-        const friends = await User.find({
+        let friends = await User.find({
 
             id: { $in: friendIds }
 
         }).select('id name avatarUrl level fans following isLive isOnline lastSeen identification')
 .lean();
 
+        // FALLBACK: se não achou por id, tenta por nome
+        if (friends.length === 0 && friendIds.length > 0) {
+            friends = await User.find({
+                name: { $in: friendIds }
+            }).select('id name avatarUrl level fans following isLive isOnline lastSeen identification')
+.lean();
+        }
 
+        // ULTIMO FALLBACK: retorna os IDs como objetos mínimos (nunca vazio se tem dados)
+        if (friends.length === 0 && friendIds.length > 0) {
+            friends = friendIds.map(id => ({
+                id,
+                name: id,
+                avatarUrl: '',
+                level: 1,
+                fans: 0,
+                following: 0,
+                isLive: false,
+                isOnline: false,
+                lastSeen: null
+            } as any));
+        }
 
         // 🚨 RETORNAR DADOS PROTEGIDOS - Sem informações sensíveis e sem metadados Mongoose
 
-        const protectedFriends = friends.map(friend => ({
+        const protectedFriends = friends.map((friend: any) => ({
 
             id: friend.id, // ID real da API
 
@@ -1259,8 +1296,6 @@ UserRoutes.get('/:id/friends', async (req, res) => {
             // 🚨 NÃO RETORNAR: email, phone, location, _id, __v, $__ etc
 
         }));
-
-
 
         res.json(protectedFriends);
 
