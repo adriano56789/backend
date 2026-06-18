@@ -52,13 +52,19 @@ export const findUserByRealId = async (User: any, userId: string) => {
     // Buscar APENAS por ID real
     let user = await User.findOne({ id: userId });
     
-    // FALLBACK: buscar por nome se ID não encontrou
+    // FALLBACK: case-insensitive por ID
+    if (!user) {
+        console.log(`⚠️ [ID_HELPER] ID exato não encontrado, tentando case-insensitive: ${userId}`);
+        user = await User.findOne({ id: { $regex: new RegExp(`^${userId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } });
+    }
+
+    // FALLBACK 2: buscar por nome se ID não encontrou
     if (!user) {
         console.log(`⚠️ [ID_HELPER] ID não encontrado, tentando por nome: ${userId}`);
         user = await User.findOne({ name: { $regex: new RegExp(`^${userId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } });
     }
 
-    // FALLBACK 2: buscar por identification se ainda não encontrou
+    // FALLBACK 3: buscar por identification se ainda não encontrou
     if (!user) {
         console.log(`⚠️ [ID_HELPER] Nome não encontrado, tentando por identification: ${userId}`);
         user = await User.findOne({ identification: userId });
