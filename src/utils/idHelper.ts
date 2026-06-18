@@ -104,7 +104,21 @@ export const updateUserByRealId = async (User: any, userId: string, updateData: 
     }
     
     // Buscar usuário (converte MongoDB ID para ID real automaticamente)
-    const user = await findUserByRealId(User, userId);
+    let user;
+    try {
+        user = await findUserByRealId(User, userId);
+    } catch (error: unknown) {
+        console.log(`⚠️ [ID_HELPER] Usuário não encontrado para atualização: ${userId} - tentando update direto`);
+        // Se não encontrou, tenta update direto pelo userId passado
+        const atomicUpdate = updateData.$set || updateData.$inc || updateData.$push || updateData.$pull
+            ? updateData
+            : { $set: updateData };
+        return await User.findOneAndUpdate(
+            { $or: [{ id: userId }, { name: userId }, { identification: userId }] },
+            atomicUpdate,
+            { ...options, returnDocument: 'after' }
+        );
+    }
     
     // SEMPRE usar ID real para atualização
     console.log(`✅ [ID_HELPER] Atualizando usuário por ID real: ${user.id}`);
@@ -117,7 +131,7 @@ export const updateUserByRealId = async (User: any, userId: string, updateData: 
     return await User.findOneAndUpdate(
         { id: user.id }, // ID real como chave OBRIGATÓRIA
         atomicUpdate,
-        options
+        { ...options, returnDocument: 'after' }
     );
 };
 
