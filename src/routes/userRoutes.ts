@@ -197,6 +197,14 @@ UserRoutes.get('/:id', async (req, res) => {
 
             const userObj = typeof (user as any).toObject === 'function' ? (user as any).toObject() : user;
 
+            // Buscar contagens REAIS diretamente do banco (não usar campos cacheados)
+            const [realFans, realFollowing] = await Promise.all([
+                Followers.countDocuments({ followingId: user.id, isActive: true }),
+                Followers.countDocuments({ followerId: user.id, isActive: true })
+            ]);
+            userObj.fans = realFans;
+            userObj.following = realFollowing;
+
             return res.json(standardizeUserResponse(userObj));
         }
 
