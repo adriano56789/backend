@@ -106,9 +106,7 @@ UserRoutes.get('/:id', async (req, res) => {
 
     try {
 
-        // PROTEÇÃO REMOVIDA - API liberada para testes
-
-        
+        console.log(`[USER-PROFILE] Buscando perfil: ${req.params.id}`);
 
         // Verificar se o ID é um ObjectId válido (24 chars hex) ou ID customizado
 
@@ -122,8 +120,15 @@ UserRoutes.get('/:id', async (req, res) => {
         if (paramId.length === 24 && /^[0-9a-fA-F]{24}$/.test(paramId)) {
             query = { _id: paramId as any };
         } else {
-            // Buscar pelo nome de usuário (que agora é o campo id)
-            query = { id: paramId };
+            // Primeiro tenta match exato (usa índice)
+            let user = await User.findOne({ id: paramId }).lean();
+            if (user) {
+                const userObj = typeof (user as any).toObject === 'function' ? (user as any).toObject() : user;
+                req.params.id = user.id;
+                return res.json(standardizeUserResponse(userObj));
+            }
+            // Fallback: case-insensitive
+            query = { id: { $regex: new RegExp('^' + paramId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i') } };
         }
 
         
@@ -221,7 +226,18 @@ UserRoutes.delete('/:id', async (req, res) => {
 
 UserRoutes.patch("/:id", async (req, res) => {
     try {
-        const user = await User.findOneAndUpdate({ id: req.params.id }, req.body, { new: true });
+        const paramId = req.params.id;
+        let user;
+        // Primeiro tenta match exato
+        user = await User.findOneAndUpdate({ id: paramId }, req.body, { new: true });
+        if (!user) {
+            // Fallback case-insensitive
+            user = await User.findOneAndUpdate(
+                { id: { $regex: new RegExp('^' + paramId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i') } },
+                req.body,
+                { new: true }
+            );
+        }
         if (!user) {
             return res.status(404).json({ error: "Usuário não encontrado" });
         }

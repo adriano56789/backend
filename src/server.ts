@@ -209,18 +209,6 @@ connectDB().then(async () => {
     initializeActivityHooks();
     activityEventService.initialize(io);
 
-    // Cleanup: remover participantes órfãos (conexões perdidas no restart)
-    try {
-        const deletedCount = await StreamParticipant.deleteMany({});
-        await Streamer.updateMany(
-            { isLive: true },
-            { $set: { onlineFans: 0, onlineVisitors: 0 } }
-        );
-        console.log(`🧹 [CLEANUP] ${deletedCount.deletedCount} participantes órfãos removidos, contadores resetados`);
-    } catch (e) {
-        console.warn('⚠️ [CLEANUP] Erro ao limpar participantes:', e);
-    }
-
     server.listen(port, '127.0.0.1', () => {
         console.log(`🌍 API Server started on http://127.0.0.1:${port}`);
     });
@@ -265,12 +253,9 @@ app.use(cors({
 app.use((req, res, next) => {
     const origin = req.headers.origin;
 
-    // Liberação total de CORS para facilitar o desenvolvimento
     if (origin) {
         res.header('Access-Control-Allow-Origin', origin);
         res.header('Access-Control-Allow-Credentials', 'true');
-    } else {
-        res.header('Access-Control-Allow-Origin', '*');
     }
 
     if (req.method === 'OPTIONS') {

@@ -3,16 +3,28 @@ import jwt from 'jsonwebtoken';
 import { BinaryProtocol, EventType } from './services/BinaryProtocol';
 import { BackendProtobufService } from './services/protobuf/ProtobufService';
 import { mqttBridge } from './services/MqttBridge';
+import { ENV } from './config/env';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_key_change_me_in_prod';
 
 let io: SocketIOServer;
 
 export const initSocket = (server: any) => {
+    const allowedOrigins = ENV.CORS_ORIGIN.split(',').map(o => o.trim());
+
     io = new SocketIOServer(server, {
         cors: {
-            origin: '*',
-            methods: ['GET', 'POST']
+            origin: (origin, callback) => {
+                if (!origin) return callback(null, true);
+                const isLocal = origin.includes('localhost') || origin.includes('127.0.0.1');
+                if (isLocal || allowedOrigins.includes(origin)) {
+                    callback(null, true);
+                } else {
+                    callback(null, false);
+                }
+            },
+            methods: ['GET', 'POST'],
+            credentials: true
         },
         // Configurações para tratamento de dados binários
         allowEIO3: true,

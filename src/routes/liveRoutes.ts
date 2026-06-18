@@ -9055,6 +9055,7 @@ router.post('/stark/live/publish', async (req, res) => {
                 rtmpIngestUrl: rtmpUrl,
                 hlsUrl: hlsUrl,
                 webrtcUrl: whipUrl,
+                playbackUrl: whepUrl,
                 updatedAt: new Date()
             } }
         );
