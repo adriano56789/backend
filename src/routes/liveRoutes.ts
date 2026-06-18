@@ -3215,29 +3215,6 @@ router.post('/streams', async (req, res) => {
             { upsert: true, new: true, setDefaultsOnInsert: true }
         );
 
-        // Criar/atualizar LiveCard
-        try {
-            await LiveCard.findOneAndUpdate(
-                { hostId },
-                { $set: {
-                    hostId,
-                    name: user.name,
-                    avatar: user.avatarUrl || '',
-                    title: streamTitle,
-                    streamKey: streamId,
-                    country: finalCountry,
-                    isLive: false,
-                    streamStatus: 'preparing',
-                    category: category || 'popular',
-                    startTime: new Date(),
-                    updatedAt: new Date()
-                } },
-                { upsert: true }
-            );
-        } catch (cardErr) {
-            console.warn('[STREAMS-POST] Erro ao criar LiveCard:', cardErr);
-        }
-
         res.json({ success: true, stream });
     } catch (error: any) {
         console.error('[STREAMS-POST] Erro:', error);
@@ -3314,19 +3291,30 @@ router.post('/streams/:id/publish', async (req, res) => {
             });
         }
 
-        // Atualizar LiveCard para active
+        // Criar/atualizar LiveCard (so quando realmente publicar)
         try {
             await LiveCard.findOneAndUpdate(
                 { hostId },
                 { $set: {
+                    hostId,
+                    name: stream.name || user.name,
+                    avatar: stream.avatar || user?.avatarUrl || '',
+                    title: stream.title || user.name,
+                    streamKey: stream.streamKey || id,
+                    country: (stream.country || user?.country || 'BR').toLowerCase(),
                     isLive: true,
                     streamStatus: 'active',
+                    category: (stream.category || 'popular').toLowerCase(),
+                    playbackUrl: stream.playbackUrl || '',
+                    hlsUrl: stream.hlsUrl || '',
+                    viewers: stream.viewers || 0,
                     startTime: new Date(),
                     updatedAt: new Date()
-                } }
+                } },
+                { upsert: true }
             );
         } catch (cardErr) {
-            console.warn('[STREAMS-PUBLISH] Erro ao atualizar LiveCard:', cardErr);
+            console.warn('[STREAMS-PUBLISH] Erro ao criar/atualizar LiveCard:', cardErr);
         }
 
         res.json({ success: true, stream });
@@ -3339,7 +3327,6 @@ router.post('/streams/:id/publish', async (req, res) => {
 // GET /api/streams - Listar streams (rota principal para frontend)
 router.get('/streams', async (req, res) => {
     try {
-        // Parâmetros de query
         const {
             category = 'popular',
             country = 'all',
@@ -3349,16 +3336,18 @@ router.get('/streams', async (req, res) => {
             userId
         } = req.query;
 
-        // Construir filtro para LiveCard
-        const cardFilter: any = {};
-        if (isLive === 'true') {
-            cardFilter.isLive = true;
-            cardFilter.streamStatus = { $in: ['active', 'live'] };
-        }
-        if (country && country !== 'all' && country !== 'ICON_GLOBE') cardFilter.country = (country as string).toLowerCase();
+        const parseLimit = Math.min(parseInt(limit as string) || 50, 100);
+        const parseOffset = parseInt(offset as string) || 0;
 
-        // Se for aba "Seguindo"
-        let hostFilter: any = null;
+        // Construir filtro base
+        const baseFilter: any = {};
+        if (isLive === 'true') {
+            baseFilter.isLive = true;
+            baseFilter.streamStatus = { $in: ['active', 'live'] };
+        } else if (isLive === 'false') {
+            baseFilter.isLive = false;
+        }
+
         if (category === 'followed' && userId) {
             const follows = await Followers.find({
                 followerId: userId as string,
@@ -3375,100 +3364,71 @@ router.get('/streams', async (req, res) => {
                 });
             }
 
-            hostFilter = { $in: followedIds };
-            cardFilter.hostId = hostFilter;
-        } else if (category && category !== 'all' && category !== 'popular') {
-            cardFilter.category = category;
+            baseFilter.hostId = { $in: followedIds };
+        } else if (category && category !== 'all') {
+            baseFilter.category = (category as string).toLowerCase();
         }
 
-        // Buscar de ambas coleções em paralelo
-        const [streamerDocs, cardDocs] = await Promise.all([
-            // Streamer collection
-            Streamer.find({
-                ...(isLive === 'true' ? { isLive: true, streamStatus: { $in: ['active', 'live'] } } : {}),
-                ...(country && country !== 'all' && country !== 'ICON_GLOBE' ? { country: (country as string).toLowerCase() } : {}),
-                ...(hostFilter ? { hostId: hostFilter } : {}),
-                ...(category && category !== 'all' && category !== 'popular' && category !== 'followed' ? { category } : {})
-            })
+        // Se country for específico, tenta com filtro primeiro
+        const hasCountryFilter = country && country !== 'all' && country !== 'ICON_GLOBE';
+        let cardDocs;
+
+        if (hasCountryFilter) {
+            const countryFilter = { ...baseFilter, country: (country as string).toLowerCase() };
+            cardDocs = await LiveCard.find(countryFilter)
                 .sort({ viewers: -1, startTime: -1 })
-                .limit(parseInt(limit as string))
-                .lean(),
+                .limit(parseLimit)
+                .skip(parseOffset)
+                .lean();
 
-            // LiveCard collection (fonte confiável)
-            LiveCard.find(cardFilter)
-                .sort({ viewers: -1, startTime: -1 })
-                .limit(parseInt(limit as string))
-                .lean()
-        ]);
-
-        // Merge: LiveCard tem prioridade, Streamer preenche campos extras
-        const cardByHost = new Map<string, any>();
-        for (const card of cardDocs) {
-            cardByHost.set(card.hostId, {
-                id: card.streamKey || card.hostId,
-                hostId: card.hostId,
-                name: card.name,
-                avatar: card.avatar,
-                title: card.title,
-                country: card.country,
-                isLive: card.isLive,
-                streamStatus: card.streamStatus,
-                streamKey: card.streamKey,
-                playbackUrl: card.playbackUrl,
-                hlsUrl: card.hlsUrl,
-                viewers: card.viewers || 0,
-                category: card.category || 'popular',
-                isPrivate: card.isPrivate || false,
-                startTime: card.startTime,
-                source: 'LiveCard'
-            });
-        }
-
-        // Streamer docs preenchem o que LiveCard não tem
-        for (const doc of streamerDocs) {
-            const existing = cardByHost.get(doc.hostId);
-            if (existing) {
-                // Preencher campos que LiveCard pode não ter
-                if (!existing.rtmpIngestUrl && doc.rtmpIngestUrl) existing.rtmpIngestUrl = doc.rtmpIngestUrl;
-                if (!existing.webrtcUrl && doc.webrtcUrl) existing.webrtcUrl = doc.webrtcUrl;
-                if (!existing.latitude && doc.latitude) existing.latitude = doc.latitude;
-                if (!existing.longitude && doc.longitude) existing.longitude = doc.longitude;
-                if (!existing.city && doc.city) existing.city = doc.city;
-                if (!existing.state && doc.state) existing.state = doc.state;
-            } else if (doc.isLive && doc.streamStatus !== 'ended') {
-                // Streamer tem mas LiveCard não — usar como fallback
-                cardByHost.set(doc.hostId, {
-                    id: doc.id || doc.hostId,
-                    hostId: doc.hostId,
-                    name: doc.name,
-                    avatar: doc.avatar,
-                    title: doc.title || doc.name,
-                    country: doc.country,
-                    isLive: doc.isLive,
-                    streamStatus: doc.streamStatus,
-                    streamKey: doc.streamKey,
-                    playbackUrl: doc.playbackUrl,
-                    hlsUrl: doc.hlsUrl,
-                    rtmpIngestUrl: doc.rtmpIngestUrl,
-                    webrtcUrl: doc.webrtcUrl,
-                    viewers: doc.viewers || 0,
-                    category: doc.category || 'popular',
-                    isPrivate: doc.isPrivate || false,
-                    startTime: doc.startTime,
-                    source: 'Streamer'
-                });
+            // Se não achou nada com o país, busca sem filtro de país
+            if (cardDocs.length === 0) {
+                cardDocs = await LiveCard.find(baseFilter)
+                    .sort({ viewers: -1, startTime: -1 })
+                    .limit(parseLimit)
+                    .skip(parseOffset)
+                    .lean();
             }
+        } else {
+            cardDocs = await LiveCard.find(baseFilter)
+                .sort({ viewers: -1, startTime: -1 })
+                .limit(parseLimit)
+                .skip(parseOffset)
+                .lean();
         }
 
-        const merged = Array.from(cardByHost.values())
-            .sort((a, b) => (b.viewers || 0) - (a.viewers || 0))
-            .slice(0, parseInt(limit as string));
+        // Se ainda assim não achou nada, busca removendo apenas o filtro de país
+        // (mantém category, isLive e streamStatus)
+        if (cardDocs.length === 0 && isLive === 'true') {
+            const fallbackFilter: any = { ...baseFilter };
+            delete fallbackFilter.country;
+            cardDocs = await LiveCard.find(fallbackFilter)
+                .sort({ viewers: -1, startTime: -1 })
+                .limit(parseLimit)
+                .skip(parseOffset)
+                .lean();
+        }
 
-        console.log(`[API-STREAMS] LiveCards: ${cardDocs.length}, Streamers: ${streamerDocs.length}, Merge: ${merged.length}`);
+        const streams = cardDocs.map(card => ({
+            id: card.streamKey || card.hostId,
+            hostId: card.hostId,
+            name: card.name,
+            avatar: card.avatar,
+            title: card.title,
+            country: card.country,
+            isLive: card.isLive,
+            streamStatus: card.streamStatus,
+            streamKey: card.streamKey,
+            playbackUrl: card.playbackUrl,
+            hlsUrl: card.hlsUrl,
+            viewers: card.viewers || 0,
+            category: card.category || 'popular',
+            isPrivate: card.isPrivate || false,
+            startTime: card.startTime
+        }));
 
-        // Enriquecer com dados do host
         const enrichedStreams = await Promise.all(
-            merged.map(async (stream) => {
+            streams.map(async (stream) => {
                 const host: any = await User.findOne({ id: stream.hostId }).lean();
                 return {
                     ...stream,
@@ -3483,14 +3443,12 @@ router.get('/streams', async (req, res) => {
             })
         );
 
-        const total = enrichedStreams.length;
-
         res.json({
             code: 0,
             msg: 'OK',
             data: {
                 streams: enrichedStreams,
-                total
+                total: enrichedStreams.length
             }
         });
     } catch (error: any) {
@@ -4458,6 +4416,21 @@ router.post('/live/end', async (req, res) => {
         }
 
         console.log(`[LIVE-END] Live encerrada: ${activeStream.id} para usu+�rio ${userId}`);
+
+        // Atualizar LiveCard para ended
+        try {
+            await LiveCard.findOneAndUpdate(
+                { hostId: userId },
+                { $set: {
+                    isLive: false,
+                    streamStatus: 'ended',
+                    endTime: new Date(),
+                    updatedAt: new Date()
+                } }
+            );
+        } catch (cardErr) {
+            console.warn('[LIVE-END] Erro ao atualizar LiveCard:', cardErr);
+        }
 
         res.json({
             success: true,
@@ -6094,6 +6067,23 @@ router.post('/streams/:id/end-session', async (req, res) => {
             user: stream ? { name: stream.name, avatarUrl: stream.avatar } : { name: '', avatarUrl: '' }
         };
 
+        // Atualizar LiveCard para ended
+        if (stream?.hostId) {
+            try {
+                await LiveCard.findOneAndUpdate(
+                    { hostId: stream.hostId },
+                    { $set: {
+                        isLive: false,
+                        streamStatus: 'ended',
+                        endTime: new Date(endTime),
+                        updatedAt: new Date()
+                    } }
+                );
+            } catch (cardErr) {
+                console.warn('[END-SESSION] Erro ao atualizar LiveCard:', cardErr);
+            }
+        }
+
         res.json({
 
             success: true,
@@ -6745,194 +6735,63 @@ router.put('/streams/:id/quality', async (req, res) => {
 
 // ===== ROUTE START =====
 router.post('/stark/live/start', async (req, res) => {
-
     try {
-
-        const { userId, title, name, category = 'general' } = req.body;
-
-        // Aceitar tanto 'name' quanto 'title' - priorizar 'title' se ambos existirem
-        const liveTitle = title || name;
-
-        console.log(`[STARK] Iniciando live - User: ${userId}, Title: ${liveTitle}`);
-
-
-
-        // Valida+�+�es b+�sicas
-
-        if (!userId || !liveTitle || liveTitle.trim() === '') {
-
-            return res.json({
-
-                code: 0,
-
-                msg: 'userId e title/name s+�o obrigat+�rios'
-
-            });
-
+        console.log('[STARK-START] Iniciando live via Stark API...');
+        const { userId, title, category, country } = req.body;
+        if (!userId || !title) {
+            return res.status(400).json({ code: 1, msg: 'Parametros obrigatorios: userId, title', result: null });
         }
+        const user = await findUserByAnyId(User, userId);
+        if (!user) return res.status(404).json({ code: 1, msg: 'Usuario nao encontrado', result: null });
+        if (user.isLive) return res.status(409).json({ code: 1, msg: 'Usuario ja esta ao vivo', result: null });
 
+        const streamId = userId;
+        const liveId = String(Date.now());
+        const srsHost = process.env.SRS_HOST || '2.25.192.154';
+        const pushUrl = 'webrtc://' + srsHost + ':1935/live/' + streamId + '?txSecret=xxx&txTime=xxx';
 
+        const finalCountry = (country || user.country || 'BR').toLowerCase();
+        const finalCategory = (category || 'popular').toLowerCase();
 
-        // Buscar usu+�rio para verificar exist+�ncia
-
-        const user: any = await User.findOne({ id: userId });
-
-        if (!user) {
-
-            return res.json({
-
-                code: 0,
-
-                msg: 'Usu+�rio n+�o encontrado'
-
-            });
-
-        }
-
-
-
-        // Gerar dados reais da live
-
-        const liveId = uuidv4(); // UUID +�nico
-
-        const streamId = userId; // streamId +�nico
-
-        const srsHost = process.env.SRS_HOST || 'srs';
-        const srsRtmp = `rtmp://${srsHost}:1935/live`;
-        const backendApi = 'https://api.livego.store/api/video/http';
-
-        const rtmpUrl = `${srsRtmp}/${streamId}`;
-        const playbackUrl = `${backendApi}/live/${streamId}.flv`;
-
-
-
-        // Criar nova transmiss+�o
-
-        const streamerAvatar = user.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name || 'User')}&background=random`;
-
-        const newLive: any = await Streamer.create({
-
-            id: liveId,
-
-            hostId: userId,
-
-            name: user.name,
-
-            avatar: streamerAvatar,
-
-            title: title,
-
-            category: category.toLowerCase(),
-
-            streamId: streamId,
-
-            streamKey: `sk_live_${streamId}`,
-
-            rtmpIngestUrl: rtmpUrl,
-
-            playbackUrl: playbackUrl,
-
-            hlsUrl: `${backendApi}/live/${streamId}.m3u8`,
-
-            isLive: false,
-
-            streamStatus: 'preparing',
-
-            startTime: new Date().toISOString(),
-
-            viewers: 0,
-
-            country: user.country || 'br',
-
-            tags: [category.toLowerCase(), 'live'],
-
-            quality: 'HD',
-
-            giftsEnabled: true,
-
-            chatEnabled: true
-
-        });
-
-
-
-        // Não marcar isLive:true — só rascunho
-        // (quem publicar de fato chamará POST /streams/:id/publish ou SRS on_publish)
-        await User.findOneAndUpdate(
-
-            { id: userId },
-
-            {
-                $set: {
-                    currentStreamId: liveId,
-                    lastSeen: new Date().toISOString()
-                }
-            }
-
+        await Streamer.findOneAndUpdate(
+            { id: streamId },
+            { $set: { id: streamId, hostId: userId, name: user.name || userId, isLive: false, streamStatus: 'preparing', startTime: new Date(), streamKey: streamId, liveId: liveId, pushUrl: pushUrl, title: title, category: finalCategory, country: finalCountry } },
+            { upsert: true, new: true }
         );
 
+        await User.findOneAndUpdate(
+            { id: userId },
+            { $set: { isLive: true, isOnline: true, currentStreamId: streamId } }
+        );
 
-
-        console.log(`[STARK] Live criada - liveId: ${liveId}, streamId: ${streamId}`);
-
-        const io = req.app.get('io');
-        if (io) {
-            io.emit('new_live', {
-                id: newLive.id || liveId,
-                hostId: newLive.hostId || userId,
-                name: newLive.name || title || `Live de ${user.name}`,
-                avatar: newLive.avatar || user?.avatarUrl || '',
-                isLive: true,
-                streamStatus: 'active',
-                country: newLive.country || user?.country || 'BR',
-                viewers: 0,
-                timestamp: new Date().toISOString()
-            });
-            io.emit('stream_started', {
-                streamId: newLive.id || liveId,
-                hostId: newLive.hostId || userId,
-                name: newLive.name || title || `Live de ${user.name}`,
-                avatar: newLive.avatar || user?.avatarUrl || '',
-                timestamp: new Date().toISOString()
-            });
+        // Registrar broadcaster no LiveUser para aparecer na lista de online
+        try {
+            const { LiveUser } = await import('../models/LiveInvite');
+            await LiveUser.findOneAndUpdate(
+                { username: user.name || userId },
+                {
+                    userId,
+                    username: user.name || userId,
+                    name: user.name || userId,
+                    avatarUrl: user.avatarUrl || '',
+                    status: 'broadcasting',
+                    currentStreamId: streamId,
+                    lastActive: new Date()
+                },
+                { upsert: true, new: true }
+            );
+        } catch (liveUserErr) {
+            // Não crítico
         }
 
-        // Retornar no formato exato do Buscast
-
         res.json({
-
-            code: 1,
-
-            result: {
-
-                liveId: liveId.toString(),
-
-                streamId: streamId,
-
-                pushUrl: rtmpUrl
-
-            },
-
-            msg: "OK"
-
-        });
-
-
-
-    } catch (error: any) {
-
-        console.error('[STARK] Erro ao criar live:', error);
-
-        res.json({
-
             code: 0,
-
-            msg: 'Erro interno ao criar live'
-
+            result: { pushUrl, liveId, streamId, startTime: String(Date.now()) },
+            msg: 'OK'
         });
-
+    } catch (error) {
+        res.status(500).json({ code: 1, msg: 'Erro interno', result: null });
     }
-
 });
 
 
@@ -6988,6 +6847,29 @@ router.post('/streams/start', async (req, res) => {
         });
 
         console.log(`[STREAMS START] Stream provis+�rio criado: ${streamKey} para usu+�rio ${userId}`);
+
+        // Criar LiveCard (stream preparando)
+        try {
+            await LiveCard.findOneAndUpdate(
+                { hostId: userId },
+                { $set: {
+                    hostId: userId,
+                    name: user.name || userId,
+                    avatar: user.avatarUrl || '',
+                    title: liveTitle,
+                    streamKey: streamKey,
+                    country: (user.country || 'BR').toLowerCase(),
+                    isLive: false,
+                    streamStatus: 'preparing',
+                    category: (category || 'popular').toLowerCase(),
+                    startTime: new Date(),
+                    updatedAt: new Date()
+                } },
+                { upsert: true }
+            );
+        } catch (cardErr) {
+            console.warn('[STREAMS-START] Erro ao criar LiveCard:', cardErr);
+        }
 
         res.json({
             success: true,
@@ -9062,94 +8944,6 @@ router.get('/stark/live/check/:streamId', async (req, res) => {
     }
 });
 
-// STARK API (BuzzCast) - POST /api/stark/live/start
-// ========================================
-router.post('/stark/live/start', async (req, res) => {
-    try {
-        console.log('[STARK-START] Iniciando live via Stark API...');
-        const { userId, title, category, country } = req.body;
-        if (!userId || !title) {
-            return res.status(400).json({ code: 1, msg: 'Parametros obrigatorios: userId, title', result: null });
-        }
-        const user = await findUserByAnyId(User, userId);
-        if (!user) return res.status(404).json({ code: 1, msg: 'Usuario nao encontrado', result: null });
-        if (user.isLive) return res.status(409).json({ code: 1, msg: 'Usuario ja esta ao vivo', result: null });
-
-        const streamId = userId;
-        const liveId = String(Date.now());
-        const srsHost = process.env.SRS_HOST || '2.25.192.154';
-        const pushUrl = 'webrtc://' + srsHost + ':1935/live/' + streamId + '?txSecret=xxx&txTime=xxx';
-
-        const finalCountry = (country || user.country || 'BR').toLowerCase();
-
-        await Streamer.findOneAndUpdate(
-            { id: streamId },
-            { $set: { id: streamId, hostId: userId, name: user.name || userId, isLive: true, streamStatus: 'active', startTime: new Date(), streamKey: streamId, liveId: liveId, pushUrl: pushUrl, title: title, country: finalCountry } },
-            { upsert: true, new: true }
-        );
-
-        await User.findOneAndUpdate(
-            { id: userId },
-            { $set: { isLive: true, isOnline: true, currentStreamId: streamId } }
-        );
-
-        // Registrar broadcaster no LiveUser para aparecer na lista de online
-        try {
-            const { LiveUser } = await import('../models/LiveInvite');
-            await LiveUser.findOneAndUpdate(
-                { username: user.name || userId },
-                {
-                    userId,
-                    username: user.name || userId,
-                    name: user.name || userId,
-                    avatarUrl: user.avatarUrl || '',
-                    status: 'broadcasting',
-                    currentStreamId: streamId,
-                    lastActive: new Date()
-                },
-                { upsert: true, new: true }
-            );
-        } catch (liveUserErr) {
-            // Não crítico
-        }
-
-        // Criar/atualizar LiveCard para feed de transmissões
-        try {
-            const { LiveCard } = await import('../models/LiveCard');
-            await LiveCard.findOneAndUpdate(
-                { hostId: userId },
-                {
-                    $set: {
-                        hostId: userId,
-                        name: user.name || userId,
-                        avatar: user.avatarUrl || '',
-                        title: title,
-                        streamKey: streamId,
-                        country: finalCountry,
-                        isLive: true,
-                        streamStatus: 'active',
-                        category: category || 'popular',
-                        startTime: new Date(),
-                        updatedAt: new Date()
-                    }
-                },
-                { upsert: true, new: true }
-            );
-        } catch (cardErr) {
-            console.warn('[STARK-START] Erro ao criar LiveCard:', cardErr);
-        }
-
-        res.json({
-            code: 0,
-            result: { pushUrl, liveId, streamId, startTime: String(Date.now()) },
-            msg: 'OK'
-        });
-    } catch (error) {
-        res.status(500).json({ code: 1, msg: 'Erro interno', result: null });
-    }
-});
-
-
 // ========================================
 // STARK API (BuzzCast) - POST /api/stark/live/publish
 // ========================================
@@ -9219,20 +9013,30 @@ router.post('/stark/live/publish', async (req, res) => {
             console.warn('[STARK-PUBLISH] Erro na colecao publishes:', dbErr);
         }
 
-        // Atualizar LiveCard com URLs de playback
+        // Criar/atualizar LiveCard (so quando realmente publicar)
         try {
-            const { LiveCard } = await import('../models/LiveCard');
+            const user = await User.findOne({ id: tokenUserId }).lean();
             await LiveCard.findOneAndUpdate(
                 { hostId: tokenUserId },
                 { $set: {
+                    hostId: tokenUserId,
+                    name: stream.name || user?.name || tokenUserId,
+                    avatar: stream.avatar || user?.avatarUrl || '',
+                    title: stream.title || user?.name || tokenUserId,
+                    streamKey: streamId,
+                    country: (stream.country || user?.country || 'BR').toLowerCase(),
+                    isLive: true,
+                    streamStatus: 'active',
+                    category: (stream.category || 'popular').toLowerCase(),
                     playbackUrl: whepUrl,
                     hlsUrl: hlsUrl,
-                    streamStatus: 'active',
+                    startTime: new Date(),
                     updatedAt: new Date()
-                } }
+                } },
+                { upsert: true }
             );
         } catch (cardErr) {
-            console.warn('[STARK-PUBLISH] Erro ao atualizar LiveCard:', cardErr);
+            console.warn('[STARK-PUBLISH] Erro ao criar/atualizar LiveCard:', cardErr);
         }
 
         console.log('[STARK-PUBLISH] Publicacao iniciada:', { userId: tokenUserId, streamId });
@@ -9373,7 +9177,6 @@ router.post('/stark/live/end', async (req, res) => {
 
         // Atualizar LiveCard para ended
         try {
-            const { LiveCard } = await import('../models/LiveCard');
             await LiveCard.findOneAndUpdate(
                 { hostId: tokenUserId },
                 { $set: {

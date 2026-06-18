@@ -1,36 +1,65 @@
 import express from 'express';
-import { Order, User } from '../models';
+import { Order, User, PurchaseAuditTrail } from '../models';
 import FraudDetectionMiddleware from '../middleware/fraudDetection';
+import { protect, AuthRequest } from '../middleware/auth';
+import { requirePaymentAuth, validatePackageAmounts } from '../middleware/paymentSecurity';
+import { paymentRateLimit } from '../middleware/rateLimit';
+import { DIAMOND_PACKAGES } from '../utils/diamondConversion';
 
 const router = express.Router();
 
-const diamondPackages = [
-    { id: 'pack1', diamonds: 800, price: 7.00, bonus: 0, icon: 'gem' },
-    { id: 'pack2', diamonds: 3000, price: 25.00, bonus: 0, icon: 'gem_stack' },
-    { id: 'pack3', diamonds: 6000, price: 60.00, bonus: 0, icon: 'chest' },
-    { id: 'pack4', diamonds: 20000, price: 180.00, bonus: 0, icon: 'treasure' },
-    { id: 'pack5', diamonds: 36000, price: 350.00, bonus: 0, icon: 'crown' },
-    { id: 'pack6', diamonds: 65000, price: 600.00, bonus: 0, icon: 'diamond_throne' }
-];
+const diamondPackages = DIAMOND_PACKAGES.map((p, i) => ({
+    id: `pack${i + 1}`, diamonds: p.diamonds, price: p.brl, bonus: 0,
+    icon: ['gem', 'gem_stack', 'chest', 'treasure', 'crown', 'diamond_throne'][i] || 'gem'
+}));
 
 router.get('/pack', async (req, res) => res.json(diamondPackages));
-router.post('/order', FraudDetectionMiddleware.detectFraud, async (req, res) => {
+router.post('/order',
+    protect,
+    requirePaymentAuth,
+    validatePackageAmounts,
+    FraudDetectionMiddleware.detectFraud,
+    paymentRateLimit,
+    async (req: AuthRequest, res) => {
     try {
-        console.log(`[ORDER CREATE] Criando order:`, req.body);
-        
-        const order = await Order.create({ 
-            ...req.body, 
-            id: Date.now().toString(), 
+        const { packageId, amount, diamonds } = req.body;
+        console.log(`[ORDER CREATE] Criando order para userId=${req.user?.id}:`, req.body);
+
+        // Usar valores DO SERVIDOR (ignorar amount/diamonds do frontend)
+        const pkg = DIAMOND_PACKAGES.find(p => {
+            const id = `pack${DIAMOND_PACKAGES.indexOf(p) + 1}`;
+            return id === packageId;
+        });
+        const safeAmount = pkg!.brl;
+        const safeDiamonds = pkg!.diamonds;
+
+        const order = await Order.create({
+            ...req.body,
+            id: `ord_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
             status: 'pending',
+            amount: safeAmount,
+            diamonds: safeDiamonds,
             timestamp: new Date()
         });
 
-        // Persistir atividade de criação de ordem de compra
+        // Audit trail
+        await PurchaseAuditTrail.create({
+            eventType: 'order_created',
+            orderId: order.id,
+            userId: order.userId,
+            ip: req.ip || '',
+            userAgent: (req.headers['user-agent'] || '').slice(0, 300),
+            metadata: {
+                packageId, amount: safeAmount, diamonds: safeDiamonds,
+                originalAmount: amount, originalDiamonds: diamonds
+            }
+        }).catch(() => {});
+
         if (order.userId) {
             await User.findOneAndUpdate(
                 { id: order.userId },
-                { 
-                    $push: { 
+                {
+                    $push: {
                         recentActivities: {
                             action: 'purchase_order_created',
                             resource: 'financial_transaction',
@@ -41,15 +70,20 @@ router.post('/order', FraudDetectionMiddleware.detectFraud, async (req, res) => 
                 }
             ).catch(console.error);
         }
-        
-        console.log(`[ORDER SUCCESS] Order criada: ${order.id} para usuário ${order.userId}`);
+
+        console.log(`[ORDER SUCCESS] Order criada: ${order.id} para usuário ${order.userId} (R$${safeAmount}, ${safeDiamonds} diamantes)`);
         res.json(order);
     } catch (err: any) {
         console.error(`[ORDER ERROR] Erro ao criar order:`, err);
         res.status(500).json({ error: err.message });
     }
 });
-router.post('/pix', FraudDetectionMiddleware.detectFraud, async (req, res) => {
+router.post('/pix',
+    protect,
+    requirePaymentAuth,
+    FraudDetectionMiddleware.detectFraud,
+    paymentRateLimit,
+    async (req: AuthRequest, res) => {
     try {
         const { orderId } = req.body;
         console.log(`[PIX PAYMENT] Gerando PIX para order: ${orderId}`);
@@ -59,6 +93,17 @@ router.post('/pix', FraudDetectionMiddleware.detectFraud, async (req, res) => {
         if (!order) {
             console.log(`[PIX ERROR] Order não encontrada: ${orderId}`);
             return res.status(404).json({ error: 'Order not found' });
+        }
+
+        // Verificar se a order pertence ao usuário autenticado
+        if (order.userId !== req.user?.id) {
+            console.log(`[FRAUD] Tentativa de PIX em order de outro usuário: orderUserId=${order.userId}, tokenUserId=${req.user?.id}`);
+            return res.status(403).json({ error: 'Esta ordem não pertence ao seu usuário' });
+        }
+
+        // Verificar se order já não foi paga
+        if (order.status === 'paid') {
+            return res.status(400).json({ error: 'Esta compra já foi paga' });
         }
 
         // Verificar se está configurado para produção
@@ -192,7 +237,12 @@ router.post('/pix', FraudDetectionMiddleware.detectFraud, async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
-router.post('/credit-card', FraudDetectionMiddleware.detectFraud, async (req, res) => {
+router.post('/credit-card',
+    protect,
+    requirePaymentAuth,
+    FraudDetectionMiddleware.detectFraud,
+    paymentRateLimit,
+    async (req: AuthRequest, res) => {
     try {
         const { orderId, cardToken, payerEmail, payerName, installments = 1 } = req.body;
         
@@ -204,6 +254,17 @@ router.post('/credit-card', FraudDetectionMiddleware.detectFraud, async (req, re
         const order = await Order.findOne({ id: orderId });
         if (!order) {
             return res.status(404).json({ error: 'Order not found' });
+        }
+
+        // Verificar se a order pertence ao usuário autenticado
+        if (order.userId !== req.user?.id) {
+            console.log(`[FRAUD] Tentativa de cartão em order de outro usuário: orderUserId=${order.userId}, tokenUserId=${req.user?.id}`);
+            return res.status(403).json({ error: 'Esta ordem não pertence ao seu usuário' });
+        }
+
+        // Verificar se já foi paga
+        if (order.status === 'paid') {
+            return res.status(400).json({ error: 'Esta compra já foi paga' });
         }
 
         // Verificar se está configurado para produção
@@ -349,7 +410,12 @@ router.post('/credit-card', FraudDetectionMiddleware.detectFraud, async (req, re
         });
     }
 });
-router.post('/confirm', FraudDetectionMiddleware.detectFraud, async (req, res) => {
+router.post('/confirm',
+    protect,
+    requirePaymentAuth,
+    FraudDetectionMiddleware.detectFraud,
+    paymentRateLimit,
+    async (req: AuthRequest, res) => {
     try {
         const { orderId, paymentConfirmationId, paymentStatus } = req.body;
         console.log(`[PURCHASE CONFIRM] Confirmando compra: ${orderId}`);
@@ -358,6 +424,15 @@ router.post('/confirm', FraudDetectionMiddleware.detectFraud, async (req, res) =
         if (!paymentConfirmationId || paymentStatus !== 'approved') {
             console.log(`[FRAUD ATTEMPT] Tentativa de confirmação sem pagamento aprovado: Order=${orderId}, Status=${paymentStatus}`);
             
+            // Audit trail
+            await PurchaseAuditTrail.create({
+                eventType: 'fraud_attempt',
+                orderId, userId: req.user?.id || '',
+                ip: req.ip || '',
+                userAgent: (req.headers['user-agent'] || '').slice(0, 300),
+                metadata: { paymentStatus, reason: 'sem_aprovacao_real' }
+            }).catch(() => {});
+
             // Banir tentativa de fraude
             const clientIp = req.ip || req.connection.remoteAddress;
             const deviceFingerprint = req.headers['x-device-fingerprint'] as string;
@@ -384,6 +459,11 @@ router.post('/confirm', FraudDetectionMiddleware.detectFraud, async (req, res) =
         if (!order) {
             console.log(`[PURCHASE ERROR] Order não encontrada: ${orderId}`);
             return res.status(404).json({ error: 'Order not found' });
+        }
+
+        // Verificar se a order pertence ao usuário autenticado
+        if (order.userId !== req.user?.id) {
+            return res.status(403).json({ error: 'Esta ordem não pertence ao seu usuário' });
         }
         
         // VERIFICAÇÃO DUPLA: Order já está paga?
@@ -449,6 +529,19 @@ router.post('/confirm', FraudDetectionMiddleware.detectFraud, async (req, res) =
             return res.status(404).json({ error: 'User not found' });
         }
 
+        // Audit trail: diamantes entregues
+        await PurchaseAuditTrail.create({
+            eventType: 'diamonds_delivered',
+            orderId,
+            userId: order.userId,
+            ip: req.ip || '',
+            userAgent: (req.headers['user-agent'] || '').slice(0, 300),
+            metadata: {
+                diamonds: order.diamonds, amount: order.amount,
+                paymentConfirmationId, newBalance: user.diamonds
+            }
+        }).catch(() => {});
+
         console.log(`[PURCHASE SUCCESS] Usuário ${user.name} recebeu ${order.diamonds} diamantes. Saldo atual: ${user.diamonds}`);
 
         // Registrar compra no histórico
@@ -456,12 +549,11 @@ router.post('/confirm', FraudDetectionMiddleware.detectFraud, async (req, res) =
         await PurchaseRecord.create({
             id: `purchase_${orderId}_${Date.now()}`,
             userId: order.userId,
-            type: 'diamond_purchase',
+            type: 'purchase_diamonds',
             description: `Compra de ${order.diamonds} diamantes - Pagamento confirmado: ${paymentConfirmationId}`,
             amountBRL: order.amount,
             amountCoins: order.diamonds,
             status: 'Concluído',
-            timestamp: new Date()
         });
 
         res.json({ success: true, user, order: updatedOrder });

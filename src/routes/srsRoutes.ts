@@ -91,6 +91,7 @@ router.post('/publish', async (req, res) => {
         const hlsUrl = `${BACKEND_URL}/api/video/http/live/${realStreamKey}.m3u8`;
 
         // Criar/atualizar stream no banco com isLive: true
+        const finalCategory = (existingStream?.category || 'popular').toLowerCase();
         const streamerData = {
             id: realStreamKey,
             hostId: userId,
@@ -105,6 +106,7 @@ router.post('/publish', async (req, res) => {
             startTime: existingStream?.startTime || new Date(),
             streamKey: realStreamKey,
             title: existingStream?.title || '',
+            category: finalCategory,
             country: user.country || 'BR',
             rtmpIngestUrl: existingStream?.rtmpIngestUrl || pushUrl,
             playbackUrl: existingStream?.playbackUrl || httpFlvUrl,
@@ -127,6 +129,33 @@ router.post('/publish', async (req, res) => {
         );
 
         console.log(`[SRS-PUBLISH] Transmissão registrada: ${realStreamKey} para usuário ${userId}`);
+
+        // Criar/atualizar LiveCard
+        try {
+            const { LiveCard } = await import('../models/index');
+            const finalCountry = (existingStream?.country || user.country || 'BR').toLowerCase();
+            await LiveCard.findOneAndUpdate(
+                { hostId: userId },
+                { $set: {
+                    hostId: userId,
+                    name: user.name || userId,
+                    avatar: user.avatarUrl || '',
+                    title: existingStream?.title || streamTitle,
+                    streamKey: realStreamKey,
+                    playbackUrl: existingStream?.playbackUrl || httpFlvUrl,
+                    hlsUrl: existingStream?.hlsUrl || hlsUrl,
+                    country: finalCountry,
+                    isLive: true,
+                    streamStatus: 'active',
+                    category: finalCategory,
+                    startTime: existingStream?.startTime || new Date(),
+                    updatedAt: new Date()
+                } },
+                { upsert: true }
+            );
+        } catch (cardErr) {
+            console.warn('[SRS-PUBLISH] Erro ao criar/atualizar LiveCard:', cardErr);
+        }
 
         // Emitir eventos via socket
         const io = req.app.get('io');
@@ -198,6 +227,22 @@ router.post('/unpublish', async (req, res) => {
                 { id: updated.hostId },
                 { $set: { isLive: false, isOnline: false, currentStreamId: null } }
             );
+
+            // Atualizar LiveCard para ended
+            try {
+                const { LiveCard } = await import('../models/index');
+                await LiveCard.findOneAndUpdate(
+                    { hostId: updated.hostId },
+                    { $set: {
+                        isLive: false,
+                        streamStatus: 'ended',
+                        endTime: new Date(),
+                        updatedAt: new Date()
+                    } }
+                );
+            } catch (cardErr) {
+                console.warn('[SRS-UNPUBLISH] Erro ao atualizar LiveCard:', cardErr);
+            }
 
             const io = req.app.get('io');
             if (io) {

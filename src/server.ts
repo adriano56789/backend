@@ -66,6 +66,7 @@ import activityRoutes from './routes/activityRoutes'; // NOVO - Sistema de Ativi
 import videoStreamRoutes from './routes/videoStreamRoutes'; // NOVO - API de Streaming de Vídeo
 import srsRoutes from './routes/srsRoutes'; // Callbacks SRS
 import appVersionRoutes from './routes/appVersionRoutes'; // NOVO - Sistema de controle de versão
+import debugRoutes from './routes/debugRoutes';
 import crudRoutes from './routes/crudRoutes';
 import liveInviteRoutes from './routes/liveInviteRoutes';
 import UserStatusManager from './middleware/UserStatusManager';
@@ -209,6 +210,43 @@ connectDB().then(async () => {
     initializeActivityHooks();
     activityEventService.initialize(io);
 
+    // Migração única: copiar Streamers ativos para LiveCard
+    try {
+        const { LiveCard } = await import('./models/index');
+        const activeStreamers = await Streamer.find({
+            isLive: true,
+            streamStatus: { $ne: 'ended' }
+        }).lean();
+
+        let migrated = 0;
+        for (const s of activeStreamers) {
+            const exists = await LiveCard.findOne({ hostId: s.hostId });
+            if (!exists) {
+                await LiveCard.create({
+                    hostId: s.hostId,
+                    name: s.name || '',
+                    avatar: s.avatar || '',
+                    title: s.title || s.name || '',
+                    streamKey: s.streamKey || s.id || s.hostId,
+                    playbackUrl: s.playbackUrl || '',
+                    hlsUrl: s.hlsUrl || '',
+                    country: (s.country || 'BR').toLowerCase(),
+                    isLive: true,
+                    streamStatus: s.streamStatus || 'active',
+                    category: s.category || 'popular',
+                    isPrivate: s.isPrivate || false,
+                    viewers: s.viewers || 0,
+                    startTime: s.startTime || new Date(),
+                    updatedAt: new Date()
+                });
+                migrated++;
+            }
+        }
+        if (migrated > 0) console.log(`[MIGRATION] ${migrated} LiveCards criados a partir de Streamers ativos`);
+    } catch (err) {
+        console.warn('[MIGRATION] Erro ao migrar Streamers para LiveCards:', err);
+    }
+
     server.listen(port, '127.0.0.1', () => {
         console.log(`🌍 API Server started on http://127.0.0.1:${port}`);
     });
@@ -267,6 +305,10 @@ app.use((req, res, next) => {
 
     next();
 });
+
+// Monitor de respostas vazias — intercepta res.json e res.send
+import { emptyResponseTracker } from './middleware/emptyResponseTracker';
+app.use('/api', emptyResponseTracker);
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -404,6 +446,7 @@ app.use('/api', activityRoutes); // NOVO - Sistema de Atividades
 app.use('/api/video', videoStreamRoutes); // NOVO - API de Streaming de Vídeo
 app.use('/api', videoStreamRoutes); // RTC routes (/api/rtc/v1/publish, /api/rtc/v1/stop)
 app.use('/api/stats', statsRoutes); // NOVO - Estatísticas em tempo real
+app.use('/api', debugRoutes); // Debug/monitoramento
 
 
 // Rota para analytics - receber eventos via sendBeacon

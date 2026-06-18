@@ -1,13 +1,21 @@
 import express from 'express';
-import { Order, User, PurchaseRecord } from '../models';
+import { Order, User, PurchaseRecord, PurchaseAuditTrail } from '../models';
 import FraudDetectionMiddleware from '../middleware/fraudDetection';
 import mercadoPagoService from '../services/mercadoPagoService';
+import { protect, AuthRequest } from '../middleware/auth';
+import { requirePaymentAuth } from '../middleware/paymentSecurity';
+import { paymentRateLimit } from '../middleware/rateLimit';
 
 const router = express.Router();
 
 // Confirmar compra de diamantes
 // Frontend chama com { orderId } — backend consulta Mercado Pago real para validar
-router.post('/confirm', FraudDetectionMiddleware.detectFraud, async (req, res) => {
+router.post('/confirm',
+    protect,
+    requirePaymentAuth,
+    FraudDetectionMiddleware.detectFraud,
+    paymentRateLimit,
+    async (req: AuthRequest, res) => {
     try {
         const { orderId, paymentConfirmationId, paymentStatus } = req.body;
 
@@ -16,6 +24,18 @@ router.post('/confirm', FraudDetectionMiddleware.detectFraud, async (req, res) =
         const order = await Order.findOne({ id: orderId });
         if (!order) {
             return res.status(404).json({ error: 'Order not found' });
+        }
+
+        // Verificar se a order pertence ao usuário autenticado
+        if (order.userId !== req.user?.id) {
+            await PurchaseAuditTrail.create({
+                eventType: 'fraud_attempt',
+                orderId, userId: req.user?.id || '',
+                ip: req.ip || '',
+                userAgent: (req.headers['user-agent'] || '').slice(0, 300),
+                metadata: { reason: 'userId_mismatch', orderUserId: order.userId }
+            }).catch(() => {});
+            return res.status(403).json({ error: 'Esta ordem não pertence ao seu usuário' });
         }
 
         // Se já foi paga, retornar sucesso direto (idempotência)
@@ -137,16 +157,29 @@ router.post('/confirm', FraudDetectionMiddleware.detectFraud, async (req, res) =
             return res.status(404).json({ error: 'User not found' });
         }
 
+        // Audit trail: diamantes entregues
+        await PurchaseAuditTrail.create({
+            eventType: 'diamonds_delivered',
+            orderId,
+            userId: order.userId,
+            ip: req.ip || '',
+            userAgent: (req.headers['user-agent'] || '').slice(0, 300),
+            metadata: {
+                diamonds: order.diamonds, amount: order.amount,
+                paymentConfirmationId: resolvedPaymentConfirmationId,
+                newBalance: user.diamonds
+            }
+        }).catch(() => {});
+
         // Registrar compra no histórico
         await PurchaseRecord.create({
             id: `purchase_${orderId}_${Date.now()}`,
             userId: order.userId,
-            type: 'diamond_purchase',
+            type: 'purchase_diamonds',
             description: `Compra de ${order.diamonds} diamantes - Pagamento confirmado: ${resolvedPaymentConfirmationId}`,
             amountBRL: order.amount,
             amountCoins: order.diamonds,
             status: 'Concluído',
-            timestamp: new Date()
         });
 
         // WebSocket: notificar usuário em tempo real (io já declarado acima)

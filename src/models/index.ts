@@ -52,5 +52,7 @@ export { CallInvitation } from './CallInvitation';
 export { LiveMessage } from './LiveMessage';
 export { LiveUser, LiveInvite } from './LiveInvite';
 export { LiveCard } from './LiveCard';
+export { EmptyApiLog } from './EmptyApiLog';
 export { StreamParticipant } from './StreamParticipant';
+export { PurchaseAuditTrail } from './PurchaseAuditTrail';
 
