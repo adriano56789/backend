@@ -911,6 +911,18 @@ UserRoutes.get('/:id/fans', async (req, res) => {
 
             console.log(`🔄 [FANS] MongoDB ID ${req.originalMongoId} convertido para ID real: ${userId}`);
 
+        } else {
+            // Tentar buscar usuário por id exato, depois case-insensitive, depois nome
+            let user = await User.findOne({ id: userId }).select('id name followersList').lean();
+            if (!user) {
+                user = await User.findOne({ id: { $regex: new RegExp('^' + userId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i') } }).select('id name followersList').lean();
+            }
+            if (!user) {
+                user = await User.findOne({ name: { $regex: new RegExp('^' + userId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i') } }).select('id name followersList').lean();
+            }
+            if (user) {
+                userId = user.id;
+            }
         }
 
 
@@ -1016,6 +1028,18 @@ UserRoutes.get('/:id/following', async (req, res) => {
 
             console.log(`🔄 [FOLLOWING] MongoDB ID ${req.originalMongoId} convertido para ID real: ${userId}`);
 
+        } else {
+            // Tentar buscar usuário por id exato, depois case-insensitive, depois nome
+            let user = await User.findOne({ id: userId }).select('id name followingList').lean();
+            if (!user) {
+                user = await User.findOne({ id: { $regex: new RegExp('^' + userId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i') } }).select('id name followingList').lean();
+            }
+            if (!user) {
+                user = await User.findOne({ name: { $regex: new RegExp('^' + userId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i') } }).select('id name followingList').lean();
+            }
+            if (user) {
+                userId = user.id;
+            }
         }
 
 
