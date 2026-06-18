@@ -51,5 +51,6 @@ export { Battle } from './Battle';
 export { CallInvitation } from './CallInvitation';
 export { LiveMessage } from './LiveMessage';
 export { LiveUser, LiveInvite } from './LiveInvite';
+export { LiveCard } from './LiveCard';
 export { StreamParticipant } from './StreamParticipant';
 
