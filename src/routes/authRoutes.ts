@@ -57,15 +57,12 @@ router.post('/register', async (req, res) => {
             return res.status(400).json({ error: 'Usuário já existe' });
         }
 
-        // Verificar se o email é válido e existe
+        // Verificar se o email é válido e existe (não bloqueante - apenas log)
         try {
             const { validateEmail } = await import('../utils/emailValidator');
             const emailCheck = await validateEmail(email);
             if (!emailCheck.valid) {
-                return res.status(400).json({
-                    error: 'Email inválido ou não registrado',
-                    details: emailCheck.reason
-                });
+                console.warn('[REGISTER] Email validation warning:', emailCheck.reason);
             }
         } catch (err) {
             console.warn('[REGISTER] Erro ao verificar email (continuando):', err);

@@ -680,7 +680,7 @@ router.get('/live/source-data', async (req, res) => {
 
             srs: {
 
-                host: process.env.SRS_HOST || '72.60.249.175',
+                host: process.env.SRS_HOST || '127.0.0.1',
 
                 ports: {
 
@@ -1464,7 +1464,7 @@ router.post('/srs/start', async (req, res) => {
 
         // Configurações SRS
 
-        const srsHost = process.env.SRS_HOST || '72.60.249.175';
+        const srsHost = process.env.SRS_HOST || '127.0.0.1';
 
         const srsVhost = process.env.SRS_VHOST || '__defaultVhost__';
 
@@ -1770,7 +1770,7 @@ router.post('/srs/publish', async (req, res) => {
 
         // Configurações SRS conforme documentação
 
-        const srsHost = process.env.SRS_HOST || '72.60.249.175';
+        const srsHost = process.env.SRS_HOST || '127.0.0.1';
 
         const srsPort = process.env.SRS_RTMP_PORT || '1935';
 
@@ -2547,7 +2547,7 @@ router.post('/live/start', async (req, res) => {
         const liveId = uuidv4();
 
         // Configurações SRS
-        const srsHost = process.env.SRS_HOST || '72.60.249.175';
+        const srsHost = process.env.SRS_HOST || '127.0.0.1';
         const srsPort = process.env.SRS_PORT || '1935';
         const srsApp = process.env.SRS_APP || 'live';
         const vhost = process.env.SRS_VHOST || '__defaultVhost__';
@@ -6700,7 +6700,7 @@ router.put('/streams/:id/quality', async (req, res) => {
 
             });
 
-            console.log(`���� [STREAM_QUALITY] Evento WebSocket emitido para stream_${streamId}`);
+            console.log(` [STREAM_QUALITY] Evento WebSocket emitido para stream_${streamId}`);
 
         }
 
@@ -6730,7 +6730,7 @@ router.put('/streams/:id/quality', async (req, res) => {
 
     } catch (error) {
 
-        console.error('��� [STREAM_QUALITY] Erro:', error);
+        console.error(' [STREAM_QUALITY] Erro:', error);
 
         res.status(500).json({
 
@@ -6746,7 +6746,7 @@ router.put('/streams/:id/quality', async (req, res) => {
 
 
 
-// API STARK - Iniciar live (padr+�o Buscast)
+// API STARK - Iniciar live (padr+o Buscast)
 
 // ===== ROUTE START =====
 router.post('/stark/live/start', async (req, res) => {
@@ -6758,11 +6758,28 @@ router.post('/stark/live/start', async (req, res) => {
         }
         const user = await findUserByAnyId(User, userId);
         if (!user) return res.status(404).json({ code: 1, msg: 'Usuario nao encontrado', result: null });
-        if (user.isLive) return res.status(409).json({ code: 1, msg: 'Usuario ja esta ao vivo', result: null });
+
+        // Verifica se realmente existe stream ativa (não só flag isLive no User)
+        if (user.isLive) {
+            const activeStream = await Streamer.findOne({
+                hostId: userId,
+                isLive: true,
+                streamStatus: { $in: ['active', 'live'] }
+            }).lean();
+
+            if (activeStream) {
+                console.log(`[STARK-START] Usuario ${userId} ja possui uma stream ativa (${activeStream.id}). Reiniciando/atualizando a stream.`);
+                // Nao bloqueamos com erro 409, permitindo a reinicializacao da transmissao
+            } else {
+                // Flag isLive travada sem stream ativa — reseta
+                console.log(`[STARK-START] Resetando isLive=false para ${userId} — sem stream ativa`);
+                await User.findOneAndUpdate({ id: userId }, { $set: { isLive: false } });
+            }
+        }
 
         const streamId = userId;
         const liveId = String(Date.now());
-        const srsHost = process.env.SRS_HOST || '2.25.192.154';
+        const srsHost = process.env.SRS_HOST || '127.0.0.1';
         const pushUrl = 'webrtc://' + srsHost + ':1935/live/' + streamId + '?txSecret=xxx&txTime=xxx';
 
         const finalCountry = (country || user.country || 'BR').toLowerCase();
@@ -6811,8 +6828,8 @@ router.post('/stark/live/start', async (req, res) => {
 
 
 
-// Endpoint /api/streams/start - Cria registro provis+�rio (isLive: false)
-// Frontend chama antes de capturar m+�dia para obter streamKey e URLs
+// Endpoint /api/streams/start - Cria registro provis+rio (isLive: false)
+// Frontend chama antes de capturar m+dia para obter streamKey e URLs
 
 // ===== ROUTE START =====
 router.post('/streams/start', async (req, res) => {
@@ -6827,10 +6844,10 @@ router.post('/streams/start', async (req, res) => {
 
         const user: any = await User.findOne({ id: userId });
         if (!user) {
-            return res.status(404).json({ error: 'Usu+�rio n+�o encontrado', status: 'user_not_found' });
+            return res.status(404).json({ error: 'Usu+rio n+o encontrado', status: 'user_not_found' });
         }
 
-        // Gerar streamKey +�nica
+        // Gerar streamKey +nica
         const streamKey = userId;
         const liveId = uuidv4();
 
@@ -6838,7 +6855,7 @@ router.post('/streams/start', async (req, res) => {
         const srsRtmp = `rtmp://${srsHost}:1935/live`;
         const backendApi = 'https://api.livego.store/api/video/http';
 
-        // Criar registro provis+�rio ��� isLive: false at+� SRS on_publish
+        // Criar registro provis+rio  isLive: false at+ SRS on_publish
         const stream: any = await Streamer.create({
             id: liveId,
             hostId: userId,
@@ -6861,7 +6878,7 @@ router.post('/streams/start', async (req, res) => {
             chatEnabled: true
         });
 
-        console.log(`[STREAMS START] Stream provis+�rio criado: ${streamKey} para usu+�rio ${userId}`);
+        console.log(`[STREAMS START] Stream provis+rio criado: ${streamKey} para usu+rio ${userId}`);
 
         // Criar LiveCard (stream preparando)
         try {
@@ -6896,7 +6913,7 @@ router.post('/streams/start', async (req, res) => {
         });
 
     } catch (error: any) {
-        console.error('[STREAMS START] Erro ao criar stream provis+�rio:', error);
+        console.error('[STREAMS START] Erro ao criar stream provis+rio:', error);
         res.status(500).json({
             error: 'Erro interno ao criar stream',
             status: 'error',
@@ -6905,7 +6922,7 @@ router.post('/streams/start', async (req, res) => {
     }
 });
 
-// Endpoint /api/lives/start - Porteiro oficial da transmiss+�o
+// Endpoint /api/lives/start - Porteiro oficial da transmiss+o
 // Frontend chama com { streamId } e espera { success: boolean }
 
 // ===== ROUTE START =====
@@ -6919,15 +6936,15 @@ router.post('/lives/start', async (req, res) => {
         const { streamId } = req.body;
 
         if (!streamId) {
-            return res.status(400).json({ error: 'streamId +� obrigat+�rio', status: 'invalid_request' });
+            return res.status(400).json({ error: 'streamId + obrigat+rio', status: 'invalid_request' });
         }
 
         const user: any = await User.findOne({ id: userId });
         if (!user) {
-            return res.status(404).json({ error: 'Usu+�rio n+�o encontrado', status: 'user_not_found' });
+            return res.status(404).json({ error: 'Usu+rio n+o encontrado', status: 'user_not_found' });
         }
 
-        // Buscar stream existente por streamKey ou criar provis+�rio
+        // Buscar stream existente por streamKey ou criar provis+rio
         let stream: any = await Streamer.findOne({ streamKey: streamId });
         if (!stream) {
             stream = await Streamer.findOne({ id: streamId });
@@ -6939,7 +6956,7 @@ router.post('/lives/start', async (req, res) => {
         const now = new Date();
 
         if (!stream) {
-            // Criar registro provis+�rio
+            // Criar registro provis+rio
             const liveId = uuidv4();
             stream = await Streamer.create({
                 id: liveId,
@@ -6995,13 +7012,13 @@ router.get('/lives/:id', async (req, res) => {
 
         
 
-        console.log(`���� [DEBUG] Getting live details for streamer: ${id}`);
+        console.log(` [DEBUG] Getting live details for streamer: ${id}`);
 
-        console.log(`���� [SECURITY] User-Agent: ${userAgent}, Referer: ${referer}`);
+        console.log(` [SECURITY] User-Agent: ${userAgent}, Referer: ${referer}`);
 
         
 
-        // DETEC+�+�O DE GRAVA+�+�O - Verificar sinais de ferramentas de grava+�+�o
+        // DETEC++O DE GRAVA++O - Verificar sinais de ferramentas de grava++o
 
         const recordingIndicators = [
 
@@ -7023,7 +7040,7 @@ router.get('/lives/:id', async (req, res) => {
 
         
 
-        // Verificar se +� acesso direto +� API (sem referer do app)
+        // Verificar se + acesso direto + API (sem referer do app)
 
         const isDirectApiAccess = !referer || (referer.includes('localhost') && userAgent.includes('curl'));
 
@@ -7037,7 +7054,7 @@ router.get('/lives/:id', async (req, res) => {
 
         if (!streamer) {
 
-            console.log(`��� Streamer not found: ${id}`);
+            console.log(` Streamer not found: ${id}`);
 
             return res.status(404).json({ error: 'Streamer not found' });
 
@@ -7045,7 +7062,7 @@ router.get('/lives/:id', async (req, res) => {
 
 
 
-        // Transformar streamer para formato protegido usando mapper flex+�vel
+        // Transformar streamer para formato protegido usando mapper flex+vel
 
         const protectedStream = mapStreamToProtectedFlexible(streamer as any);
 
@@ -7053,7 +7070,7 @@ router.get('/lives/:id', async (req, res) => {
 
     } catch (error: any) {
 
-        console.error('��� Error getting live details:', error);
+        console.error(' Error getting live details:', error);
 
         res.status(500).json({ error: 'Internal server error' });
 
@@ -7074,7 +7091,7 @@ router.post('/lives/:id/end', async (req, res) => {
 
 
 
-        console.log(`[STREAM-END] Encerrando stream: ${realId} por usu+�rio: ${userId}`);
+        console.log(`[STREAM-END] Encerrando stream: ${realId} por usu+rio: ${userId}`);
 
 
 
@@ -7098,7 +7115,7 @@ router.post('/lives/:id/end', async (req, res) => {
 
 
 
-        // Atualizar status do usu+�rio
+        // Atualizar status do usu+rio
 
         await User.findOneAndUpdate(
             { id: userId },
@@ -7145,7 +7162,7 @@ router.post('/lives/:id/end', async (req, res) => {
 
 
 
-// GET /api/live/nearby - Streams pr+�ximas por localiza+�+�o
+// GET /api/live/nearby - Streams pr+ximas por localiza++o
 
 // ===== ROUTE START =====
 router.get('/live/nearby', async (req, res) => {
@@ -7172,7 +7189,7 @@ router.get('/live/nearby', async (req, res) => {
 
 
 
-        // Buscar streams ativas pr+�ximas usando geoLocation do host
+        // Buscar streams ativas pr+ximas usando geoLocation do host
 
         const nearbyStreams = await Streamer.find({
 
@@ -7192,17 +7209,17 @@ router.get('/live/nearby', async (req, res) => {
 
 
 
-        // Filtrar streams que t+�m host com localiza+�+�o pr+�xima
+        // Filtrar streams que t+m host com localiza++o pr+xima
 
         const validStreams = nearbyStreams.filter(stream => stream.hostId);
 
 
 
-        console.log(` [NEARBY STREAMS] ${validStreams.length} streams encontradas pr+�ximas a (${lat}, ${lng})`);
+        console.log(` [NEARBY STREAMS] ${validStreams.length} streams encontradas pr+ximas a (${lat}, ${lng})`);
 
 
 
-        // Retornar streams COM PROTE+�+�O DE DADOS SENS+�VEIS usando mapper flex+�vel
+        // Retornar streams COM PROTE++O DE DADOS SENS+VEIS usando mapper flex+vel
 
         const protectedActiveStreams = mapStreamsToProtectedArrayFlexible(validStreams as any);
 
@@ -7222,7 +7239,7 @@ router.get('/live/nearby', async (req, res) => {
 
 
 
-// GET /api/live/following - Streams de usu+�rios que o usu+�rio segue
+// GET /api/live/following - Streams de usu+rios que o usu+rio segue
 
 // ===== ROUTE START =====
 router.get('/live/following', async (req, res) => {
@@ -7241,7 +7258,7 @@ router.get('/live/following', async (req, res) => {
 
 
 
-        // Buscar usu+�rio e seus seguidos
+        // Buscar usu+rio e seus seguidos
 
         const User = await import('../models').then(m => m.User);
 
@@ -7257,7 +7274,7 @@ router.get('/live/following', async (req, res) => {
 
 
 
-        // Buscar IDs dos usu+�rios que segue
+        // Buscar IDs dos usu+rios que segue
 
         const followingIds = user.followingList || [];
 
@@ -7271,7 +7288,7 @@ router.get('/live/following', async (req, res) => {
 
 
 
-        // Buscar streams ativas dos usu+�rios que segue
+        // Buscar streams ativas dos usu+rios que segue
 
         const followingStreams = await Streamer.find({
 
@@ -7289,7 +7306,7 @@ router.get('/live/following', async (req, res) => {
 
 
 
-        console.log(`���� [FOLLOWING STREAMS] ${followingStreams.length} streams de usu+�rios seguidos por ${userId}`);
+        console.log(` [FOLLOWING STREAMS] ${followingStreams.length} streams de usu+rios seguidos por ${userId}`);
 
 
 
@@ -7338,7 +7355,7 @@ router.get('/live/new', async (req, res) => {
 
 
 
-        console.log(`���� [NEW STREAMS] ${newStreams.length} streams mais recentes`);
+        console.log(` [NEW STREAMS] ${newStreams.length} streams mais recentes`);
 
 
 
@@ -7391,7 +7408,7 @@ router.post('/streams/:id/like', async (req: express.Request, res: express.Respo
 
 
 
-        // Verificar se j+� deu like
+        // Verificar se j+ deu like
 
         const existingLike = await StreamLike.findOne({ streamId, userId });
 
@@ -7596,7 +7613,7 @@ router.delete('/streams/:id/like', async (req: express.Request, res: express.Res
 
 
 
-// POST /api/streams/:streamId/end - Encerrar stream espec+�fica por ID
+// POST /api/streams/:streamId/end - Encerrar stream espec+fica por ID
 
 // ===== ROUTE START =====
 router.post('/streams/:streamId/end', async (req: express.Request, res: express.Response) => {
@@ -7615,7 +7632,7 @@ router.post('/streams/:streamId/end', async (req: express.Request, res: express.
 
                 success: false, 
 
-                message: 'Usu+�rio n+�o autenticado' 
+                message: 'Usu+rio n+o autenticado' 
 
             });
 
@@ -7623,11 +7640,11 @@ router.post('/streams/:streamId/end', async (req: express.Request, res: express.
 
 
 
-        console.log(`[STREAM-END] Tentando encerrar stream: ${streamId} pelo usu+�rio: ${userId}`);
+        console.log(`[STREAM-END] Tentando encerrar stream: ${streamId} pelo usu+rio: ${userId}`);
 
 
 
-        // Buscar stream espec+�fica
+        // Buscar stream espec+fica
 
         const stream: any = await Streamer.findOne({ id: streamId });
 
@@ -7639,7 +7656,7 @@ router.post('/streams/:streamId/end', async (req: express.Request, res: express.
 
                 success: false, 
 
-                message: 'Stream n+�o encontrada' 
+                message: 'Stream n+o encontrada' 
 
             });
 
@@ -7647,7 +7664,7 @@ router.post('/streams/:streamId/end', async (req: express.Request, res: express.
 
 
 
-        // Verificar se o usu+�rio +� o dono da stream ou admin
+        // Verificar se o usu+rio + o dono da stream ou admin
 
         const user = await findUserByAnyId(User, userId);
 
@@ -7663,7 +7680,7 @@ router.post('/streams/:streamId/end', async (req: express.Request, res: express.
 
                 success: false, 
 
-                message: 'Apenas o dono da stream ou administrador pode encerr+�-la' 
+                message: 'Apenas o dono da stream ou administrador pode encerr+-la' 
 
             });
 
@@ -7671,7 +7688,7 @@ router.post('/streams/:streamId/end', async (req: express.Request, res: express.
 
 
 
-        // Verificar se stream est+� ativa
+        // Verificar se stream est+ ativa
 
         if (!stream.isLive) {
 
@@ -7679,7 +7696,7 @@ router.post('/streams/:streamId/end', async (req: express.Request, res: express.
 
                 success: false, 
 
-                message: 'Stream j+� est+� encerrada' 
+                message: 'Stream j+ est+ encerrada' 
 
             });
 
@@ -7711,7 +7728,7 @@ router.post('/streams/:streamId/end', async (req: express.Request, res: express.
 
 
 
-        // Atualizar status do usu+�rio se n+�o tiver outras streams ativas
+        // Atualizar status do usu+rio se n+o tiver outras streams ativas
 
         const otherActiveStreams = await Streamer.find({
 
@@ -7796,7 +7813,7 @@ router.post('/streams/:streamId/end', async (req: express.Request, res: express.
 
 
 
-// POST /api/streams/end-all - Encerrar todas as streams do usu+�rio
+// POST /api/streams/end-all - Encerrar todas as streams do usu+rio
 
 // ===== ROUTE START =====
 router.post('/streams/end-all', async (req: express.Request, res: express.Response) => {
@@ -7813,7 +7830,7 @@ router.post('/streams/end-all', async (req: express.Request, res: express.Respon
 
                 success: false, 
 
-                message: 'Usu+�rio n+�o autenticado' 
+                message: 'Usu+rio n+o autenticado' 
 
             });
 
@@ -7821,11 +7838,11 @@ router.post('/streams/end-all', async (req: express.Request, res: express.Respon
 
 
 
-        console.log(`[STREAM-END-ALL] Encerrando todas as streams do usu+�rio: ${userId}`);
+        console.log(`[STREAM-END-ALL] Encerrando todas as streams do usu+rio: ${userId}`);
 
 
 
-        // Buscar todas as streams ativas do usu+�rio
+        // Buscar todas as streams ativas do usu+rio
 
         const activeStreams = await Streamer.find({
 
@@ -7843,7 +7860,7 @@ router.post('/streams/end-all', async (req: express.Request, res: express.Respon
 
                 success: false, 
 
-                message: 'Nenhuma stream ativa encontrada para este usu+�rio' 
+                message: 'Nenhuma stream ativa encontrada para este usu+rio' 
 
             });
 
@@ -7968,7 +7985,7 @@ router.post('/streams/:streamId/heartbeat', async (req: express.Request, res: ex
 
                 success: false, 
 
-                message: 'Usu+�rio n+�o autenticado' 
+                message: 'Usu+rio n+o autenticado' 
 
             });
 
@@ -7976,7 +7993,7 @@ router.post('/streams/:streamId/heartbeat', async (req: express.Request, res: ex
 
 
 
-        // Buscar stream espec+�fica
+        // Buscar stream espec+fica
 
         const stream: any = await Streamer.findOne({ id: streamId });
 
@@ -7988,7 +8005,7 @@ router.post('/streams/:streamId/heartbeat', async (req: express.Request, res: ex
 
                 success: false, 
 
-                message: 'Stream n+�o encontrada' 
+                message: 'Stream n+o encontrada' 
 
             });
 
@@ -7996,7 +8013,7 @@ router.post('/streams/:streamId/heartbeat', async (req: express.Request, res: ex
 
 
 
-        // Verificar se o usu+�rio +� o dono da stream
+        // Verificar se o usu+rio + o dono da stream
 
         if (stream.hostId.toString() !== userId) {
 
@@ -8012,7 +8029,7 @@ router.post('/streams/:streamId/heartbeat', async (req: express.Request, res: ex
 
 
 
-        // Verificar se stream est+� ativa
+        // Verificar se stream est+ ativa
 
         if (!stream.isLive) {
 
@@ -8020,7 +8037,7 @@ router.post('/streams/:streamId/heartbeat', async (req: express.Request, res: ex
 
                 success: false, 
 
-                message: 'Stream n+�o est+� ativa' 
+                message: 'Stream n+o est+ ativa' 
 
             });
 
@@ -8040,17 +8057,17 @@ router.post('/streams/:streamId/heartbeat', async (req: express.Request, res: ex
 
 
 
-        // Se viewer count for enviado, atualizar tamb+�m
+        // Se viewer count for enviado, atualizar tamb+m
 
         if (req.body.viewers !== undefined && typeof req.body.viewers === 'number') {
 
-            updateData.viewers = Math.max(0, req.body.viewers); // Garantir n+�mero n+�o negativo
+            updateData.viewers = Math.max(0, req.body.viewers); // Garantir n+mero n+o negativo
 
         }
 
 
 
-        // Se bandwidth for enviado, atualizar tamb+�m (campo n+�o existe no modelo, removido por enquanto)
+        // Se bandwidth for enviado, atualizar tamb+m (campo n+o existe no modelo, removido por enquanto)
 
         // if (req.body.bandwidth !== undefined && typeof req.body.bandwidth === 'number') {
 
@@ -8082,7 +8099,7 @@ router.post('/streams/:streamId/heartbeat', async (req: express.Request, res: ex
 
             viewers: updateData.viewers || stream.viewers || 0
 
-            // bandwidth removido - campo n+�o existe no modelo
+            // bandwidth removido - campo n+o existe no modelo
 
         });
 
@@ -8110,11 +8127,11 @@ router.post('/streams/:streamId/heartbeat', async (req: express.Request, res: ex
 
 
 
-// === ROTAS DE ADMINISTRA+�+�O ===
+// === ROTAS DE ADMINISTRA++O ===
 
 
 
-// POST /api/admin/streams/:streamId/force-end - For+�ar encerramento (admin)
+// POST /api/admin/streams/:streamId/force-end - For+ar encerramento (admin)
 
 // ===== ROUTE START =====
 router.post('/admin/streams/:streamId/force-end', async (req: express.Request, res: express.Response) => {
@@ -8135,7 +8152,7 @@ router.post('/admin/streams/:streamId/force-end', async (req: express.Request, r
 
                 success: false, 
 
-                message: 'Usu+�rio n+�o autenticado' 
+                message: 'Usu+rio n+o autenticado' 
 
             });
 
@@ -8143,7 +8160,7 @@ router.post('/admin/streams/:streamId/force-end', async (req: express.Request, r
 
 
 
-        // Verificar se +� admin
+        // Verificar se + admin
 
         const user = await findUserByAnyId(User, userId);
 
@@ -8153,7 +8170,7 @@ router.post('/admin/streams/:streamId/force-end', async (req: express.Request, r
 
                 success: false, 
 
-                message: 'Acesso negado. Apenas administradores podem for+�ar encerramento' 
+                message: 'Acesso negado. Apenas administradores podem for+ar encerramento' 
 
             });
 
@@ -8161,7 +8178,7 @@ router.post('/admin/streams/:streamId/force-end', async (req: express.Request, r
 
 
 
-        console.log(`[ADMIN-FORCE-END] Admin ${userId} for+�ando encerramento da stream: ${streamId}`);
+        console.log(`[ADMIN-FORCE-END] Admin ${userId} for+ando encerramento da stream: ${streamId}`);
 
 
 
@@ -8177,7 +8194,7 @@ router.post('/admin/streams/:streamId/force-end', async (req: express.Request, r
 
                 success: false, 
 
-                message: 'Stream n+�o encontrada' 
+                message: 'Stream n+o encontrada' 
 
             });
 
@@ -8185,7 +8202,7 @@ router.post('/admin/streams/:streamId/force-end', async (req: express.Request, r
 
 
 
-        // For+�ar encerramento
+        // For+ar encerramento
 
         await Streamer.findOneAndUpdate(
 
@@ -8203,7 +8220,7 @@ router.post('/admin/streams/:streamId/force-end', async (req: express.Request, r
 
                 endedByAdmin: userId,
 
-                endReason: reason || 'Encerramento for+�ado por administrador',
+                endReason: reason || 'Encerramento for+ado por administrador',
 
                 endedAt: new Date()
 
@@ -8213,7 +8230,7 @@ router.post('/admin/streams/:streamId/force-end', async (req: express.Request, r
 
 
 
-        // Atualizar status do usu+�rio se n+�o tiver outras streams ativas
+        // Atualizar status do usu+rio se n+o tiver outras streams ativas
 
         const otherActiveStreams = await Streamer.find({
 
@@ -8239,7 +8256,7 @@ router.post('/admin/streams/:streamId/force-end', async (req: express.Request, r
             );
         }
 
-        console.log(`[ADMIN-FORCE-END] Stream ${streamId} encerrada for�adamente pelo admin ${userId}`);
+        console.log(`[ADMIN-FORCE-END] Stream ${streamId} encerrada foradamente pelo admin ${userId}`);
 
         const io = req.app.get('io');
         if (io) {
@@ -8264,7 +8281,7 @@ router.post('/admin/streams/:streamId/force-end', async (req: express.Request, r
 
             success: true,
 
-            message: 'Stream encerrada for+�adamente com sucesso',
+            message: 'Stream encerrada for+adamente com sucesso',
 
             streamId: streamId,
 
@@ -8272,7 +8289,7 @@ router.post('/admin/streams/:streamId/force-end', async (req: express.Request, r
 
             endedByAdmin: userId,
 
-            endReason: reason || 'Encerramento for+�ado por administrador',
+            endReason: reason || 'Encerramento for+ado por administrador',
 
             endedAt: new Date().toISOString()
 
@@ -8284,13 +8301,13 @@ router.post('/admin/streams/:streamId/force-end', async (req: express.Request, r
 
         const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
 
-        console.error('[ADMIN-FORCE-END] Erro ao for+�ar encerramento:', error);
+        console.error('[ADMIN-FORCE-END] Erro ao for+ar encerramento:', error);
 
         res.status(500).json({ 
 
             success: false, 
 
-            message: 'Erro interno ao for+�ar encerramento',
+            message: 'Erro interno ao for+ar encerramento',
 
             error: errorMessage
 
@@ -8302,7 +8319,7 @@ router.post('/admin/streams/:streamId/force-end', async (req: express.Request, r
 
 
 
-// GET /api/admin/streams/zombie-stats - Estat+�sticas de streams zumbis
+// GET /api/admin/streams/zombie-stats - Estat+sticas de streams zumbis
 
 // ===== ROUTE START =====
 router.get('/admin/streams/zombie-stats', async (req: express.Request, res: express.Response) => {
@@ -8319,7 +8336,7 @@ router.get('/admin/streams/zombie-stats', async (req: express.Request, res: expr
 
                 success: false, 
 
-                message: 'Usu+�rio n+�o autenticado' 
+                message: 'Usu+rio n+o autenticado' 
 
             });
 
@@ -8327,7 +8344,7 @@ router.get('/admin/streams/zombie-stats', async (req: express.Request, res: expr
 
 
 
-        // Verificar se +� admin
+        // Verificar se + admin
 
         const user = await findUserByAnyId(User, userId);
 
@@ -8337,7 +8354,7 @@ router.get('/admin/streams/zombie-stats', async (req: express.Request, res: expr
 
                 success: false, 
 
-                message: 'Acesso negado. Apenas administradores podem ver estat+�sticas' 
+                message: 'Acesso negado. Apenas administradores podem ver estat+sticas' 
 
             });
 
@@ -8345,13 +8362,13 @@ router.get('/admin/streams/zombie-stats', async (req: express.Request, res: expr
 
 
 
-        // Servi+�o de limpeza de streams zumbis removido
+        // Servi+o de limpeza de streams zumbis removido
 
         res.json({
 
             success: true,
 
-            message: 'Servi+�o de limpeza de streams zumbis foi desativado',
+            message: 'Servi+o de limpeza de streams zumbis foi desativado',
 
             stats: { active: 0, zombie: 0, cleaned: 0 }
 
@@ -8363,13 +8380,13 @@ router.get('/admin/streams/zombie-stats', async (req: express.Request, res: expr
 
         const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
 
-        console.error('[ADMIN-ZOMBIE-STATS] Erro ao obter estat+�sticas:', error);
+        console.error('[ADMIN-ZOMBIE-STATS] Erro ao obter estat+sticas:', error);
 
         res.status(500).json({ 
 
             success: false, 
 
-            message: 'Erro interno ao obter estat+�sticas',
+            message: 'Erro interno ao obter estat+sticas',
 
             error: errorMessage
 
@@ -8398,7 +8415,7 @@ router.post('/admin/streams/cleanup-zombies', async (req: express.Request, res: 
 
                 success: false, 
 
-                message: 'Usu+�rio n+�o autenticado' 
+                message: 'Usu+rio n+o autenticado' 
 
             });
 
@@ -8406,7 +8423,7 @@ router.post('/admin/streams/cleanup-zombies', async (req: express.Request, res: 
 
 
 
-        // Verificar se +� admin
+        // Verificar se + admin
 
         const user = await findUserByAnyId(User, userId);
 
@@ -8428,13 +8445,13 @@ router.post('/admin/streams/cleanup-zombies', async (req: express.Request, res: 
 
 
 
-        // Servi+�o de limpeza de streams zumbis foi removido
+        // Servi+o de limpeza de streams zumbis foi removido
 
         res.json({
 
             success: true,
 
-            message: 'Servi+�o de limpeza de streams zumbis foi desativado',
+            message: 'Servi+o de limpeza de streams zumbis foi desativado',
 
             stats: { active: 0, zombie: 0, cleaned: 0 },
 
@@ -8474,7 +8491,7 @@ router.post('/admin/streams/cleanup-zombies', async (req: express.Request, res: 
 
 
 
-// POST /api/streams/prepare - Preparar live (cria registro mas n+�o inicia transmiss+�o)
+// POST /api/streams/prepare - Preparar live (cria registro mas n+o inicia transmiss+o)
 
 // ===== ROUTE START =====
 router.post('/streams/prepare', async (req, res) => {
@@ -8493,7 +8510,7 @@ router.post('/streams/prepare', async (req, res) => {
 
                 success: false, 
 
-                message: 'Usu+�rio n+�o autenticado' 
+                message: 'Usu+rio n+o autenticado' 
 
             });
 
@@ -8506,7 +8523,7 @@ router.post('/streams/prepare', async (req, res) => {
         // Aceitar tanto 'name' quanto 'title' - priorizar 'title' se ambos existirem
         const liveTitle = title || name;
 
-        // Valida+�+�es b+�sicas
+        // Valida++es b+sicas
 
         if (!liveTitle || liveTitle.trim() === '') {
 
@@ -8514,7 +8531,7 @@ router.post('/streams/prepare', async (req, res) => {
 
                 success: false, 
 
-                message: 'T+�tulo da live +� obrigat+�rio (use "name" ou "title")' 
+                message: 'T+tulo da live + obrigat+rio (use "name" ou "title")' 
 
             });
 
@@ -8522,7 +8539,7 @@ router.post('/streams/prepare', async (req, res) => {
 
 
 
-        // Buscar usu+�rio
+        // Buscar usu+rio
 
         const user: any = await User.findOne({ id: userId });
 
@@ -8532,7 +8549,7 @@ router.post('/streams/prepare', async (req, res) => {
 
                 success: false, 
 
-                message: 'Usu+�rio n+�o encontrado' 
+                message: 'Usu+rio n+o encontrado' 
 
             });
 
@@ -8548,9 +8565,9 @@ router.post('/streams/prepare', async (req, res) => {
 
 
 
-        // Configura+�+�es SRS
+        // Configura++es SRS
 
-        const srsHost = process.env.SRS_HOST || '72.60.249.175';
+        const srsHost = process.env.SRS_HOST || '127.0.0.1';
 
         const srsRtmpUrl = process.env.SRS_RTMP_URL || `rtmp://${srsHost}:1935/live`;
 
@@ -8611,7 +8628,7 @@ router.post('/streams/prepare', async (req, res) => {
 
 
 
-        console.log(`[STREAM-PREPARE] Live preparada: ${streamId} para usu+�rio ${userId}`);
+        console.log(`[STREAM-PREPARE] Live preparada: ${streamId} para usu+rio ${userId}`);
 
 
 
@@ -8663,14 +8680,14 @@ router.post('/streams/prepare', async (req, res) => {
 
 
 
-// POST /api/streams/:id/start - Iniciar transmiss+�o (marcar como ativa)
+// POST /api/streams/:id/start - Iniciar transmiss+o (marcar como ativa)
 
 // ===== ROUTE START =====
 router.post('/streams/:id/start', async (req, res) => {
 
     try {
 
-        console.log('[STREAM-START] Iniciando transmiss+�o...');
+        console.log('[STREAM-START] Iniciando transmiss+o...');
 
         
 
@@ -8682,7 +8699,7 @@ router.post('/streams/:id/start', async (req, res) => {
 
                 success: false, 
 
-                message: 'Usu+�rio n+�o autenticado' 
+                message: 'Usu+rio n+o autenticado' 
 
             });
 
@@ -8704,7 +8721,7 @@ router.post('/streams/:id/start', async (req, res) => {
 
                 success: false, 
 
-                message: 'Stream n+�o encontrado' 
+                message: 'Stream n+o encontrado' 
 
             });
 
@@ -8712,7 +8729,7 @@ router.post('/streams/:id/start', async (req, res) => {
 
 
 
-        // Verificar se j+� est+� ativa
+        // Verificar se j+ est+ ativa
 
         if (stream.isLive && stream.streamStatus === 'active') {
 
@@ -8720,7 +8737,7 @@ router.post('/streams/:id/start', async (req, res) => {
 
                 success: false, 
 
-                message: 'Stream j+� est+� ativa' 
+                message: 'Stream j+ est+ ativa' 
 
             });
 
@@ -8740,7 +8757,7 @@ router.post('/streams/:id/start', async (req, res) => {
 
 
 
-        // Atualizar usu+�rio
+        // Atualizar usu+rio
 
         await User.findOneAndUpdate(
 
@@ -8762,7 +8779,7 @@ router.post('/streams/:id/start', async (req, res) => {
 
 
 
-        // Atualizar status online na cole+�+�o userstatuses
+        // Atualizar status online na cole++o userstatuses
 
         const { UserStatus } = await import('../models');
 
@@ -8786,7 +8803,7 @@ router.post('/streams/:id/start', async (req, res) => {
 
 
 
-        console.log(`[STREAM-START] Stream ${id} iniciada para usu+�rio ${userId}`);
+        console.log(`[STREAM-START] Stream ${id} iniciada para usu+rio ${userId}`);
 
         const io = req.app.get('io');
         if (io) {
@@ -8983,11 +9000,11 @@ router.post('/stark/live/publish', async (req, res) => {
         }
 
         // Gerar URLs de publicacao
-        const srsHost = process.env.SRS_HOST || '2.25.192.154';
+        const srsHost = process.env.SRS_HOST || '127.0.0.1';
         const whipUrl = 'https://' + srsHost + ':8000/whip/' + streamId;
         const whepUrl = 'https://' + srsHost + ':8000/whep/' + streamId;
         const rtmpUrl = 'rtmp://' + srsHost + ':1935/live/' + streamId;
-        const hlsUrl = 'https://livego.store/live/' + streamId + '.m3u8';
+        const hlsUrl = process.env.SRS_HLS_URL || ('https://livego.store/live/' + streamId + '.m3u8');
 
         // Atualizar stream com URLs de publicacao
         await Streamer.findOneAndUpdate(

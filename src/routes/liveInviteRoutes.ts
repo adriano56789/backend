@@ -1,6 +1,6 @@
 import express from 'express';
 import { LiveUser, LiveInvite } from '../models/LiveInvite';
-import Streamer from '../models/Streamer';
+import { Streamer } from '../models';
 
 const router = express.Router();
 
@@ -45,6 +45,39 @@ router.post('/join', async (req, res) => {
     }
 });
 
+const buscarStreamersDisponiveis = async (streamId: string, apenasLive: boolean) => {
+    // 1º: streamers ao vivo agora
+    const filtroLive: any = { isLive: true, streamStatus: 'active', hostId: { $ne: streamId } };
+    let docs = await Streamer.find(filtroLive).sort({ startTime: -1 }).lean();
+
+    // 2º: streamers ativos nas últimas 24h
+    if (docs.length === 0) {
+        const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        docs = await Streamer.find({
+            hostId: { $ne: streamId },
+            $or: [
+                { isLive: true },
+                { startTime: { $gte: dayAgo } },
+                { updatedAt: { $gte: dayAgo } }
+            ]
+        }).sort({ startTime: -1 }).limit(20).lean();
+    }
+
+    // 3º: qualquer streamer do banco (exceto o atual)
+    if (docs.length === 0) {
+        docs = await Streamer.find({ hostId: { $ne: streamId } })
+            .sort({ updatedAt: -1 }).limit(20).lean();
+    }
+
+    return docs.map(s => ({
+        userId: s.hostId,
+        username: s.name || s.hostId,
+        name: s.name || s.hostId,
+        avatarUrl: s.avatar || '',
+        status: (s.isLive && s.streamStatus === 'active') ? 'broadcasting' : 'offline'
+    }));
+};
+
 router.get('/online-users', async (req, res) => {
     try {
         const { streamId, mode } = req.query;
@@ -52,30 +85,25 @@ router.get('/online-users', async (req, res) => {
             return res.status(400).json({ success: false, error: 'streamId é obrigatório' });
         }
 
-        if (mode === 'battle') {
-            const liveStreamers = await Streamer.find({
-                isLive: true,
-                streamStatus: 'active',
-                hostId: { $ne: streamId }
-            }).sort({ startTime: -1 }).lean();
+        // Busca espectadores na sala (sempre) + streamers disponíveis
+        const [viewers, streamerUsers] = await Promise.all([
+            LiveUser.find({
+                currentStreamId: streamId,
+                status: { $in: ['viewing', 'co-host', 'pk-battle', 'broadcasting'] }
+            }).sort({ lastActive: -1 }).lean(),
+            buscarStreamersDisponiveis(streamId as string, mode === 'battle')
+        ]);
 
-            const users = liveStreamers.map(s => ({
-                userId: s.hostId,
-                username: s.name || s.hostId,
-                name: s.name || s.hostId,
-                avatarUrl: s.avatar || '',
-                status: 'broadcasting'
-            }));
+        // Combina viewers + streamers, sem duplicar IDs
+        const seen = new Set<string>();
+        const combined = [...viewers, ...streamerUsers].filter(u => {
+            const id = u.userId || (u as any).username;
+            if (seen.has(id)) return false;
+            seen.add(id);
+            return true;
+        });
 
-            return res.status(200).json({ success: true, users });
-        }
-
-        const users = await LiveUser.find({
-            currentStreamId: streamId,
-            status: { $in: ['viewing', 'co-host', 'pk-battle', 'broadcasting'] }
-        }).sort({ lastActive: -1 });
-
-        res.status(200).json({ success: true, users });
+        res.status(200).json({ success: true, users: combined });
     } catch (error: any) {
         console.error('[LiveInvite] Erro ao listar usuários online:', error);
         res.status(500).json({ success: false, error: error.message });
@@ -90,54 +118,28 @@ router.post('/invite', async (req, res) => {
             return res.status(400).json({ success: false, error: 'Campos obrigatórios faltando' });
         }
 
-        const existing = await LiveInvite.findOne({
-            inviterUsername,
-            inviteeUsername,
-            streamId,
-            status: 'pending'
-        });
-
-        if (existing) {
-            return res.status(409).json({ success: false, error: 'Já existe um convite pendente para este usuário' });
-        }
-
-        const streamKey = `${inviteType}_${inviterUsername}_${inviteeUsername}_${Date.now().toString().slice(-4)}`;
-        const whipUrl = `webrtc://${SRS_HOST}/rtc/v1/publish/live/${streamKey}`;
-        const whepUrl = `webrtc://${SRS_HOST}/rtc/v1/play/live/${streamKey}`;
-        const inviteLink = `https://livego.store/live/${streamId}?invite=${streamKey}`;
-
-        const newInvite = await LiveInvite.create({
+        const invite = await LiveInvite.create({
             inviterUsername,
             inviterName: inviterName || inviterUsername,
             inviteeUsername,
             inviteeName: inviteeName || inviteeUsername,
             inviteType,
-            status: 'pending',
             streamId,
-            inviteLink,
-            srsSfuConfig: {
-                whipUrl,
-                whepUrl,
-                streamKey,
-                rtcRoomId: streamId
-            }
+            status: 'pending'
         });
 
         const io = (req as any).app.get('io');
         if (io) {
-            const invitee = await LiveUser.findOne({ username: inviteeUsername, currentStreamId: streamId });
-            if (invitee && invitee.socketId) {
-                io.to(invitee.socketId).emit('live_invite_received', {
-                    inviteId: newInvite._id,
-                    inviterUsername: newInvite.inviterUsername,
-                    inviterName: newInvite.inviterName,
-                    inviteType: newInvite.inviteType,
-                    streamId: newInvite.streamId
-                });
-            }
+            io.to(`user_${inviteeUsername}`).emit('live_invite', {
+                type: inviteType,
+                from: inviterUsername,
+                fromName: inviterName || inviterUsername,
+                streamId,
+                inviteId: invite._id
+            });
         }
 
-        res.status(201).json({ success: true, invite: newInvite });
+        res.status(200).json({ success: true, invite });
     } catch (error: any) {
         console.error('[LiveInvite] Erro ao criar convite:', error);
         res.status(500).json({ success: false, error: error.message });
@@ -146,63 +148,33 @@ router.post('/invite', async (req, res) => {
 
 router.post('/invite/respond', async (req, res) => {
     try {
-        const { inviteId, status } = req.body;
+        const { inviteId, action } = req.body;
 
-        if (!inviteId || !status) {
-            return res.status(400).json({ success: false, error: 'inviteId e status são obrigatórios' });
+        if (!inviteId || !action) {
+            return res.status(400).json({ success: false, error: 'inviteId e action são obrigatórios' });
         }
 
-        if (!['accepted', 'declined'].includes(status)) {
-            return res.status(400).json({ success: false, error: 'status deve ser accepted ou declined' });
+        if (!['accepted', 'declined'].includes(action)) {
+            return res.status(400).json({ success: false, error: 'action deve ser accepted ou declined' });
         }
 
-        const invite = await LiveInvite.findById(inviteId);
+        const invite = await LiveInvite.findByIdAndUpdate(
+            inviteId,
+            { status: action, updatedAt: new Date() },
+            { new: true }
+        );
+
         if (!invite) {
-            return res.status(404).json({ success: false, error: 'Convite não encontrado ou expirado' });
-        }
-
-        if (invite.status !== 'pending') {
-            return res.status(409).json({ success: false, error: `Convite já foi ${invite.status}` });
-        }
-
-        invite.status = status;
-        await invite.save();
-
-        if (status === 'accepted') {
-            const targetStatus = invite.inviteType === 'pk-battle' ? 'pk-battle' : 'co-host';
-            await LiveUser.findOneAndUpdate(
-                { username: invite.inviteeUsername, currentStreamId: invite.streamId },
-                { status: targetStatus }
-            );
-            await LiveUser.findOneAndUpdate(
-                { username: invite.inviterUsername, currentStreamId: invite.streamId },
-                { status: targetStatus }
-            );
+            return res.status(404).json({ success: false, error: 'Convite não encontrado' });
         }
 
         const io = (req as any).app.get('io');
         if (io) {
-            const inviter = await LiveUser.findOne({ username: invite.inviterUsername, currentStreamId: invite.streamId });
-            if (inviter && inviter.socketId) {
-                io.to(inviter.socketId).emit('live_invite_response', {
-                    inviteId: invite._id,
-                    status: invite.status,
-                    inviteeUsername: invite.inviteeUsername,
-                    inviteeName: invite.inviteeName,
-                    inviteType: invite.inviteType
-                });
-            }
-
-            if (status === 'accepted') {
-                io.to(`live_${invite.streamId}`).emit('live_user_status_change', {
-                    username: invite.inviteeUsername,
-                    status: invite.inviteType === 'pk-battle' ? 'pk-battle' : 'co-host'
-                });
-                io.to(`live_${invite.streamId}`).emit('live_user_status_change', {
-                    username: invite.inviterUsername,
-                    status: invite.inviteType === 'pk-battle' ? 'pk-battle' : 'co-host'
-                });
-            }
+            io.to(`user_${invite.inviterUsername}`).emit('live_invite_response', {
+                inviteId,
+                status: action,
+                from: invite.inviteeUsername
+            });
         }
 
         res.status(200).json({ success: true, invite });
@@ -212,25 +184,19 @@ router.post('/invite/respond', async (req, res) => {
     }
 });
 
-router.post('/leave', async (req, res) => {
+router.get('/invites/pending', async (req, res) => {
     try {
-        const { username, streamId } = req.body;
+        const { username } = req.query;
         if (!username) {
             return res.status(400).json({ success: false, error: 'username é obrigatório' });
         }
 
-        const removed = await LiveUser.findOneAndDelete({ username, ...(streamId ? { currentStreamId: streamId } : {}) });
+        const invites = await LiveInvite.find({ inviteeUsername: username, status: 'pending' })
+            .sort({ createdAt: -1 }).lean();
 
-        const io = (req as any).app.get('io');
-        if (io && removed) {
-            io.to(`live_${removed.currentStreamId}`).emit('live_user_left', {
-                username: removed.username
-            });
-        }
-
-        res.status(200).json({ success: true, message: 'Usuário removido da live' });
+        res.status(200).json({ success: true, invites });
     } catch (error: any) {
-        console.error('[LiveInvite] Erro ao remover usuário:', error);
+        console.error('[LiveInvite] Erro ao listar convites pendentes:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });

@@ -21,4 +21,4 @@ const FollowersSchema: Schema = new Schema({
 // Create composite index
 FollowersSchema.index({ followerId: 1, followingId: 1 }, { unique: true });
 
-export const Followers = mongoose.model<IFollowers>('Followers', FollowersSchema);
+export const Followers = mongoose.model<IFollowers>('Followers', FollowersSchema, 'follows');
