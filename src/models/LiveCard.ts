@@ -13,6 +13,9 @@ export interface ILiveCard extends Document {
     streamStatus: 'active' | 'live' | 'ended';
     viewers: number;
     category: string;
+    categoryList: string[];
+    notice: string;
+    metaData: Map<string, string>;
     isPrivate: boolean;
     startTime: Date;
     endTime?: Date;
@@ -32,6 +35,9 @@ const LiveCardSchema = new Schema<ILiveCard>({
     streamStatus: { type: String, enum: ['active', 'live', 'ended'], default: 'ended' },
     viewers: { type: Number, default: 0 },
     category: { type: String, default: 'popular' },
+    categoryList: { type: [String], default: [] },
+    notice: { type: String, default: '' },
+    metaData: { type: Map, of: String, default: {} },
     isPrivate: { type: Boolean, default: false },
     startTime: { type: Date, default: Date.now },
     endTime: { type: Date },

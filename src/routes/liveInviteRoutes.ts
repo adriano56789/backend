@@ -1,10 +1,22 @@
 import express from 'express';
 import { LiveUser, LiveInvite } from '../models/LiveInvite';
-import { Streamer } from '../models';
+import { Streamer, Battle, User } from '../models';
+import { getUserIdFromToken } from '../middleware/auth';
 
 const router = express.Router();
 
 const SRS_HOST = process.env.SRS_HOST || 'api.livego.store';
+
+// Timeout tracking for invites (30s auto-reject)
+const inviteTimeouts = new Map<string, NodeJS.Timeout>();
+
+function clearInviteTimeout(inviteId: string) {
+    const existing = inviteTimeouts.get(inviteId);
+    if (existing) {
+        clearTimeout(existing);
+        inviteTimeouts.delete(inviteId);
+    }
+}
 
 router.post('/join', async (req, res) => {
     try {
@@ -45,16 +57,37 @@ router.post('/join', async (req, res) => {
     }
 });
 
-const buscarStreamersDisponiveis = async (streamId: string, apenasLive: boolean) => {
+const buscarStreamersDisponiveis = async (currentHostId: string, apenasLive: boolean) => {
+    let docs: any[] = [];
+
+    // Se apenasLive=true, busca SÓ streamers ao vivo (modo battle)
+    if (apenasLive) {
+        docs = await Streamer.find({
+            isLive: true,
+            streamStatus: 'active',
+            hostId: { $ne: currentHostId }
+        }).sort({ startTime: -1 }).lean();
+        return docs.map(s => ({
+            userId: s.hostId,
+            username: s.name || s.hostId,
+            name: s.name || s.hostId,
+            avatarUrl: s.avatar || '',
+            status: 'broadcasting'
+        }));
+    }
+
     // 1º: streamers ao vivo agora
-    const filtroLive: any = { isLive: true, streamStatus: 'active', hostId: { $ne: streamId } };
-    let docs = await Streamer.find(filtroLive).sort({ startTime: -1 }).lean();
+    docs = await Streamer.find({
+        isLive: true,
+        streamStatus: 'active',
+        hostId: { $ne: currentHostId }
+    }).sort({ startTime: -1 }).lean();
 
     // 2º: streamers ativos nas últimas 24h
     if (docs.length === 0) {
         const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
         docs = await Streamer.find({
-            hostId: { $ne: streamId },
+            hostId: { $ne: currentHostId },
             $or: [
                 { isLive: true },
                 { startTime: { $gte: dayAgo } },
@@ -65,13 +98,13 @@ const buscarStreamersDisponiveis = async (streamId: string, apenasLive: boolean)
 
     // 3º: qualquer streamer do banco (exceto o atual)
     if (docs.length === 0) {
-        docs = await Streamer.find({ hostId: { $ne: streamId } })
+        docs = await Streamer.find({ hostId: { $ne: currentHostId } })
             .sort({ updatedAt: -1 }).limit(20).lean();
     }
 
     return docs.map(s => ({
         userId: s.hostId,
-        username: s.name || s.hostId,
+        username: s.hostId,
         name: s.name || s.hostId,
         avatarUrl: s.avatar || '',
         status: (s.isLive && s.streamStatus === 'active') ? 'broadcasting' : 'offline'
@@ -85,17 +118,21 @@ router.get('/online-users', async (req, res) => {
             return res.status(400).json({ success: false, error: 'streamId é obrigatório' });
         }
 
+        // Extrair hostId do JWT para excluir o próprio usuário da lista
+        const tokenUserId = getUserIdFromToken(req);
+
         // Busca espectadores na sala (sempre) + streamers disponíveis
         const [viewers, streamerUsers] = await Promise.all([
             LiveUser.find({
                 currentStreamId: streamId,
                 status: { $in: ['viewing', 'co-host', 'pk-battle', 'broadcasting'] }
             }).sort({ lastActive: -1 }).lean(),
-            buscarStreamersDisponiveis(streamId as string, mode === 'battle')
+            buscarStreamersDisponiveis(tokenUserId || (streamId as string), mode === 'battle')
         ]);
 
-        // Combina viewers + streamers, sem duplicar IDs
+        // Combina viewers + streamers, sem duplicar IDs, excluindo o próprio usuário
         const seen = new Set<string>();
+        if (tokenUserId) seen.add(tokenUserId);
         const combined = [...viewers, ...streamerUsers].filter(u => {
             const id = u.userId || (u as any).username;
             if (seen.has(id)) return false;
@@ -127,6 +164,40 @@ router.post('/invite', async (req, res) => {
             streamId,
             status: 'pending'
         });
+
+        // Auto-reject after 30s timeout
+        const timeoutMs = 30000;
+        const timeoutId = setTimeout(async () => {
+            try {
+                const stillPending = await LiveInvite.findById(invite._id);
+                if (!stillPending || stillPending.status !== 'pending') return;
+
+                stillPending.status = 'expired';
+                await stillPending.save();
+
+                const io = (req as any).app.get('io');
+                if (io) {
+                    io.to(`user_${inviterUsername}`).emit('live_invite_response', {
+                        inviteId: invite._id.toString(),
+                        status: 'expired',
+                        from: inviteeUsername,
+                        inviteeName
+                    });
+                    io.to(`user_${inviteeUsername}`).emit('live_invite_timeout', {
+                        inviteId: invite._id.toString(),
+                        type: inviteType,
+                        from: inviterUsername,
+                        fromName: inviterName || inviterUsername
+                    });
+                }
+                console.log(`[LiveInvite] Convite ${invite._id} expirou automaticamente (30s timeout)`);
+            } catch (err) {
+                console.error('[LiveInvite] Erro ao processar timeout do convite:', err);
+            } finally {
+                inviteTimeouts.delete(invite._id.toString());
+            }
+        }, timeoutMs);
+        inviteTimeouts.set(invite._id.toString(), timeoutId);
 
         const io = (req as any).app.get('io');
         if (io) {
@@ -168,6 +239,24 @@ router.post('/invite/respond', async (req, res) => {
             return res.status(404).json({ success: false, error: 'Convite não encontrado' });
         }
 
+        // Limpar timeout do convite
+        clearInviteTimeout(inviteId);
+
+        // Se aceito, atualizar status do LiveUser
+        if (action === 'accepted') {
+            const newStatus = invite.inviteType === 'co-host' ? 'co-host' : 'pk-battle';
+            await Promise.all([
+                LiveUser.findOneAndUpdate(
+                    { username: invite.inviterUsername },
+                    { status: newStatus, lastActive: new Date() }
+                ),
+                LiveUser.findOneAndUpdate(
+                    { username: invite.inviteeUsername },
+                    { status: newStatus, lastActive: new Date() }
+                )
+            ]);
+        }
+
         const io = (req as any).app.get('io');
         if (io) {
             io.to(`user_${invite.inviterUsername}`).emit('live_invite_response', {
@@ -197,6 +286,106 @@ router.get('/invites/pending', async (req, res) => {
         res.status(200).json({ success: true, invites });
     } catch (error: any) {
         console.error('[LiveInvite] Erro ao listar convites pendentes:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ─── Co-Host Exit ─────────────────────────────────────────────────────
+router.post('/co-host/exit', async (req, res) => {
+    try {
+        const { userId, streamId } = req.body;
+        if (!userId || !streamId) {
+            return res.status(400).json({ success: false, error: 'userId e streamId são obrigatórios' });
+        }
+
+        await LiveInvite.updateMany(
+            {
+                $or: [{ inviterUsername: userId }, { inviteeUsername: userId }],
+                status: 'pending',
+                inviteType: 'co-host'
+            },
+            { status: 'declined', updatedAt: new Date() }
+        );
+
+        await LiveUser.findOneAndUpdate(
+            { username: userId },
+            { status: 'viewing', lastActive: new Date() }
+        );
+
+        const io = (req as any).app.get('io');
+        if (io) {
+            io.to(`user_${userId}`).emit('live_cohost_exited', { userId, streamId });
+            io.to(streamId).emit('live_user_left', { userId, username: userId });
+        }
+
+        res.status(200).json({ success: true });
+    } catch (error: any) {
+        console.error('[LiveInvite] Erro ao sair de co-host:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ─── Battle Exit ──────────────────────────────────────────────────────
+router.post('/battle/exit', async (req, res) => {
+    try {
+        const { userId, streamId, battleId } = req.body;
+        if (!userId || !streamId) {
+            return res.status(400).json({ success: false, error: 'userId e streamId são obrigatórios' });
+        }
+
+        await LiveInvite.updateMany(
+            {
+                $or: [{ inviterUsername: userId }, { inviteeUsername: userId }],
+                status: 'pending',
+                inviteType: 'pk-battle'
+            },
+            { status: 'declined', updatedAt: new Date() }
+        );
+
+        await LiveUser.findOneAndUpdate(
+            { username: userId },
+            { status: 'viewing', lastActive: new Date() }
+        );
+
+        if (battleId) {
+            try {
+                const battle = await Battle.findById(battleId);
+                if (battle && battle.status === 'active') {
+                    battle.status = 'finished';
+                    battle.endedAt = new Date();
+                    await battle.save();
+
+                    const io = (req as any).app.get('io');
+                    if (io) {
+                        [battle.streamerA?.toString(), battle.streamerB?.toString()].forEach(async (uid) => {
+                            const u = await User.findById(uid);
+                            if (u) {
+                                io.to(`user_${u.id}`).emit('pk_battle_end', {
+                                    battleId,
+                                    winner: null,
+                                    scoreA: battle.scoreA,
+                                    scoreB: battle.scoreB,
+                                    endedAt: battle.endedAt,
+                                    reason: 'exit'
+                                });
+                            }
+                        });
+                    }
+                }
+            } catch (pkErr) {
+                console.error('[LiveInvite] Erro ao encerrar batalha no exit:', pkErr);
+            }
+        }
+
+        const io = (req as any).app.get('io');
+        if (io) {
+            io.to(`user_${userId}`).emit('live_battle_exited', { userId, streamId, battleId });
+            io.to(streamId).emit('live_user_left', { userId, username: userId });
+        }
+
+        res.status(200).json({ success: true });
+    } catch (error: any) {
+        console.error('[LiveInvite] Erro ao sair da batalha:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });

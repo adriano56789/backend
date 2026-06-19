@@ -1249,6 +1249,13 @@ router.post('/streams/:id/kick', kickProtection, async (req, res) => {
                 streamId,
                 timestamp: new Date().toISOString()
             });
+            // Notificar o usuário expulso individualmente (padrão Tencent LiveListListener)
+            io.to(`user_${userId}`).emit('kicked_out', {
+                streamId,
+                kickerId,
+                reason: 'Você foi removido da transmissão pelo apresentador.',
+                timestamp: new Date().toISOString()
+            });
         }
 
         res.json({ 

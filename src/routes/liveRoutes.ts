@@ -2804,10 +2804,10 @@ router.post('/streams/:id/join', async (req, res) => {
         try {
             const { LiveUser } = await import('../models/LiveInvite');
             await LiveUser.findOneAndUpdate(
-                { username: viewer.name || viewer.id },
+                { userId },
                 {
-                    userId: viewer.id,
-                    username: viewer.name || viewer.id,
+                    userId,
+                    username: userId,
                     name: viewer.name || viewer.id,
                     avatarUrl: viewer.avatarUrl || '',
                     status: 'viewing',
@@ -2816,8 +2816,8 @@ router.post('/streams/:id/join', async (req, res) => {
                 },
                 { upsert: true, new: true }
             );
-        } catch (liveUserErr) {
-            // Não crítico - LiveUser é apenas para exibição complementar
+        } catch (liveUserErr: any) {
+            console.error(`[STREAM-JOIN] Erro ao registrar LiveUser para ${userId} na live ${id}:`, liveUserErr?.message || liveUserErr);
         }
 
         console.log(`[STREAM-JOIN] Usuário ${userId} entrou na live ${id}, livesJoined incrementado`);
@@ -3331,13 +3331,12 @@ router.get('/streams', async (req, res) => {
             category = 'popular',
             country = 'all',
             limit = 50,
-            offset = 0,
+            cursor = '',
             isLive = 'true',
             userId
         } = req.query;
 
         const parseLimit = Math.min(parseInt(limit as string) || 50, 100);
-        const parseOffset = parseInt(offset as string) || 0;
 
         // Construir filtro base
         const baseFilter: any = {};
@@ -3360,7 +3359,7 @@ router.get('/streams', async (req, res) => {
                 return res.json({
                     code: 0,
                     msg: 'OK',
-                    data: { streams: [], total: 0 }
+                    data: { streams: [], nextCursor: null, hasMore: false }
                 });
             }
 
@@ -3369,59 +3368,59 @@ router.get('/streams', async (req, res) => {
             baseFilter.category = (category as string).toLowerCase();
         }
 
-        // Se country for específico, tenta com filtro primeiro
+        // Paginação cursor-based: se cursor for fornecido, busca a partir daquele _id
+        if (cursor) {
+            baseFilter._id = { $lt: new ObjectId(cursor as string) };
+        }
+
         const hasCountryFilter = country && country !== 'all' && country !== 'ICON_GLOBE';
         let cardDocs;
 
         if (hasCountryFilter) {
             const countryFilter = { ...baseFilter, country: (country as string).toLowerCase() };
             cardDocs = await LiveCard.find(countryFilter)
-                .sort({ viewers: -1, startTime: -1 })
-                .limit(parseLimit)
-                .skip(parseOffset)
+                .sort({ viewers: -1, startTime: -1, _id: -1 })
+                .limit(parseLimit + 1)
                 .lean();
 
-            // Se não achou nada com o país, busca sem filtro de país
             if (cardDocs.length === 0) {
                 cardDocs = await LiveCard.find(baseFilter)
-                    .sort({ viewers: -1, startTime: -1 })
-                    .limit(parseLimit)
-                    .skip(parseOffset)
+                    .sort({ viewers: -1, startTime: -1, _id: -1 })
+                    .limit(parseLimit + 1)
                     .lean();
             }
         } else {
             cardDocs = await LiveCard.find(baseFilter)
-                .sort({ viewers: -1, startTime: -1 })
-                .limit(parseLimit)
-                .skip(parseOffset)
+                .sort({ viewers: -1, startTime: -1, _id: -1 })
+                .limit(parseLimit + 1)
                 .lean();
         }
 
-        // Se ainda assim não achou nada, busca removendo apenas o filtro de país
-        // (mantém category, isLive e streamStatus)
         if (cardDocs.length === 0 && isLive === 'true') {
             const fallbackFilter: any = { ...baseFilter };
             delete fallbackFilter.country;
             cardDocs = await LiveCard.find(fallbackFilter)
-                .sort({ viewers: -1, startTime: -1 })
-                .limit(parseLimit)
-                .skip(parseOffset)
+                .sort({ viewers: -1, startTime: -1, _id: -1 })
+                .limit(parseLimit + 1)
                 .lean();
         }
 
-        // ULTIMO FALLBACK: se ainda vazio, busca QUALQUER live ativa (ignora tudo)
         if (cardDocs.length === 0 && isLive === 'true') {
             cardDocs = await LiveCard.find({
                 isLive: true,
                 streamStatus: { $in: ['active', 'live'] }
             })
-                .sort({ viewers: -1, startTime: -1 })
-                .limit(parseLimit)
-                .skip(parseOffset)
+                .sort({ viewers: -1, startTime: -1, _id: -1 })
+                .limit(parseLimit + 1)
                 .lean();
         }
 
-        const streams = cardDocs.map(card => ({
+        // Verificar se há mais resultados (peek extra)
+        const hasMore = cardDocs.length > parseLimit;
+        const items = hasMore ? cardDocs.slice(0, parseLimit) : cardDocs;
+        const nextCursor = hasMore && items.length > 0 ? items[items.length - 1]._id : null;
+
+        const streams = items.map(card => ({
             id: card.streamKey || card.hostId,
             hostId: card.hostId,
             name: card.name,
@@ -3435,6 +3434,9 @@ router.get('/streams', async (req, res) => {
             hlsUrl: card.hlsUrl,
             viewers: card.viewers || 0,
             category: card.category || 'popular',
+            categoryList: card.categoryList || [],
+            notice: card.notice || '',
+            metaData: card.metaData || {},
             isPrivate: card.isPrivate || false,
             startTime: card.startTime
         }));
@@ -3463,7 +3465,8 @@ router.get('/streams', async (req, res) => {
             msg: 'OK',
             data: {
                 streams: enrichedStreams,
-                total: enrichedStreams.length
+                nextCursor: nextCursor ? nextCursor.toString() : null,
+                hasMore
             }
         });
     } catch (error: any) {
@@ -5664,12 +5667,9 @@ router.post('/streams/:streamId/leave', async (req, res) => {
         // Limpar LiveUser ao sair
         try {
             const { LiveUser } = await import('../models/LiveInvite');
-            await LiveUser.findOneAndUpdate(
-                { username: user.name || userId },
-                { $set: { status: 'idle', currentStreamId: null, lastActive: new Date() } }
-            );
-        } catch (liveUserErr) {
-            // Não crítico
+            await LiveUser.deleteOne({ userId });
+        } catch (liveUserErr: any) {
+            console.error(`[STREAM-LEAVE] Erro ao limpar LiveUser para ${userId}:`, liveUserErr?.message || liveUserErr);
         }
 
 
@@ -6800,10 +6800,10 @@ router.post('/stark/live/start', async (req, res) => {
         try {
             const { LiveUser } = await import('../models/LiveInvite');
             await LiveUser.findOneAndUpdate(
-                { username: user.name || userId },
+                { userId },
                 {
                     userId,
-                    username: user.name || userId,
+                    username: userId,
                     name: user.name || userId,
                     avatarUrl: user.avatarUrl || '',
                     status: 'broadcasting',
@@ -6812,8 +6812,8 @@ router.post('/stark/live/start', async (req, res) => {
                 },
                 { upsert: true, new: true }
             );
-        } catch (liveUserErr) {
-            // Não crítico
+        } catch (liveUserErr: any) {
+            console.error(`[STARK-START] Erro ao registrar LiveUser para ${userId}:`, liveUserErr?.message || liveUserErr);
         }
 
         res.json({
