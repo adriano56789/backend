@@ -39,12 +39,18 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const models_1 = require("../models");
 const socket_1 = require("../socket");
+const auth_1 = require("../middleware/auth");
+const rateLimit_1 = require("../middleware/rateLimit");
 const env_1 = require("../config/env");
 const router = express_1.default.Router();
 // Endpoint para realizar saque via Pix (cash-out) do Mercado Pago
-router.post('/pix', async (req, res) => {
+router.post('/pix', auth_1.protect, rateLimit_1.paymentRateLimit, async (req, res) => {
     try {
         const { userId, amount, pixKey, pixKeyType } = req.body;
+        // Verificar se o userId do token corresponde
+        if (req.user?.id !== userId) {
+            return res.status(403).json({ error: 'Acesso negado: userId não corresponde ao token' });
+        }
         console.log(`[WITHDRAWAL PIX] Iniciando saque: User=${userId}, Amount=${amount}, PixKey=${pixKey}`);
         // Validações básicas
         if (!userId || !amount || !pixKey || !pixKeyType) {
@@ -150,6 +156,15 @@ router.post('/pix', async (req, res) => {
                 }
             }
         }, { new: true });
+        // AUDIT: saque realizado
+        await models_1.PurchaseAuditTrail.create({
+            eventType: 'diamonds_delivered',
+            orderId: `pix_withdraw_${userId}_${Date.now()}`,
+            userId,
+            ip: req.ip || '',
+            userAgent: (req.headers['user-agent'] || '').slice(0, 300),
+            metadata: { amount, pixKey, pixKeyType, action: 'pix_withdrawal' }
+        }).catch(() => { });
         // Registrar no histórico - transferência para o streamer
         const PurchaseRecord = (await Promise.resolve().then(() => __importStar(require('../models')))).PurchaseRecord;
         await PurchaseRecord.create({
@@ -160,7 +175,6 @@ router.post('/pix', async (req, res) => {
             amountBRL: -streamerAmount,
             amountCoins: 0,
             status: 'Processando',
-            timestamp: new Date(),
             metadata: {
                 transferId: streamerTransfer.id,
                 pixKey: pixKey,
@@ -178,7 +192,6 @@ router.post('/pix', async (req, res) => {
             amountBRL: appCommission,
             amountCoins: 0,
             status: 'Processando',
-            timestamp: new Date(),
             metadata: {
                 transferId: appTransfer.id,
                 streamerId: userId,

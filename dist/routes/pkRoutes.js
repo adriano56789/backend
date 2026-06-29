@@ -15,10 +15,13 @@ router.get('/', async (req, res) => {
         const userId = req.headers['user-id'] || req.query.userId;
         const filter = { status: { $ne: 'finished' } };
         if (userId) {
-            filter.$or = [
-                { streamerA: userId },
-                { streamerB: userId }
-            ];
+            const user = await models_1.User.findOne({ id: userId }).select('_id').lean();
+            if (user) {
+                filter.$or = [
+                    { streamerA: user._id },
+                    { streamerB: user._id }
+                ];
+            }
         }
         const battles = await models_1.Battle.find(filter)
             .populate('streamerA', 'id name displayName avatarUrl')
@@ -53,8 +56,12 @@ router.get('/:battleId', async (req, res) => {
 router.get('/active/:userId', async (req, res) => {
     try {
         const { userId } = req.params;
+        const user = await models_1.User.findOne({ id: userId }).select('_id').lean();
+        if (!user) {
+            return res.status(404).json({ error: 'Usuário não encontrado' });
+        }
         const battles = await models_1.Battle.find({
-            $or: [{ streamerA: userId }, { streamerB: userId }],
+            $or: [{ streamerA: user._id }, { streamerB: user._id }],
             status: 'active'
         })
             .populate('streamerA', 'id name displayName avatarUrl')

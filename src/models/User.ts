@@ -177,7 +177,7 @@ const UserSchema: Schema = new Schema({
   messagesSent: { type: Number, default: 0 },
   searchesPerformed: { type: Number, default: 0 },
   recentActivities: [{ action: String, resource: String, timestamp: Date, endpoint: String }]
-}, { timestamps: true });
+}, { timestamps: true, id: false });
 
 // Create text index for search
 UserSchema.index({ name: 'text', displayName: 'text', bio: 'text', profession: 'text' });

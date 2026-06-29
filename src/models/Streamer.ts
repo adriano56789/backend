@@ -1,4 +1,4 @@
-﻿import mongoose, { Schema, Document } from 'mongoose';
+import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IStreamer extends Document {
   id: string;
@@ -148,7 +148,7 @@ const StreamerSchema: Schema = new Schema({
   vhost: { type: String },
   app: { type: String },
   stream: { type: String }
-}, { timestamps: true });
+}, { timestamps: true, id: false });
 
 // Create indexes
 StreamerSchema.index({ isLive: 1, category: 1 });

@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -33,28 +66,35 @@ router.post('/register', async (req, res) => {
         if (userExists) {
             return res.status(400).json({ error: 'Usuário já existe' });
         }
+        // Verificar se o email é válido e existe (não bloqueante - apenas log)
+        try {
+            const { validateEmail } = await Promise.resolve().then(() => __importStar(require('../utils/emailValidator')));
+            const emailCheck = await validateEmail(email);
+            if (!emailCheck.valid) {
+                console.warn('[REGISTER] Email validation warning:', emailCheck.reason);
+            }
+        }
+        catch (err) {
+            console.warn('[REGISTER] Erro ao verificar email (continuando):', err);
+        }
         const salt = await bcryptjs_1.default.genSalt(10);
         const hashedPassword = await bcryptjs_1.default.hash(password, salt);
-        // Gerar ID baseado no nome do usuário
-        const sanitizeId = (raw) => {
-            return raw.toLowerCase()
-                .trim()
-                .replace(/[^a-z0-9]/g, '')
-                .replace(/\s+/g, '')
-                .substring(0, 30) || 'user';
+        // Gerar ID numérico único de 7 dígitos (ex: 4567845)
+        const generateUniqueNumericId = async () => {
+            let uniqueId = '';
+            let exists = true;
+            while (exists) {
+                const num = Math.floor(1000000 + Math.random() * 9000000);
+                uniqueId = num.toString();
+                const user = await models_1.User.findOne({ id: uniqueId });
+                if (!user) {
+                    exists = false;
+                }
+            }
+            return uniqueId;
         };
-        const baseId = sanitizeId(name);
-        const existingUser = await models_1.User.findOne({ id: baseId });
-        if (existingUser) {
-            return res.status(200).json({
-                success: true,
-                message: 'Usuário já existe. Faça login.',
-                user: (0, userResponse_1.standardizeUserResponse)(existingUser),
-                token: jsonwebtoken_1.default.sign({ id: existingUser.id, email: existingUser.email }, JWT_SECRET, { expiresIn: '7d' })
-            });
-        }
-        let newUserId = baseId;
-        console.log(`[REGISTER] ID gerado: ${newUserId}`);
+        const newUserId = await generateUniqueNumericId();
+        console.log(`[REGISTER] ID numérico gerado: ${newUserId}`);
         // Função para normalizar tags
         const normalizeTags = (tags) => {
             if (!tags)

@@ -41,6 +41,8 @@ const models_1 = require("../models");
 const diamondConversion_1 = require("../utils/diamondConversion");
 const fraudDetection_1 = __importDefault(require("../middleware/fraudDetection"));
 const mercadoPagoService_1 = __importDefault(require("../services/mercadoPagoService"));
+const auth_1 = require("../middleware/auth");
+const rateLimit_1 = require("../middleware/rateLimit");
 const env_1 = require("../config/env");
 const router = express_1.default.Router();
 router.get('/purchases/history/:id', async (req, res) => {
@@ -327,10 +329,23 @@ router.post('/gifts/sync-all', async (req, res) => {
     }
 });
 // API para realizar saque real via Mercado Pago
-router.post('/withdraw/:userId', fraudDetection_1.default.detectFraud, async (req, res) => {
+router.post('/withdraw/:userId', auth_1.protect, fraudDetection_1.default.detectFraud, rateLimit_1.paymentRateLimit, async (req, res) => {
     try {
         const { amount } = req.body;
         const userId = req.params.userId;
+        // Verificar se o userId do token corresponde ao userId da URL
+        if (req.user?.id !== userId) {
+            return res.status(403).json({ error: 'Acesso negado: userId não corresponde ao token' });
+        }
+        // AUDIT: tentativa de saque
+        await models_1.PurchaseAuditTrail.create({
+            eventType: 'fraud_attempt',
+            orderId: `withdraw_${userId}_${Date.now()}`,
+            userId,
+            ip: req.ip || '',
+            userAgent: (req.headers['user-agent'] || '').slice(0, 300),
+            metadata: { amount, action: 'withdrawal_attempt' }
+        }).catch(() => { });
         if (!amount || amount <= 0) {
             return res.status(400).json({ error: 'Valor de saque inválido' });
         }
@@ -509,10 +524,14 @@ router.get('/user/data/:id', async (req, res) => {
     }
 });
 // Configurar método de saque do usuário
-router.post('/earnings/method/set/:id', async (req, res) => {
+router.post('/earnings/method/set/:id', auth_1.protect, rateLimit_1.paymentRateLimit, async (req, res) => {
     try {
         const { method, details } = req.body;
         const userId = req.params.id;
+        // Verificar se o userId do token corresponde
+        if (req.user?.id !== userId) {
+            return res.status(403).json({ error: 'Acesso negado' });
+        }
         console.log(`⚙️ [METHOD] Configurando método de saque: User=${userId}, Method=${method}`);
         // Buscar usuário com projeção apenas para dados financeiros
         const user = await models_1.User.findOne({ id: userId }).select('id diamonds earnings withdrawal_method name email');

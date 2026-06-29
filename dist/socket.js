@@ -42,13 +42,26 @@ const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const BinaryProtocol_1 = require("./services/BinaryProtocol");
 const ProtobufService_1 = require("./services/protobuf/ProtobufService");
 const MqttBridge_1 = require("./services/MqttBridge");
+const env_1 = require("./config/env");
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_key_change_me_in_prod';
 let io;
 const initSocket = (server) => {
+    const allowedOrigins = env_1.ENV.CORS_ORIGIN.split(',').map(o => o.trim());
     io = new socket_io_1.Server(server, {
         cors: {
-            origin: '*',
-            methods: ['GET', 'POST']
+            origin: (origin, callback) => {
+                if (!origin)
+                    return callback(null, true);
+                const isLocal = origin.includes('localhost') || origin.includes('127.0.0.1');
+                if (isLocal || allowedOrigins.includes(origin)) {
+                    callback(null, true);
+                }
+                else {
+                    callback(null, false);
+                }
+            },
+            methods: ['GET', 'POST'],
+            credentials: true
         },
         // Configurações para tratamento de dados binários
         allowEIO3: true,

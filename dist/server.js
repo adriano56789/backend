@@ -103,6 +103,7 @@ const activityRoutes_1 = __importDefault(require("./routes/activityRoutes")); //
 const videoStreamRoutes_1 = __importDefault(require("./routes/videoStreamRoutes")); // NOVO - API de Streaming de Vídeo
 const srsRoutes_1 = __importDefault(require("./routes/srsRoutes")); // Callbacks SRS
 const appVersionRoutes_1 = __importDefault(require("./routes/appVersionRoutes")); // NOVO - Sistema de controle de versão
+const debugRoutes_1 = __importDefault(require("./routes/debugRoutes"));
 const crudRoutes_1 = __importDefault(require("./routes/crudRoutes"));
 const liveInviteRoutes_1 = __importDefault(require("./routes/liveInviteRoutes"));
 const UserStatusManager_1 = __importDefault(require("./middleware/UserStatusManager"));
@@ -234,14 +235,42 @@ else {
     await ProtobufService_1.BackendProtobufService.init();
     (0, ActivityHooks_1.initializeActivityHooks)();
     ActivityEventService_1.activityEventService.initialize(io);
-    // Cleanup: remover participantes órfãos (conexões perdidas no restart)
+    // Migração única: copiar Streamers ativos para LiveCard
     try {
-        const deletedCount = await index_1.StreamParticipant.deleteMany({});
-        await index_1.Streamer.updateMany({ isLive: true }, { $set: { onlineFans: 0, onlineVisitors: 0 } });
-        console.log(`🧹 [CLEANUP] ${deletedCount.deletedCount} participantes órfãos removidos, contadores resetados`);
+        const { LiveCard } = await Promise.resolve().then(() => __importStar(require('./models/index')));
+        const activeStreamers = await index_1.Streamer.find({
+            isLive: true,
+            streamStatus: { $ne: 'ended' }
+        }).lean();
+        let migrated = 0;
+        for (const s of activeStreamers) {
+            const exists = await LiveCard.findOne({ hostId: s.hostId });
+            if (!exists) {
+                await LiveCard.create({
+                    hostId: s.hostId,
+                    name: s.name || '',
+                    avatar: s.avatar || '',
+                    title: s.title || s.name || '',
+                    streamKey: s.streamKey || s.id || s.hostId,
+                    playbackUrl: s.playbackUrl || '',
+                    hlsUrl: s.hlsUrl || '',
+                    country: (s.country || 'BR').toLowerCase(),
+                    isLive: true,
+                    streamStatus: s.streamStatus || 'active',
+                    category: s.category || 'popular',
+                    isPrivate: s.isPrivate || false,
+                    viewers: s.viewers || 0,
+                    startTime: s.startTime || new Date(),
+                    updatedAt: new Date()
+                });
+                migrated++;
+            }
+        }
+        if (migrated > 0)
+            console.log(`[MIGRATION] ${migrated} LiveCards criados a partir de Streamers ativos`);
     }
-    catch (e) {
-        console.warn('⚠️ [CLEANUP] Erro ao limpar participantes:', e);
+    catch (err) {
+        console.warn('[MIGRATION] Erro ao migrar Streamers para LiveCards:', err);
     }
     server.listen(port, '127.0.0.1', () => {
         console.log(`🌍 API Server started on http://127.0.0.1:${port}`);
@@ -281,13 +310,9 @@ app.use((0, cors_1.default)({
 // Middleware para headers adicionais (Fallback e Preflight manual)
 app.use((req, res, next) => {
     const origin = req.headers.origin;
-    // Liberação total de CORS para facilitar o desenvolvimento
     if (origin) {
         res.header('Access-Control-Allow-Origin', origin);
         res.header('Access-Control-Allow-Credentials', 'true');
-    }
-    else {
-        res.header('Access-Control-Allow-Origin', '*');
     }
     if (req.method === 'OPTIONS') {
         res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
@@ -297,6 +322,9 @@ app.use((req, res, next) => {
     }
     next();
 });
+// Monitor de respostas vazias — intercepta res.json e res.send
+const emptyResponseTracker_1 = require("./middleware/emptyResponseTracker");
+app.use('/api', emptyResponseTracker_1.emptyResponseTracker);
 app.use(express_1.default.json({ limit: '50mb' }));
 app.use(express_1.default.urlencoded({ extended: true, limit: '50mb' }));
 app.use((0, cookie_parser_1.default)());
@@ -435,6 +463,7 @@ app.use('/api', activityRoutes_1.default); // NOVO - Sistema de Atividades
 app.use('/api/video', videoStreamRoutes_1.default); // NOVO - API de Streaming de Vídeo
 app.use('/api', videoStreamRoutes_1.default); // RTC routes (/api/rtc/v1/publish, /api/rtc/v1/stop)
 app.use('/api/stats', statsRoutes_1.default); // NOVO - Estatísticas em tempo real
+app.use('/api', debugRoutes_1.default); // Debug/monitoramento
 // Rota para analytics - receber eventos via sendBeacon
 app.post('/api/analytics', (req, res) => {
     try {
@@ -1061,7 +1090,9 @@ io.on('connection', (socket) => {
         socket.to(data.roomId).emit('receive_message', data.message);
     });
     socket.on('send_gift', (data) => {
-        io.to(data.roomId).emit('gift_received', data.gift);
+        if (data.streamId) {
+            io.to(data.streamId).emit('gift_received', data);
+        }
     });
     // Eventos para atualizações em tempo real
     socket.on('update_user_stats', async (data) => {
@@ -1501,6 +1532,29 @@ wsIo.on('connection', (socket) => {
             };
             // Broadcast para todos na sala do stream
             wsIo.to(data.streamId).emit('new_gift', giftData);
+            wsIo.to(data.streamId).emit('live_gift_received', {
+                from: {
+                    id: data.fromUserId,
+                    name: data.fromUserName,
+                    avatarUrl: data.fromUserAvatar,
+                    level: data.fromUserLevel || 1
+                },
+                toUser: {
+                    id: data.toUserId,
+                    name: data.toUserName
+                },
+                gift: {
+                    name: data.giftName,
+                    price: data.giftPrice,
+                    icon: data.giftIcon || '🎁',
+                    category: data.giftCategory || 'Popular'
+                },
+                quantity: data.quantity,
+                totalValue: data.giftPrice * data.quantity,
+                roomId: data.streamId,
+                streamId: data.streamId,
+                timestamp: new Date().toISOString()
+            });
             console.log(`🎁 [GIFT] Real gift processed: ${data.giftName} x${data.quantity} (${data.totalValue} diamonds)`);
         }
         catch (error) {

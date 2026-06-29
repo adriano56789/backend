@@ -135,8 +135,8 @@ router.post('/feed/photos', async (req, res) => {
         if (!user) {
             return res.status(404).json({ error: 'Usuário não encontrado' });
         }
-        // Criar registro da foto no feed + persistir atividade
-        const photo = await models_1.Photo.create({
+        // Criar registro da foto no feed (UserPhoto) + persistir atividade
+        const photo = await models_1.UserPhoto.create({
             id: `feed_photo_${userId}_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
             userId,
             photoUrl,
@@ -145,8 +145,7 @@ router.post('/feed/photos', async (req, res) => {
             isPublic,
             likes: 0,
             comments: 0,
-            createdAt: new Date(),
-            updatedAt: new Date()
+            postedAt: new Date()
         });
         // Persistir atividade de upload no feed
         await models_1.User.findOneAndUpdate({ id: userId }, {

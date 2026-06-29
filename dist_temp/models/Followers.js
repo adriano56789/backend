@@ -1,17 +1,8 @@
-import mongoose, { Schema, Document } from 'mongoose';
-
-export interface IFollowers extends Document {
-    id: string;
-    followerId: string;
-    followingId: string;
-    followedAt: Date;
-    isActive: boolean;
-    unfollowedAt?: Date;
-    createdAt: Date;
-    updatedAt: Date;
-}
-
-const FollowersSchema: Schema = new Schema({
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.Followers = void 0;
+var mongoose_1 = require("mongoose");
+var FollowersSchema = new mongoose_1.Schema({
     id: { type: String, required: true, unique: true },
     followerId: { type: String, required: true, index: true },
     followingId: { type: String, required: true, index: true },
@@ -19,8 +10,6 @@ const FollowersSchema: Schema = new Schema({
     isActive: { type: Boolean, default: true },
     unfollowedAt: { type: Date }
 }, { timestamps: true });
-
 // Create composite index
 FollowersSchema.index({ followerId: 1, followingId: 1 }, { unique: true });
-
-export const Followers = mongoose.model<IFollowers>('Followers', FollowersSchema, 'follows');
+exports.Followers = mongoose_1.default.model('Followers', FollowersSchema, 'follows');

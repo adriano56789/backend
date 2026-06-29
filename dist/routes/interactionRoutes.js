@@ -60,13 +60,6 @@ router.get('/presents/live/:id', async (req, res) => {
             .sort({ createdAt: -1 })
             .limit(parseInt(limit))
             .lean();
-        if (gifts.length === 0) {
-            return res.json({
-                success: true,
-                gifts: [],
-                message: 'Ninguém enviou presentes nesta live ainda'
-            });
-        }
         // Agrupar por usuário para mostrar total de presentes por pessoa
         const usersGifts = gifts.reduce((acc, gift) => {
             const userId = gift.fromUserId;
@@ -93,6 +86,29 @@ router.get('/presents/live/:id', async (req, res) => {
             acc[userId].totalDiamonds += gift.giftPrice * gift.quantity;
             return acc;
         }, {});
+        // Também incluir usuários online (LiveUser) que não enviaram presentes
+        try {
+            const { LiveUser } = await Promise.resolve().then(() => __importStar(require('../models/LiveInvite')));
+            const onlineUsers = await LiveUser.find({
+                currentStreamId: streamId,
+                status: { $in: ['viewing', 'co-host', 'pk-battle', 'broadcasting'] }
+            }).lean();
+            for (const lu of onlineUsers) {
+                if (lu.userId && !usersGifts[lu.userId]) {
+                    usersGifts[lu.userId] = {
+                        userId: lu.userId,
+                        userName: lu.name,
+                        userAvatar: lu.avatarUrl || '',
+                        gifts: [],
+                        totalValue: 0,
+                        totalDiamonds: 0
+                    };
+                }
+            }
+        }
+        catch (err) {
+            // Não crítico
+        }
         const result = Object.values(usersGifts);
         console.log(`📋 [PRESENTS LIVE] ${gifts.length} presentes encontrados para stream ${streamId} do host ${stream.hostId} de ${result.length} usuários diferentes`);
         res.json({
@@ -160,6 +176,7 @@ router.post('/streams/:id/private-invite', async (req, res) => {
                 streamName: stream.name,
                 hostId: stream.hostId,
                 hostName: stream.name,
+                hostAvatar: stream.avatar || '',
                 message: `Você foi convidado para a sala privada de ${stream.name}!`,
                 timestamp: new Date().toISOString()
             });
@@ -576,25 +593,14 @@ router.get('/feed/photos', async (req, res) => {
         console.log('📸 [CONTENT FEED] Buscando conteúdo para o feed...', userId ? `para usuário: ${userId}` : 'todos os usuários');
         // Se userId for fornecido, filtrar apenas conteúdo desse usuário
         const userFilter = userId ? { userId } : {};
-        // Buscar conteúdo de múltiplos modelos
-        const [photoFeed, userPhotoFeed, profilePhotoFeed, videoFeed] = await Promise.all([
-            models_1.Photo.find(userId ? userFilter : {}).sort({ createdAt: -1 }).limit(15).lean(),
+        // Buscar conteúdo de múltiplos modelos — apenas upload real de usuários
+        const [userPhotoFeed, videoFeed] = await Promise.all([
             models_1.UserPhoto.find({ ...userFilter, isPublic: true }).sort({ postedAt: -1 }).limit(15).lean(),
-            models_1.ProfilePhoto.find({ ...userFilter, isActive: true, photoType: { $ne: 'avatar' } }).sort({ createdAt: -1 }).limit(10).lean(),
             models_1.UserVideo.find({ ...userFilter, isPublic: true }).sort({ postedAt: -1 }).limit(15).lean()
         ]);
-        console.log(`📸 [CONTENT FEED] Encontrados: ${photoFeed.length} Photo, ${userPhotoFeed.length} UserPhoto, ${profilePhotoFeed.length} ProfilePhoto, ${videoFeed.length} UserVideo`);
+        console.log(`📸 [CONTENT FEED] Encontrados: ${userPhotoFeed.length} UserPhoto, ${videoFeed.length} UserVideo`);
         // Combinar todos os feeds
         const allContent = [
-            // Fotos
-            ...photoFeed.map((p) => ({
-                ...p,
-                source: 'Photo',
-                postedAt: p.createdAt,
-                contentType: 'photo',
-                mediaUrl: p.url,
-                thumbnailUrl: p.url
-            })),
             ...userPhotoFeed.map((p) => ({
                 ...p,
                 source: 'UserPhoto',
@@ -602,15 +608,6 @@ router.get('/feed/photos', async (req, res) => {
                 mediaUrl: p.photoUrl,
                 thumbnailUrl: p.photoUrl
             })),
-            ...profilePhotoFeed.map((p) => ({
-                ...p,
-                source: 'ProfilePhoto',
-                postedAt: p.createdAt,
-                contentType: 'photo',
-                mediaUrl: p.photoUrl,
-                thumbnailUrl: p.photoUrl
-            })),
-            // Vídeos
             ...videoFeed.map((v) => ({
                 ...v,
                 source: 'UserVideo',
@@ -1106,6 +1103,13 @@ router.post('/streams/:id/kick', appOwnerProtection_1.kickProtection, async (req
                 userId,
                 kickerId,
                 streamId,
+                timestamp: new Date().toISOString()
+            });
+            // Notificar o usuário expulso individualmente (padrão Tencent LiveListListener)
+            io.to(`user_${userId}`).emit('kicked_out', {
+                streamId,
+                kickerId,
+                reason: 'Você foi removido da transmissão pelo apresentador.',
                 timestamp: new Date().toISOString()
             });
         }

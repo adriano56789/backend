@@ -85,7 +85,7 @@ exports.UserRoutes.get('/', async (req, res) => {
 });
 exports.UserRoutes.get('/:id', async (req, res) => {
     try {
-        // PROTEÇÃO REMOVIDA - API liberada para testes
+        console.log(`[USER-PROFILE] Buscando perfil: ${req.params.id}`);
         // Verificar se o ID é um ObjectId válido (24 chars hex) ou ID customizado
         const paramId = req.params.id;
         let query;
@@ -94,8 +94,15 @@ exports.UserRoutes.get('/:id', async (req, res) => {
             query = { _id: paramId };
         }
         else {
-            // Buscar pelo nome de usuário (que agora é o campo id)
-            query = { id: paramId };
+            // Primeiro tenta match exato (usa índice)
+            let user = await models_1.User.findOne({ id: paramId }).lean();
+            if (user) {
+                const userObj = typeof user.toObject === 'function' ? user.toObject() : user;
+                req.params.id = user.id;
+                return res.json((0, userResponse_1.standardizeUserResponse)(userObj));
+            }
+            // Fallback: case-insensitive
+            query = { id: { $regex: new RegExp('^' + paramId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i') } };
         }
         const user = await models_1.User.findOne(query).lean();
         if (user) {
@@ -135,6 +142,13 @@ exports.UserRoutes.get('/:id', async (req, res) => {
                 catch { /* distance stays as-is */ }
             }
             const userObj = typeof user.toObject === 'function' ? user.toObject() : user;
+            // Buscar contagens REAIS diretamente do banco (não usar campos cacheados)
+            const [realFans, realFollowing] = await Promise.all([
+                models_1.Followers.countDocuments({ followingId: user.id, isActive: true }),
+                models_1.Followers.countDocuments({ followerId: user.id, isActive: true })
+            ]);
+            userObj.fans = realFans > 0 ? realFans : (userObj.followersList?.length || 0);
+            userObj.following = realFollowing > 0 ? realFollowing : (userObj.followingList?.length || 0);
             return res.json((0, userResponse_1.standardizeUserResponse)(userObj));
         }
         res.status(404).json({ error: 'User not found' });
@@ -151,7 +165,14 @@ exports.UserRoutes.delete('/:id', async (req, res) => {
 });
 exports.UserRoutes.patch("/:id", async (req, res) => {
     try {
-        const user = await models_1.User.findOneAndUpdate({ id: req.params.id }, req.body, { new: true });
+        const paramId = req.params.id;
+        let user;
+        // Primeiro tenta match exato
+        user = await models_1.User.findOneAndUpdate({ id: paramId }, req.body, { new: true });
+        if (!user) {
+            // Fallback case-insensitive
+            user = await models_1.User.findOneAndUpdate({ id: { $regex: new RegExp('^' + paramId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i') } }, req.body, { new: true });
+        }
         if (!user) {
             return res.status(404).json({ error: "Usuário não encontrado" });
         }
@@ -234,7 +255,12 @@ exports.UserRoutes.post('/:id/toggle-follow', async (req, res) => {
             res.json({
                 success: true,
                 isFollowing: false,
-                message: 'Deixou de seguir com sucesso'
+                message: 'Deixou de seguir com sucesso',
+                updatedFollowed: {
+                    id: followingId,
+                    isFollowed: false,
+                    isFriend: false
+                }
             });
         }
         else {
@@ -344,7 +370,12 @@ exports.UserRoutes.post('/:id/toggle-follow', async (req, res) => {
                 success: true,
                 isFollowing: true,
                 isFriendship,
-                message: isFriendship ? 'Followed and became friends!' : 'Followed successfully'
+                message: isFriendship ? 'Followed and became friends!' : 'Followed successfully',
+                updatedFollowed: {
+                    id: followingId,
+                    isFollowed: true,
+                    isFriend: reciprocalFollow ? true : false
+                }
             });
         }
     }
@@ -451,19 +482,73 @@ exports.UserRoutes.get('/:id/fans', async (req, res) => {
             userId = user.id;
             console.log(`🔄 [FANS] MongoDB ID ${req.originalMongoId} convertido para ID real: ${userId}`);
         }
+        else {
+            // Tentar buscar usuário por id exato, depois case-insensitive, depois nome
+            let user = await models_1.User.findOne({ id: userId }).select('id name followersList').lean();
+            if (!user) {
+                user = await models_1.User.findOne({ id: { $regex: new RegExp('^' + userId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i') } }).select('id name followersList').lean();
+            }
+            if (!user) {
+                user = await models_1.User.findOne({ name: { $regex: new RegExp('^' + userId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i') } }).select('id name followersList').lean();
+            }
+            if (user) {
+                userId = user.id;
+            }
+        }
         // Buscar follows ativos onde este usuário é seguido
         const follows = await models_1.Followers.find({
             followingId: userId,
             isActive: true
         });
         // Extrair IDs dos seguidores
-        const followerIds = follows.map((follow) => follow.followerId);
+        let followerIds = follows.map((follow) => follow.followerId);
+        // FALLBACK: se Followers vazia, buscar do User.followersList
+        if (followerIds.length === 0) {
+            try {
+                const userDoc = await models_1.User.findOne({ id: userId }).select('followersList').lean();
+                if (userDoc?.followersList?.length) {
+                    followerIds = userDoc.followersList;
+                }
+            }
+            catch (_) { }
+        }
         // Buscar dados completos dos seguidores COM PROTEÇÃO - Usar lean() para evitar metadados Mongoose
-        const fans = await models_1.User.find({
+        let fans = await models_1.User.find({
             id: { $in: followerIds }
         }).select('id name avatarUrl level fans following isLive isOnline lastSeen identification')
             .lean();
+        // FALLBACK: se não achou por id, tenta por nome
+        if (fans.length === 0 && followerIds.length > 0) {
+            fans = await models_1.User.find({
+                name: { $in: followerIds }
+            }).select('id name avatarUrl level fans following isLive isOnline lastSeen identification')
+                .lean();
+        }
+        // ULTIMO FALLBACK: retorna os IDs como objetos mínimos (nunca vazio se tem dados)
+        if (fans.length === 0 && followerIds.length > 0) {
+            fans = followerIds.map(id => ({
+                id,
+                name: id,
+                avatarUrl: '',
+                level: 1,
+                fans: 0,
+                following: 0,
+                isLive: false,
+                isOnline: false,
+                lastSeen: null
+            }));
+        }
         // 🚨 RETORNAR DADOS PROTEGIDOS - Sem informações sensíveis e sem metadados Mongoose
+        // Verificar se o usuário logado segue cada fã de volta
+        let myFollowIds = [];
+        if (followerIds.length > 0) {
+            const myFollows = await models_1.Followers.find({
+                followerId: userId,
+                followingId: { $in: followerIds },
+                isActive: true
+            }).select('followingId').lean();
+            myFollowIds = myFollows.map(f => f.followingId);
+        }
         const protectedFans = fans.map(fan => ({
             id: fan.id, // ID real da API
             name: fan.name,
@@ -473,7 +558,9 @@ exports.UserRoutes.get('/:id/fans', async (req, res) => {
             following: fan.following,
             isLive: fan.isLive,
             isOnline: fan.isOnline,
-            lastSeen: fan.lastSeen
+            lastSeen: fan.lastSeen,
+            isFollowed: myFollowIds.includes(fan.id),
+            isFriend: myFollowIds.includes(fan.id)
             // 🚨 NÃO RETORNAR: email, phone, location, _id, __v, $__ etc
         }));
         res.json(protectedFans);
@@ -496,19 +583,73 @@ exports.UserRoutes.get('/:id/following', async (req, res) => {
             userId = user.id;
             console.log(`🔄 [FOLLOWING] MongoDB ID ${req.originalMongoId} convertido para ID real: ${userId}`);
         }
+        else {
+            // Tentar buscar usuário por id exato, depois case-insensitive, depois nome
+            let user = await models_1.User.findOne({ id: userId }).select('id name followingList').lean();
+            if (!user) {
+                user = await models_1.User.findOne({ id: { $regex: new RegExp('^' + userId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i') } }).select('id name followingList').lean();
+            }
+            if (!user) {
+                user = await models_1.User.findOne({ name: { $regex: new RegExp('^' + userId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i') } }).select('id name followingList').lean();
+            }
+            if (user) {
+                userId = user.id;
+            }
+        }
         // Buscar follows ativos do usuário
         const follows = await models_1.Followers.find({
             followerId: userId,
             isActive: true
         });
         // Extrair IDs dos usuários seguidos
-        const followingIds = follows.map((follow) => follow.followingId);
+        let followingIds = follows.map((follow) => follow.followingId);
+        // FALLBACK: se Followers vazia, buscar do User.followingList
+        if (followingIds.length === 0) {
+            try {
+                const userDoc = await models_1.User.findOne({ id: userId }).select('followingList').lean();
+                if (userDoc?.followingList?.length) {
+                    followingIds = userDoc.followingList;
+                }
+            }
+            catch (_) { }
+        }
         // Buscar dados completos dos usuários seguidos - Usar lean() para evitar metadados Mongoose
-        const followingUsers = await models_1.User.find({
+        let followingUsers = await models_1.User.find({
             id: { $in: followingIds }
         }).select('id name avatarUrl level fans following isLive isOnline lastSeen identification')
             .lean();
+        // FALLBACK: se não achou por id, tenta por nome
+        if (followingUsers.length === 0 && followingIds.length > 0) {
+            followingUsers = await models_1.User.find({
+                name: { $in: followingIds }
+            }).select('id name avatarUrl level fans following isLive isOnline lastSeen identification')
+                .lean();
+        }
+        // ULTIMO FALLBACK: retorna os IDs como objetos mínimos (nunca vazio se tem dados)
+        if (followingUsers.length === 0 && followingIds.length > 0) {
+            followingUsers = followingIds.map(id => ({
+                id,
+                name: id,
+                avatarUrl: '',
+                level: 1,
+                fans: 0,
+                following: 0,
+                isLive: false,
+                isOnline: false,
+                lastSeen: null
+            }));
+        }
         // 🚨 RETORNAR DADOS PROTEGIDOS - Sem informações sensíveis e sem metadados Mongoose
+        // Verificar follow mútuo: quem entre os seguidos também segue o usuário de volta
+        let mutualIds = [];
+        if (followingIds.length > 0) {
+            const mutualFollows = await models_1.Followers.find({
+                followerId: { $in: followingIds },
+                followingId: userId,
+                isActive: true
+            }).select('followerId').lean();
+            mutualIds = mutualFollows.map(f => f.followerId);
+        }
         const protectedFollowing = followingUsers.map(user => ({
             id: user.id, // ID real da API
             name: user.name,
@@ -518,7 +659,9 @@ exports.UserRoutes.get('/:id/following', async (req, res) => {
             following: user.following,
             isLive: user.isLive,
             isOnline: user.isOnline,
-            lastSeen: user.lastSeen
+            lastSeen: user.lastSeen,
+            isFollowed: true,
+            isFriend: mutualIds.includes(user.id)
             // 🚨 NÃO RETORNAR: email, phone, location, _id, __v, $__ etc
         }));
         res.json(protectedFollowing);
@@ -533,7 +676,6 @@ exports.UserRoutes.get('/:id/friends', async (req, res) => {
         // 🔄 CONVERSOR DE ID: MongoDB ID → ID Real da API
         let userId = req.params.id;
         if (req.needsIdConversion && req.originalMongoId) {
-            // Se o middleware detectou MongoDB ID, converter para ID real
             const user = await (0, idHelper_1.findUserByAnyId)(models_1.User, req.originalMongoId);
             if (!user) {
                 return res.status(404).json({ error: 'Usuário não encontrado' });
@@ -541,23 +683,68 @@ exports.UserRoutes.get('/:id/friends', async (req, res) => {
             userId = user.id;
             console.log(`🔄 [FRIENDS] MongoDB ID ${req.originalMongoId} convertido para ID real: ${userId}`);
         }
-        // Buscar amizades ativas do usuário
-        const friendships = await models_1.Friendship.find({
-            $or: [
-                { userId1: userId, isActive: true },
-                { userId2: userId, isActive: true }
-            ]
-        });
-        // Extrair IDs dos amigos
-        const friendIds = friendships.map((friendship) => friendship.userId1 === userId ? friendship.userId2 : friendship.userId1);
-        // Buscar dados completos dos amigos - Usar lean() para evitar metadados Mongoose
-        const friends = await models_1.User.find({
+        else {
+            let user = await models_1.User.findOne({ id: userId }).select('id name').lean();
+            if (!user) {
+                user = await models_1.User.findOne({ id: { $regex: new RegExp('^' + userId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i') } }).select('id name').lean();
+            }
+            if (!user) {
+                user = await models_1.User.findOne({ name: { $regex: new RegExp('^' + userId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i') } }).select('id name').lean();
+            }
+            if (user) {
+                userId = user.id;
+            }
+        }
+        // Amigos = follow mútuo (eu sigo a pessoa E ela me segue)
+        const myFollows = await models_1.Followers.find({
+            followerId: userId,
+            isActive: true
+        }).select('followingId').lean();
+        const myFollowIds = myFollows.map(f => f.followingId);
+        if (myFollowIds.length === 0) {
+            return res.json([]);
+        }
+        const mutualFollows = await models_1.Followers.find({
+            followerId: { $in: myFollowIds },
+            followingId: userId,
+            isActive: true
+        }).select('followerId').lean();
+        let friendIds = mutualFollows.map(f => f.followerId);
+        // FALLBACK: se Followers vazio, busca do User.friendsList
+        if (friendIds.length === 0) {
+            try {
+                const userDoc = await models_1.User.findOne({ id: userId }).select('friendsList').lean();
+                if (userDoc?.friendsList?.length) {
+                    friendIds = userDoc.friendsList;
+                }
+            }
+            catch (_) { }
+        }
+        let friends = await models_1.User.find({
             id: { $in: friendIds }
-        }).select('id name avatarUrl level fans following isLive isOnline lastSeen identification')
-            .lean();
-        // 🚨 RETORNAR DADOS PROTEGIDOS - Sem informações sensíveis e sem metadados Mongoose
-        const protectedFriends = friends.map(friend => ({
-            id: friend.id, // ID real da API
+        }).select('id name avatarUrl level fans following isLive isOnline lastSeen identification').lean();
+        // FALLBACK: tenta por nome
+        if (friends.length === 0 && friendIds.length > 0) {
+            friends = await models_1.User.find({
+                name: { $in: friendIds }
+            }).select('id name avatarUrl level fans following isLive isOnline lastSeen identification').lean();
+        }
+        // ULTIMO FALLBACK: retorna os IDs como objetos mínimos
+        if (friends.length === 0 && friendIds.length > 0) {
+            friends = friendIds.map(id => ({
+                id,
+                name: id,
+                avatarUrl: '',
+                level: 1,
+                fans: 0,
+                following: 0,
+                isLive: false,
+                isOnline: false,
+                lastSeen: null
+            }));
+        }
+        const protectedFriends = friends.map((friend) => ({
+            id: friend.id,
             name: friend.name,
             avatarUrl: friend.avatarUrl,
             level: friend.level,
@@ -565,8 +752,9 @@ exports.UserRoutes.get('/:id/friends', async (req, res) => {
             following: friend.following,
             isLive: friend.isLive,
             isOnline: friend.isOnline,
-            lastSeen: friend.lastSeen
-            // 🚨 NÃO RETORNAR: email, phone, location, _id, __v, $__ etc
+            lastSeen: friend.lastSeen,
+            isFollowed: true,
+            isFriend: true
         }));
         res.json(protectedFriends);
     }

@@ -71,28 +71,23 @@ router.post('/register', async (req, res) => {
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
-        // Gerar ID baseado no nome do usuário
-        const sanitizeId = (raw: string) => {
-            return raw.toLowerCase()
-                .trim()
-                .replace(/[^a-z0-9]/g, '')
-                .replace(/\s+/g, '')
-                .substring(0, 30) || 'user';
+        // Gerar ID numérico único de 7 dígitos (ex: 4567845)
+        const generateUniqueNumericId = async (): Promise<string> => {
+            let uniqueId = '';
+            let exists = true;
+            while (exists) {
+                const num = Math.floor(1000000 + Math.random() * 9000000);
+                uniqueId = num.toString();
+                const user = await User.findOne({ id: uniqueId });
+                if (!user) {
+                    exists = false;
+                }
+            }
+            return uniqueId;
         };
 
-        const baseId = sanitizeId(name);
-        const existingUser = await User.findOne({ id: baseId });
-        if (existingUser) {
-            return res.status(200).json({
-                success: true,
-                message: 'Usuário já existe. Faça login.',
-                user: standardizeUserResponse(existingUser),
-                token: jwt.sign({ id: existingUser.id, email: existingUser.email }, JWT_SECRET, { expiresIn: '7d' })
-            });
-        }
-
-        let newUserId = baseId;
-        console.log(`[REGISTER] ID gerado: ${newUserId}`);
+        const newUserId = await generateUniqueNumericId();
+        console.log(`[REGISTER] ID numérico gerado: ${newUserId}`);
 
         // Função para normalizar tags
         const normalizeTags = (tags: any): string[] => {

@@ -6,30 +6,26 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const mercadoPagoService_1 = __importDefault(require("../services/mercadoPagoService"));
 const models_1 = require("../models");
-const mercadopago_1 = require("mercadopago");
+const rateLimit_1 = require("../middleware/rateLimit");
 const router = express_1.default.Router();
 /**
  * Webhook específico para pagamentos de compras (Pix)
  */
-router.post('/webhook/purchase', async (req, res) => {
+router.post('/webhook/purchase', rateLimit_1.webhookRateLimit, async (req, res) => {
     try {
-        // Validar assinatura do webhook
-        try {
-            mercadopago_1.WebhookSignatureValidator.validate({
-                xSignature: req.headers['x-signature'],
-                xRequestId: req.headers['x-request-id'],
-                dataId: req.query['data.id'],
-                secret: process.env.MERCADO_PAGO_WEBHOOK_SECRET || '',
-                toleranceSeconds: 300,
-            });
-        }
-        catch (err) {
-            console.warn('[WEBHOOK] Assinatura inválida (modo não-bloqueante):', err.reason);
-        }
         console.log('🔔 [WEBHOOK PURCHASE] Notificação recebida:', JSON.stringify(req.body, null, 2));
         const { type, data } = req.body;
         if (type === 'payment') {
             const paymentId = data.id;
+            if (!paymentId) {
+                return res.status(400).json({ error: 'paymentId ausente' });
+            }
+            // Verificar se já processamos este paymentId
+            const existingOrder = await models_1.Order.findOne({ mpPaymentId: paymentId });
+            if (existingOrder && existingOrder.status === 'paid') {
+                console.log(`⏭️ [WEBHOOK PURCHASE] Pagamento ${paymentId} já processado, ignorando`);
+                return res.status(200).json({ received: true, duplicated: true });
+            }
             // Buscar informações do pagamento no Mercado Pago
             const payment = await mercadoPagoService_1.default.getPaymentStatus(paymentId);
             console.log(`💳 [WEBHOOK PURCHASE] Status do pagamento ${paymentId}:`, payment.status);
@@ -43,13 +39,22 @@ router.post('/webhook/purchase', async (req, res) => {
             // Verificar se o pagamento foi aprovado e a ordem ainda está pendente
             if (payment.status === 'approved' && order.status === 'pending') {
                 console.log(`✅ [WEBHOOK PURCHASE] Pagamento aprovado! Processando ordem ${order.id}`);
+                // AUDIT: payment_approved
+                await models_1.PurchaseAuditTrail.create({
+                    eventType: 'payment_approved',
+                    orderId: order.id,
+                    userId: order.userId,
+                    ip: req.ip || '',
+                    userAgent: (req.headers['user-agent'] || '').slice(0, 300),
+                    metadata: { paymentId, mpStatus: payment.status }
+                }).catch(() => { });
                 // Atualizar status da ordem
                 order.status = 'paid';
                 order.paymentConfirmationId = paymentId;
                 order.mpPaymentId = paymentId;
                 order.confirmedAt = new Date();
                 await order.save();
-                // Creditar diamantes para o usuário (FLUXO 1: ENTRADA DE VALOR) + persistir atividade
+                // Creditar diamantes para o usuário
                 const user = await models_1.User.findOneAndUpdate({ id: order.userId }, {
                     $inc: { diamonds: order.diamonds },
                     $push: {
@@ -73,17 +78,29 @@ router.post('/webhook/purchase', async (req, res) => {
                     console.log(`❌ [WEBHOOK PURCHASE] Usuário não encontrado: ${order.userId}`);
                     return res.status(404).json({ error: 'User not found' });
                 }
+                // AUDIT: diamonds_delivered
+                await models_1.PurchaseAuditTrail.create({
+                    eventType: 'diamonds_delivered',
+                    orderId: order.id,
+                    userId: order.userId,
+                    ip: req.ip || '',
+                    userAgent: '',
+                    metadata: {
+                        diamonds: order.diamonds, amount: order.amount,
+                        paymentId, newBalance: user.diamonds,
+                        source: 'webhook_purchase'
+                    }
+                }).catch(() => { });
                 console.log(`💎 [WEBHOOK PURCHASE] Usuário ${user.name} recebeu ${order.diamonds} diamantes. Saldo atual: ${user.diamonds}`);
                 // Registrar compra no histórico
                 await models_1.PurchaseRecord.create({
                     id: `purchase_${order.id}_${Date.now()}`,
                     userId: order.userId,
-                    type: 'diamond_purchase',
+                    type: 'purchase_diamonds',
                     description: `Compra de ${order.diamonds} diamantes - Pagamento Pix: ${paymentId}`,
                     amountBRL: order.amount,
                     amountCoins: order.diamonds,
                     status: 'Concluído',
-                    timestamp: new Date()
                 });
                 // Emitir WebSocket para atualização em tempo real
                 const io = req.app.get('io');
@@ -103,6 +120,15 @@ router.post('/webhook/purchase', async (req, res) => {
             }
             else if (payment.status === 'rejected' || payment.status === 'cancelled') {
                 console.log(`❌ [WEBHOOK PURCHASE] Pagamento rejeitado/cancelado: ${paymentId}`);
+                // AUDIT: cancellation/refund
+                await models_1.PurchaseAuditTrail.create({
+                    eventType: payment.status === 'cancelled' ? 'cancellation' : 'refund',
+                    orderId: order.id,
+                    userId: order.userId,
+                    ip: req.ip || '',
+                    userAgent: '',
+                    metadata: { paymentId, mpStatus: payment.status }
+                }).catch(() => { });
                 // Atualizar status da ordem
                 order.status = payment.status === 'rejected' ? 'failed' : 'cancelled';
                 order.paymentConfirmationId = paymentId;
@@ -123,20 +149,8 @@ router.post('/webhook/purchase', async (req, res) => {
 /**
  * Webhook do Mercado Pago - recebe notificações de saques
  */
-router.post('/webhook', async (req, res) => {
+router.post('/webhook', rateLimit_1.webhookRateLimit, async (req, res) => {
     try {
-        try {
-            mercadopago_1.WebhookSignatureValidator.validate({
-                xSignature: req.headers['x-signature'],
-                xRequestId: req.headers['x-request-id'],
-                dataId: req.query['data.id'],
-                secret: process.env.MERCADO_PAGO_WEBHOOK_SECRET || '',
-                toleranceSeconds: 300,
-            });
-        }
-        catch (err) {
-            console.warn('[WEBHOOK] Assinatura inválida (modo não-bloqueante):', err.reason);
-        }
         const { type, data } = req.body;
         console.log(`🔔 [WEBHOOK] Notificação recebida:`, { type, data });
         if (type === 'payment') {
@@ -152,13 +166,24 @@ router.post('/webhook', async (req, res) => {
                 // Atualizar status do saque
                 const withdrawalRequest = user.withdrawal_requests.find((req) => req.external_reference === payment.external_reference);
                 if (withdrawalRequest) {
+                    // AUDIT: registro de mudança de status
+                    await models_1.PurchaseAuditTrail.create({
+                        eventType: withdrawalRequest.status === 'approved' ? 'payment_approved' : 'refund',
+                        orderId: `withdrawal_${payment.external_reference || paymentId}`,
+                        userId: user.id,
+                        ip: req.ip || '',
+                        userAgent: '',
+                        metadata: {
+                            paymentId, externalReference: payment.external_reference,
+                            oldStatus: withdrawalRequest.status, newStatus: payment.status
+                        }
+                    }).catch(() => { });
                     withdrawalRequest.status = payment.status;
                     withdrawalRequest.mp_payment_id = paymentId;
                     withdrawalRequest.approved_at = payment.date_approved;
                     withdrawalRequest.net_amount = payment.net_amount;
                     withdrawalRequest.fee_amount = payment.fee_amount;
                     await user.save();
-                    // Persistir atividade de atualização de saque
                     await models_1.User.findOneAndUpdate({ id: user.id }, {
                         $push: {
                             recentActivities: {
@@ -196,53 +221,86 @@ router.post('/webhook', async (req, res) => {
 /**
  * Endpoint de notificação alternativa (compatibilidade)
  */
-router.post('/notification', async (req, res) => {
+router.post('/notification', rateLimit_1.webhookRateLimit, async (req, res) => {
     try {
-        // Processar notificação com mesma lógica do webhook
         const { type, data } = req.body;
         console.log(`🔔 [NOTIFICATION] Notificação recebida:`, { type, data });
         if (type === 'payment') {
             const paymentId = data.id;
-            // Buscar informações do pagamento
+            // Verificar duplicidade
+            const dupOrder = await models_1.Order.findOne({ mpPaymentId: paymentId });
+            if (dupOrder && dupOrder.status === 'paid') {
+                return res.status(200).json({ received: true, duplicated: true });
+            }
             const payment = await mercadoPagoService_1.default.getPaymentStatus(paymentId);
             console.log(`💳 [NOTIFICATION] Status do pagamento ${paymentId}:`, payment.status);
-            // Buscar usuário pelo external_reference
+            const order = await models_1.Order.findOne({ externalReference: payment.external_reference });
+            if (order) {
+                if (payment.status === 'approved' && order.status === 'pending') {
+                    await models_1.PurchaseAuditTrail.create({
+                        eventType: 'payment_approved',
+                        orderId: order.id,
+                        userId: order.userId,
+                        ip: req.ip || '',
+                        userAgent: '',
+                        metadata: { paymentId, source: 'notification_endpoint' }
+                    }).catch(() => { });
+                    order.status = 'paid';
+                    order.paymentConfirmationId = paymentId;
+                    order.mpPaymentId = paymentId;
+                    order.confirmedAt = new Date();
+                    await order.save();
+                    const user = await models_1.User.findOneAndUpdate({ id: order.userId }, { $inc: { diamonds: order.diamonds } }, { new: true });
+                    if (user) {
+                        await models_1.PurchaseAuditTrail.create({
+                            eventType: 'diamonds_delivered',
+                            orderId: order.id,
+                            userId: order.userId,
+                            ip: req.ip || '',
+                            userAgent: '',
+                            metadata: { diamonds: order.diamonds, paymentId, source: 'notification_endpoint' }
+                        }).catch(() => { });
+                    }
+                    const io = req.app.get('io');
+                    if (io) {
+                        io.to(order.userId).emit('purchase_completed', {
+                            orderId: order.id, diamonds: order.diamonds, amount: order.amount
+                        });
+                    }
+                }
+                else if (payment.status === 'rejected' || payment.status === 'cancelled') {
+                    order.status = payment.status === 'rejected' ? 'failed' : 'cancelled';
+                    await order.save();
+                }
+                return res.status(200).json({ received: true });
+            }
+            // Fallback: buscar usuário pelo external_reference (saques)
             const user = await models_1.User.findOne({
                 'withdrawal_requests.external_reference': payment.external_reference
             });
             if (user && user.withdrawal_requests) {
-                // Atualizar status do saque
                 const withdrawalRequest = user.withdrawal_requests.find((req) => req.external_reference === payment.external_reference);
                 if (withdrawalRequest) {
+                    await models_1.PurchaseAuditTrail.create({
+                        eventType: 'payment_approved',
+                        orderId: `withdrawal_${payment.external_reference || paymentId}`,
+                        userId: user.id,
+                        ip: req.ip || '',
+                        userAgent: '',
+                        metadata: { paymentId, source: 'notification_endpoint', type: 'withdrawal' }
+                    }).catch(() => { });
                     withdrawalRequest.status = payment.status;
                     withdrawalRequest.mp_payment_id = paymentId;
                     withdrawalRequest.approved_at = payment.date_approved;
                     withdrawalRequest.net_amount = payment.net_amount;
                     withdrawalRequest.fee_amount = payment.fee_amount;
                     await user.save();
-                    // Persistir atividade de atualização de saque
-                    await models_1.User.findOneAndUpdate({ id: user.id }, {
-                        $push: {
-                            recentActivities: {
-                                action: 'withdrawal_notification_updated',
-                                resource: 'payment_transaction',
-                                timestamp: new Date(),
-                                endpoint: '/api/payment/notification'
-                            }
-                        }
-                    }).catch(console.error);
-                    console.log(`✅ [NOTIFICATION] Saque atualizado para usuário ${user.name}:`, {
-                        status: payment.status,
-                        amount: payment.net_amount
-                    });
-                    // Emitir WebSocket para atualização em tempo real
                     const io = req.app.get('io');
                     if (io) {
                         io.to(user.id).emit('withdrawal_status_updated', {
                             external_reference: payment.external_reference || '',
                             status: payment.status,
-                            net_amount: payment.net_amount,
-                            approved_at: payment.date_approved
+                            net_amount: payment.net_amount
                         });
                     }
                 }

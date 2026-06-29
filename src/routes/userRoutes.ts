@@ -1,4 +1,4 @@
-﻿import express from 'express';
+import express from 'express';
 
 import { User, Streamer, Gift, Message, PurchaseRecord, Order, Photo, Followers, Friendship, Block, ProfilePhoto } from '../models';
 
@@ -72,7 +72,7 @@ UserRoutes.get('/', async (req, res) => {
 
         console.log(`[USERS-LIST] Encontrados ${users.length} usuários`);
 
-        
+
 
         if (!users || users.length === 0) {
 
@@ -82,13 +82,13 @@ UserRoutes.get('/', async (req, res) => {
 
         }
 
-        
+
 
         const standardizedUsers = standardizeUsersList(users);
 
         console.log(`[USERS-LIST] Retornando ${standardizedUsers.length} usuários padronizados`);
 
-        
+
 
         res.json(standardizedUsers);
 
@@ -114,7 +114,7 @@ UserRoutes.get('/:id', async (req, res) => {
 
         let query;
 
-        
+
 
         // Se for um ObjectId válido (24 chars hex), buscar por _id
         if (paramId.length === 24 && /^[0-9a-fA-F]{24}$/.test(paramId)) {
@@ -131,7 +131,7 @@ UserRoutes.get('/:id', async (req, res) => {
             query = { id: { $regex: new RegExp('^' + paramId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i') } };
         }
 
-        
+
 
         const user = await User.findOne(query).lean();
 
@@ -147,11 +147,11 @@ UserRoutes.get('/:id', async (req, res) => {
 
                     { id: user.id },
 
-                    { 
+                    {
 
                         $inc: { profileViews: 1 },
 
-                        $push: { 
+                        $push: {
 
                             recentActivities: {
 
@@ -173,7 +173,7 @@ UserRoutes.get('/:id', async (req, res) => {
 
             }
 
-            
+
 
             // Calcular distância do usuário atual até este perfil
             if (currentUserId && currentUserId !== user.id && user.location?.coordinates) {
@@ -186,8 +186,8 @@ UserRoutes.get('/:id', async (req, res) => {
                         const dLat = ((lat2 - lat1) * Math.PI) / 180;
                         const dLng = ((lng2 - lng1) * Math.PI) / 180;
                         const a = Math.sin(dLat / 2) ** 2 +
-                                  Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) *
-                                  Math.sin(dLng / 2) ** 2;
+                            Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) *
+                            Math.sin(dLng / 2) ** 2;
                         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
                         const km = R * c;
                         user.distance = `${km.toFixed(0)} km de distância`;
@@ -303,7 +303,7 @@ UserRoutes.delete('/:userId/photos/:photoId', async (req, res) => {
         await ProfilePhoto.updateOne(
             { obraId: photoId, userId },
             { $set: { isActive: false, updatedAt: new Date() } }
-        ).catch(() => {});
+        ).catch(() => { });
 
         const io = req.app.get('io');
         if (io && updated) io.emit('avatar_updated', { userId: updated.id, avatarUrl: newAvatarUrl, timestamp: new Date().toISOString() });
@@ -367,9 +367,9 @@ UserRoutes.post('/:id/toggle-follow', async (req, res) => {
 
                     $set: {
 
-                    isActive: false,
+                        isActive: false,
 
-                    unfollowedAt: new Date()
+                        unfollowedAt: new Date()
 
                     }
 
@@ -447,11 +447,11 @@ UserRoutes.post('/:id/toggle-follow', async (req, res) => {
 
                         $set: {
 
-                        isActive: true,
+                            isActive: true,
 
-                        followedAt: new Date(),
+                            followedAt: new Date(),
 
-                        unfollowedAt: undefined
+                            unfollowedAt: undefined
 
                         }
 
@@ -757,7 +757,7 @@ UserRoutes.post('/:id/block', blockProtection(), async (req, res) => {
 
 
 
-        
+
 
         await Followers.findOneAndUpdate(
 
@@ -781,21 +781,21 @@ UserRoutes.post('/:id/block', blockProtection(), async (req, res) => {
 
         // Atualizar contadores usando helper estrito
 
-        await updateUserByRealId(User, blockerId, { 
+        await updateUserByRealId(User, blockerId, {
 
-            $inc: { following: -1 }, 
+            $inc: { following: -1 },
 
-            $pull: { followingList: blockedId } 
+            $pull: { followingList: blockedId }
 
         });
 
 
 
-        await updateUserByRealId(User, blockedId, { 
+        await updateUserByRealId(User, blockedId, {
 
-            $inc: { fans: -1 }, 
+            $inc: { fans: -1 },
 
-            $pull: { followersList: blockerId } 
+            $pull: { followersList: blockerId }
 
         });
 
@@ -857,9 +857,9 @@ UserRoutes.delete('/:id/unblock', async (req, res) => {
 
                 $set: {
 
-                isActive: false,
+                    isActive: false,
 
-                unblockedAt: new Date()
+                    unblockedAt: new Date()
 
                 }
 
@@ -901,7 +901,7 @@ UserRoutes.get('/:id/fans', async (req, res) => {
 
         // ✅ PERMITIR ACESSO API NORMAL (curl, postman, insomnia, etc)
 
-        
+
 
         // 🔄 CONVERSOR DE ID: MongoDB ID → ID Real da API
 
@@ -962,7 +962,7 @@ UserRoutes.get('/:id/fans', async (req, res) => {
                 if (userDoc?.followersList?.length) {
                     followerIds = userDoc.followersList;
                 }
-            } catch (_) {}
+            } catch (_) { }
         }
 
         // Buscar dados completos dos seguidores COM PROTEÇÃO - Usar lean() para evitar metadados Mongoose
@@ -972,14 +972,14 @@ UserRoutes.get('/:id/fans', async (req, res) => {
             id: { $in: followerIds }
 
         }).select('id name avatarUrl level fans following isLive isOnline lastSeen identification')
-.lean();
+            .lean();
 
         // FALLBACK: se não achou por id, tenta por nome
         if (fans.length === 0 && followerIds.length > 0) {
             fans = await User.find({
                 name: { $in: followerIds }
             }).select('id name avatarUrl level fans following isLive isOnline lastSeen identification')
-.lean();
+                .lean();
         }
 
         // ULTIMO FALLBACK: retorna os IDs como objetos mínimos (nunca vazio se tem dados)
@@ -1117,7 +1117,7 @@ UserRoutes.get('/:id/following', async (req, res) => {
                 if (userDoc?.followingList?.length) {
                     followingIds = userDoc.followingList;
                 }
-            } catch (_) {}
+            } catch (_) { }
         }
 
 
@@ -1129,14 +1129,14 @@ UserRoutes.get('/:id/following', async (req, res) => {
             id: { $in: followingIds }
 
         }).select('id name avatarUrl level fans following isLive isOnline lastSeen identification')
-.lean();
+            .lean();
 
         // FALLBACK: se não achou por id, tenta por nome
         if (followingUsers.length === 0 && followingIds.length > 0) {
             followingUsers = await User.find({
                 name: { $in: followingIds }
             }).select('id name avatarUrl level fans following isLive isOnline lastSeen identification')
-.lean();
+                .lean();
         }
 
         // ULTIMO FALLBACK: retorna os IDs como objetos mínimos (nunca vazio se tem dados)
@@ -1273,7 +1273,7 @@ UserRoutes.get('/:id/friends', async (req, res) => {
                 if (userDoc?.friendsList?.length) {
                     friendIds = userDoc.friendsList;
                 }
-            } catch (_) {}
+            } catch (_) { }
         }
 
         let friends = await User.find({
@@ -1545,7 +1545,7 @@ UserRoutes.get('/me/blocklist', async (req, res) => {
             id: { $in: blockedIds }
 
         }).select('id name avatarUrl level fans following isLive isOnline lastSeen identification')
-;
+            ;
 
 
 
@@ -1792,23 +1792,23 @@ UserRoutes.post('/:id/visit', async (req, res) => {
 
                 $set: {
 
-                id: visitorId,
+                    id: visitorId,
 
-                visitorId: userId,
+                    visitorId: userId,
 
-                visitedId: profileId,
+                    visitedId: profileId,
 
-                visitedAt: new Date(),
+                    visitedAt: new Date(),
 
-                visitorName: visitor.name,
+                    visitorName: visitor.name,
 
-                visitorAvatar: visitor.avatarUrl
+                    visitorAvatar: visitor.avatarUrl
 
                 }
 
             },
 
-            { 
+            {
 
                 upsert: true, // Criar se não existir
 
@@ -1944,7 +1944,7 @@ UserRoutes.post('/:id/avatar-protection', async (req, res) => {
 
     const user = await User.findOneAndUpdate({ id: req.params.id }, { $set: { isAvatarProtected: req.body.isEnabled } }, { new: true });
 
-    
+
 
     // Enviar atualização em tempo real via WebSocket
 
@@ -1966,7 +1966,7 @@ UserRoutes.post('/:id/avatar-protection', async (req, res) => {
 
     }
 
-    
+
 
     res.json({ success: !!user, user: standardizeUserResponse(user) });
 
@@ -2098,19 +2098,19 @@ UserRoutes.post('/:userId/frames/buy', async (req, res) => {
 
             { id: userId },
 
-            { 
+            {
 
-                $push: { 
+                $push: {
 
-                    ownedFrames: { 
+                    ownedFrames: {
 
-                        frameId, 
+                        frameId,
 
-                        expirationDate: expirationDate.toISOString() 
+                        expirationDate: expirationDate.toISOString()
 
-                    } 
+                    }
 
-                } 
+                }
 
             }
 
@@ -2126,11 +2126,11 @@ UserRoutes.post('/:userId/frames/buy', async (req, res) => {
 
         const updatedUser = await User.findOne({ id: userId });
 
-        
 
-        res.json({ 
 
-            success: true, 
+        res.json({
+
+            success: true,
 
             user: standardizeUserResponse(updatedUser),
 
@@ -2186,7 +2186,7 @@ UserRoutes.post('/:userId/frames/equip', async (req, res) => {
 
         const user = await User.findOne({ id: userId });
 
-        
+
 
         if (!user) {
 
@@ -2204,7 +2204,7 @@ UserRoutes.post('/:userId/frames/equip', async (req, res) => {
 
         const ownedFrame = (user.ownedFrames || []).find((f: any) => f.frameId === frameId);
 
-        
+
 
         if (!ownedFrame) {
 
@@ -2252,9 +2252,9 @@ UserRoutes.post('/:userId/frames/equip', async (req, res) => {
 
 
 
-        res.json({ 
+        res.json({
 
-            success: true, 
+            success: true,
 
             user: standardizeUserResponse(updatedUser),
 
@@ -2312,9 +2312,9 @@ UserRoutes.post('/:userId/frames/unequip', async (req, res) => {
 
 
 
-        res.json({ 
+        res.json({
 
-            success: true, 
+            success: true,
 
             user: standardizeUserResponse(updatedUser)
 
@@ -2894,8 +2894,8 @@ UserRoutes.post('/permissions', protect, async (req, res) => {
 
         console.log(`[USER_PERMISSIONS] Salvo: ${type} = ${status} para usuário ${userId}`);
 
-        res.json({ 
-            success: true, 
+        res.json({
+            success: true,
             message: 'Permissão registrada com sucesso',
             data: {
                 userId,

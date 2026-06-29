@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -69,6 +102,7 @@ router.post('/publish', async (req, res) => {
         const httpFlvUrl = `${BACKEND_URL}/api/video/http/live/${realStreamKey}.flv`;
         const hlsUrl = `${BACKEND_URL}/api/video/http/live/${realStreamKey}.m3u8`;
         // Criar/atualizar stream no banco com isLive: true
+        const finalCategory = (existingStream?.category || 'popular').toLowerCase();
         const streamerData = {
             id: realStreamKey,
             hostId: userId,
@@ -83,6 +117,7 @@ router.post('/publish', async (req, res) => {
             startTime: existingStream?.startTime || new Date(),
             streamKey: realStreamKey,
             title: existingStream?.title || '',
+            category: finalCategory,
             country: user.country || 'BR',
             rtmpIngestUrl: existingStream?.rtmpIngestUrl || pushUrl,
             playbackUrl: existingStream?.playbackUrl || httpFlvUrl,
@@ -95,6 +130,29 @@ router.post('/publish', async (req, res) => {
         // Atualizar status do usuário
         await models_1.User.findOneAndUpdate({ id: userId }, { $set: { isLive: true, currentStreamId: realStreamKey } });
         console.log(`[SRS-PUBLISH] Transmissão registrada: ${realStreamKey} para usuário ${userId}`);
+        // Criar/atualizar LiveCard
+        try {
+            const { LiveCard } = await Promise.resolve().then(() => __importStar(require('../models/index')));
+            const finalCountry = (existingStream?.country || user.country || 'BR').toLowerCase();
+            await LiveCard.findOneAndUpdate({ hostId: userId }, { $set: {
+                    hostId: userId,
+                    name: user.name || userId,
+                    avatar: user.avatarUrl || '',
+                    title: existingStream?.title || streamTitle,
+                    streamKey: realStreamKey,
+                    playbackUrl: existingStream?.playbackUrl || httpFlvUrl,
+                    hlsUrl: existingStream?.hlsUrl || hlsUrl,
+                    country: finalCountry,
+                    isLive: true,
+                    streamStatus: 'active',
+                    category: finalCategory,
+                    startTime: existingStream?.startTime || new Date(),
+                    updatedAt: new Date()
+                } }, { upsert: true });
+        }
+        catch (cardErr) {
+            console.warn('[SRS-PUBLISH] Erro ao criar/atualizar LiveCard:', cardErr);
+        }
         // Emitir eventos via socket
         const io = req.app.get('io');
         if (io) {
@@ -140,6 +198,19 @@ router.post('/unpublish', async (req, res) => {
         const updated = await models_1.Streamer.findOneAndUpdate({ id: realStreamKey, isLive: true }, { $set: { isLive: false, streamStatus: 'ended', endTime: new Date() } });
         if (updated) {
             await models_1.User.findOneAndUpdate({ id: updated.hostId }, { $set: { isLive: false, isOnline: false, currentStreamId: null } });
+            // Atualizar LiveCard para ended
+            try {
+                const { LiveCard } = await Promise.resolve().then(() => __importStar(require('../models/index')));
+                await LiveCard.findOneAndUpdate({ hostId: updated.hostId }, { $set: {
+                        isLive: false,
+                        streamStatus: 'ended',
+                        endTime: new Date(),
+                        updatedAt: new Date()
+                    } });
+            }
+            catch (cardErr) {
+                console.warn('[SRS-UNPUBLISH] Erro ao atualizar LiveCard:', cardErr);
+            }
             const io = req.app.get('io');
             if (io) {
                 io.emit('card_removed', {

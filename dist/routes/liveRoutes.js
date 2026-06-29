@@ -362,7 +362,7 @@ router.get('/live/source-data', async (req, res) => {
             },
             // SRS Configuration
             srs: {
-                host: process.env.SRS_HOST || '72.60.249.175',
+                host: process.env.SRS_HOST || '127.0.0.1',
                 ports: {
                     rtmp: 1935,
                     http: 8080,
@@ -686,7 +686,7 @@ router.post('/srs/start', async (req, res) => {
         console.log('[SRS-START] Token JWT gerado com sucesso');
         console.log('[SRS-START] Configurando URLs SRS...');
         // Configurações SRS
-        const srsHost = process.env.SRS_HOST || '72.60.249.175';
+        const srsHost = process.env.SRS_HOST || '127.0.0.1';
         const srsVhost = process.env.SRS_VHOST || '__defaultVhost__';
         const srsApp = process.env.SRS_APP || 'live';
         const srsRtmpPort = process.env.SRS_RTMP_PORT || '1935';
@@ -827,7 +827,7 @@ router.post('/srs/publish', async (req, res) => {
         // Usar dados do token (gerados na START)
         const { liveId, streamId, streamKey } = decodedToken;
         // Configurações SRS conforme documentação
-        const srsHost = process.env.SRS_HOST || '72.60.249.175';
+        const srsHost = process.env.SRS_HOST || '127.0.0.1';
         const srsPort = process.env.SRS_RTMP_PORT || '1935';
         const vhost = process.env.SRS_VHOST || '__defaultVhost__';
         const app = 'live';
@@ -1399,7 +1399,7 @@ router.post('/live/start', async (req, res) => {
         const streamId = userId;
         const liveId = (0, uuid_1.v4)();
         // Configurações SRS
-        const srsHost = process.env.SRS_HOST || '72.60.249.175';
+        const srsHost = process.env.SRS_HOST || '127.0.0.1';
         const srsPort = process.env.SRS_PORT || '1935';
         const srsApp = process.env.SRS_APP || 'live';
         const vhost = process.env.SRS_VHOST || '__defaultVhost__';
@@ -1544,6 +1544,22 @@ router.post('/streams/:id/join', async (req, res) => {
                 }
             }
         });
+        // Também registrar na coleção LiveUser para aparecer em /api/live/online-users
+        try {
+            const { LiveUser } = await Promise.resolve().then(() => __importStar(require('../models/LiveInvite')));
+            await LiveUser.findOneAndUpdate({ userId }, {
+                userId,
+                username: userId,
+                name: viewer.name || viewer.id,
+                avatarUrl: viewer.avatarUrl || '',
+                status: 'viewing',
+                currentStreamId: id,
+                lastActive: new Date()
+            }, { upsert: true, new: true });
+        }
+        catch (liveUserErr) {
+            console.error(`[STREAM-JOIN] Erro ao registrar LiveUser para ${userId} na live ${id}:`, liveUserErr?.message || liveUserErr);
+        }
         console.log(`[STREAM-JOIN] Usuário ${userId} entrou na live ${id}, livesJoined incrementado`);
         res.json({
             success: true,
@@ -1724,7 +1740,7 @@ router.post('/streams', async (req, res) => {
         }
         const streamId = hostId;
         const streamTitle = name || title || `Live de ${user.name}`;
-        const finalCountry = country || user.country || 'BR';
+        const finalCountry = (country || user.country || 'BR').toLowerCase();
         const stream = await index_1.Streamer.findOneAndUpdate({ id: hostId }, {
             $set: {
                 id: streamId,
@@ -1806,6 +1822,28 @@ router.post('/streams/:id/publish', async (req, res) => {
                 timestamp: new Date().toISOString()
             });
         }
+        // Criar/atualizar LiveCard (so quando realmente publicar)
+        try {
+            await index_1.LiveCard.findOneAndUpdate({ hostId }, { $set: {
+                    hostId,
+                    name: stream.name || user.name,
+                    avatar: stream.avatar || user?.avatarUrl || '',
+                    title: stream.title || user.name,
+                    streamKey: stream.streamKey || id,
+                    country: (stream.country || user?.country || 'BR').toLowerCase(),
+                    isLive: true,
+                    streamStatus: 'active',
+                    category: (stream.category || 'popular').toLowerCase(),
+                    playbackUrl: stream.playbackUrl || '',
+                    hlsUrl: stream.hlsUrl || '',
+                    viewers: stream.viewers || 0,
+                    startTime: new Date(),
+                    updatedAt: new Date()
+                } }, { upsert: true });
+        }
+        catch (cardErr) {
+            console.warn('[STREAMS-PUBLISH] Erro ao criar/atualizar LiveCard:', cardErr);
+        }
         res.json({ success: true, stream });
     }
     catch (error) {
@@ -1816,53 +1854,108 @@ router.post('/streams/:id/publish', async (req, res) => {
 // GET /api/streams - Listar streams (rota principal para frontend)
 router.get('/streams', async (req, res) => {
     try {
-        // Parâmetros de query
-        const { category = 'popular', country = 'all', limit = 50, offset = 0, isLive = 'true', userId } = req.query;
-        // Construir filtro
-        const filter = {};
+        const { category = 'popular', country = 'all', limit = 50, cursor = '', isLive = 'true', userId } = req.query;
+        const parseLimit = Math.min(parseInt(limit) || 50, 100);
+        // Construir filtro base
+        const baseFilter = {};
         if (isLive === 'true') {
-            filter.isLive = true;
-            filter.streamStatus = { $in: ['active', 'live'] };
+            baseFilter.isLive = true;
+            baseFilter.streamStatus = { $in: ['active', 'live'] };
         }
-        if (country && country !== 'all' && country !== 'ICON_GLOBE')
-            filter.country = country;
-        // Se for aba "Seguindo", filtrar por usuários seguidos
+        else if (isLive === 'false') {
+            baseFilter.isLive = false;
+        }
         if (category === 'followed' && userId) {
             const follows = await index_1.Followers.find({
                 followerId: userId,
                 isActive: true
             }).select('followingId').lean();
             const followedIds = follows.map(f => f.followingId);
-            console.log(`[API-STREAMS] Seguindo tab: userId=${userId}, seguidos encontrados: ${followedIds.length}`);
             if (followedIds.length === 0) {
                 return res.json({
                     code: 0,
                     msg: 'OK',
-                    data: { streams: [], total: 0 }
+                    data: { streams: [], nextCursor: null, hasMore: false }
                 });
             }
-            filter.hostId = { $in: followedIds };
+            baseFilter.hostId = { $in: followedIds };
         }
-        else if (category && category !== 'all' && category !== 'popular') {
-            filter.category = category;
+        else if (category && category !== 'all') {
+            baseFilter.category = category.toLowerCase();
         }
-        console.log(`[API-STREAMS] Filtro:`, JSON.stringify(filter));
-        console.log(`[API-STREAMS] Query params: category=${category}, country=${country}, limit=${limit}, offset=${offset}, isLive=${isLive}`);
-        // Buscar streams no banco usando Mongoose
-        const streams = await index_1.Streamer.find(filter)
-            .sort({ viewers: -1, startTime: -1 })
-            .limit(parseInt(limit))
-            .skip(parseInt(offset))
-            .lean();
-        console.log(`[API-STREAMS] Streams encontradas: ${streams.length}`);
-        streams.forEach(s => {
-            console.log(`[API-STREAMS]   -> id=${s.id}, hostId=${s.hostId}, isLive=${s.isLive}, country=${s.country}, status=${s.streamStatus}, titulo=${s.title || s.name}`);
-        });
-        // Enriquecer com dados do host
+        // Paginação cursor-based: se cursor for fornecido, busca a partir daquele _id
+        if (cursor) {
+            baseFilter._id = { $lt: new mongodb_1.ObjectId(cursor) };
+        }
+        const hasCountryFilter = country && country !== 'all' && country !== 'ICON_GLOBE';
+        let cardDocs;
+        if (hasCountryFilter) {
+            const countryFilter = { ...baseFilter, country: country.toLowerCase() };
+            cardDocs = await index_1.LiveCard.find(countryFilter)
+                .sort({ viewers: -1, startTime: -1, _id: -1 })
+                .limit(parseLimit + 1)
+                .lean();
+            if (cardDocs.length === 0) {
+                cardDocs = await index_1.LiveCard.find(baseFilter)
+                    .sort({ viewers: -1, startTime: -1, _id: -1 })
+                    .limit(parseLimit + 1)
+                    .lean();
+            }
+        }
+        else {
+            cardDocs = await index_1.LiveCard.find(baseFilter)
+                .sort({ viewers: -1, startTime: -1, _id: -1 })
+                .limit(parseLimit + 1)
+                .lean();
+        }
+        if (cardDocs.length === 0 && isLive === 'true') {
+            const fallbackFilter = { ...baseFilter };
+            delete fallbackFilter.country;
+            cardDocs = await index_1.LiveCard.find(fallbackFilter)
+                .sort({ viewers: -1, startTime: -1, _id: -1 })
+                .limit(parseLimit + 1)
+                .lean();
+        }
+        if (cardDocs.length === 0 && isLive === 'true') {
+            cardDocs = await index_1.LiveCard.find({
+                isLive: true,
+                streamStatus: { $in: ['active', 'live'] }
+            })
+                .sort({ viewers: -1, startTime: -1, _id: -1 })
+                .limit(parseLimit + 1)
+                .lean();
+        }
+        // Verificar se há mais resultados (peek extra)
+        const hasMore = cardDocs.length > parseLimit;
+        const items = hasMore ? cardDocs.slice(0, parseLimit) : cardDocs;
+        const nextCursor = hasMore && items.length > 0 ? items[items.length - 1]._id : null;
+        const streams = items.map(card => ({
+            id: card.streamKey || card.hostId,
+            hostId: card.hostId,
+            name: card.name,
+            avatar: card.avatar,
+            title: card.title,
+            country: card.country,
+            isLive: card.isLive,
+            streamStatus: card.streamStatus,
+            streamKey: card.streamKey,
+            playbackUrl: card.playbackUrl,
+            hlsUrl: card.hlsUrl,
+            viewers: card.viewers || 0,
+            category: card.category || 'popular',
+            categoryList: card.categoryList || [],
+            notice: card.notice || '',
+            metaData: card.metaData || {},
+            isPrivate: card.isPrivate || false,
+            startTime: card.startTime
+        }));
         const enrichedStreams = await Promise.all(streams.map(async (stream) => {
             const host = await index_1.User.findOne({ id: stream.hostId }).lean();
             return {
                 ...stream,
+                name: stream.name || host?.name || stream.hostId,
+                avatar: stream.avatar || host?.avatarUrl || '',
+                message: stream.title || '',
                 host: host ? {
                     id: host.id,
                     name: host.name,
@@ -1872,14 +1965,13 @@ router.get('/streams', async (req, res) => {
                 } : null
             };
         }));
-        const total = await index_1.Streamer.countDocuments(filter);
-        console.log(`[API-STREAMS] Total (countDocuments): ${total}`);
         res.json({
             code: 0,
             msg: 'OK',
             data: {
                 streams: enrichedStreams,
-                total
+                nextCursor: nextCursor ? nextCursor.toString() : null,
+                hasMore
             }
         });
     }
@@ -2436,6 +2528,18 @@ router.post('/live/end', async (req, res) => {
             console.log(`[LIVE-END] PK Battle ${activeBattle._id} encerrada por fim da live`);
         }
         console.log(`[LIVE-END] Live encerrada: ${activeStream.id} para usu+�rio ${userId}`);
+        // Atualizar LiveCard para ended
+        try {
+            await index_1.LiveCard.findOneAndUpdate({ hostId: userId }, { $set: {
+                    isLive: false,
+                    streamStatus: 'ended',
+                    endTime: new Date(),
+                    updatedAt: new Date()
+                } });
+        }
+        catch (cardErr) {
+            console.warn('[LIVE-END] Erro ao atualizar LiveCard:', cardErr);
+        }
         res.json({
             success: true,
             stream: {
@@ -2601,6 +2705,8 @@ router.put('/streams/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const updateData = req.body;
+        if (updateData.country)
+            updateData.country = updateData.country.toLowerCase();
         // Verificar se stream existe
         const existingStream = await index_1.Streamer.findOne({ id });
         if (!existingStream) {
@@ -2624,6 +2730,8 @@ router.put('/streams/:id', async (req, res) => {
     }
 });
 router.patch('/streams/:id', async (req, res) => {
+    if (req.body.country)
+        req.body.country = req.body.country.toLowerCase();
     const stream = await index_1.Streamer.findOneAndUpdate({ id: req.params.id }, req.body, { new: true });
     res.json({ success: true, stream });
 });
@@ -3011,6 +3119,14 @@ router.post('/streams/:streamId/leave', async (req, res) => {
                 lastSeen: new Date().toISOString()
             });
         }
+        // Limpar LiveUser ao sair
+        try {
+            const { LiveUser } = await Promise.resolve().then(() => __importStar(require('../models/LiveInvite')));
+            await LiveUser.deleteOne({ userId });
+        }
+        catch (liveUserErr) {
+            console.error(`[STREAM-LEAVE] Erro ao limpar LiveUser para ${userId}:`, liveUserErr?.message || liveUserErr);
+        }
         // ���� MELHOR PR+�TICA: Decrementar viewers com $inc ( MongoDB garante n+�o ficar negativo com min: 0 )
         await index_1.Streamer.findOneAndUpdate({ id: streamId, viewers: { $gt: 0 } }, // Apenas se viewers > 0
         { $inc: { viewers: -1 } });
@@ -3213,6 +3329,20 @@ router.post('/streams/:id/end-session', async (req, res) => {
             fans: realFans,
             user: stream ? { name: stream.name, avatarUrl: stream.avatar } : { name: '', avatarUrl: '' }
         };
+        // Atualizar LiveCard para ended
+        if (stream?.hostId) {
+            try {
+                await index_1.LiveCard.findOneAndUpdate({ hostId: stream.hostId }, { $set: {
+                        isLive: false,
+                        streamStatus: 'ended',
+                        endTime: new Date(endTime),
+                        updatedAt: new Date()
+                    } });
+            }
+            catch (cardErr) {
+                console.warn('[END-SESSION] Erro ao atualizar LiveCard:', cardErr);
+            }
+        }
         res.json({
             success: true,
             user: updatedUser || {},
@@ -3367,6 +3497,36 @@ router.post('/streams/:id/gift', async (req, res) => {
             });
             console.log(`���� [WEBSOCKET] live_coins_updated emitido para a sala ${req.params.id} com totalCoins: ${updatedReceiver.receptores}`);
         }
+        // Emitir evento de presente recebido para todos na sala da live
+        if (io) {
+            const giftEventData = {
+                from: {
+                    id: updatedSender?.id || fromUserId,
+                    name: updatedSender?.name || 'Unknown',
+                    avatarUrl: updatedSender?.avatarUrl || '',
+                    level: updatedSender?.level || 1
+                },
+                toUser: {
+                    id: stream.hostId,
+                    name: updatedReceiver?.name || 'Unknown'
+                },
+                gift: {
+                    name: giftName,
+                    price: price,
+                    icon: gift.icon || '🎁',
+                    category: gift.category || 'Popular'
+                },
+                quantity: amount || 1,
+                totalValue,
+                roomId: req.params.id,
+                streamId: req.params.id,
+                timestamp: new Date().toISOString()
+            };
+            io.to(req.params.id).emit('live_gift_received', giftEventData);
+            io.to(req.params.id).emit('gift_received', giftEventData);
+            io.to(`user_${stream.hostId}`).emit('gift_received', giftEventData);
+            console.log(`🎁 [WEBSOCKET] live_gift_received emitido para sala ${req.params.id}: ${giftName} x${amount || 1}`);
+        }
         // Register gift transaction
         await index_1.GiftTransaction.create([{
                 id: `gift_tx_${Date.now()}_${fromUserId}`,
@@ -3448,7 +3608,7 @@ router.put('/streams/:id/quality', async (req, res) => {
                 streamId,
                 userId
             });
-            console.log(`���� [STREAM_QUALITY] Evento WebSocket emitido para stream_${streamId}`);
+            console.log(` [STREAM_QUALITY] Evento WebSocket emitido para stream_${streamId}`);
         }
         res.json({
             success: true,
@@ -3462,118 +3622,78 @@ router.put('/streams/:id/quality', async (req, res) => {
         });
     }
     catch (error) {
-        console.error('��� [STREAM_QUALITY] Erro:', error);
+        console.error(' [STREAM_QUALITY] Erro:', error);
         res.status(500).json({
             success: false,
             error: 'Erro ao atualizar qualidade do stream'
         });
     }
 });
-// API STARK - Iniciar live (padr+�o Buscast)
+// API STARK - Iniciar live (padr+o Buscast)
 // ===== ROUTE START =====
 router.post('/stark/live/start', async (req, res) => {
     try {
-        const { userId, title, name, category = 'general' } = req.body;
-        // Aceitar tanto 'name' quanto 'title' - priorizar 'title' se ambos existirem
-        const liveTitle = title || name;
-        console.log(`[STARK] Iniciando live - User: ${userId}, Title: ${liveTitle}`);
-        // Valida+�+�es b+�sicas
-        if (!userId || !liveTitle || liveTitle.trim() === '') {
-            return res.json({
-                code: 0,
-                msg: 'userId e title/name s+�o obrigat+�rios'
-            });
+        console.log('[STARK-START] Iniciando live via Stark API...');
+        const { userId, title, category, country } = req.body;
+        if (!userId || !title) {
+            return res.status(400).json({ code: 1, msg: 'Parametros obrigatorios: userId, title', result: null });
         }
-        // Buscar usu+�rio para verificar exist+�ncia
-        const user = await index_1.User.findOne({ id: userId });
-        if (!user) {
-            return res.json({
-                code: 0,
-                msg: 'Usu+�rio n+�o encontrado'
-            });
-        }
-        // Gerar dados reais da live
-        const liveId = (0, uuid_1.v4)(); // UUID +�nico
-        const streamId = userId; // streamId +�nico
-        const srsHost = process.env.SRS_HOST || 'srs';
-        const srsRtmp = `rtmp://${srsHost}:1935/live`;
-        const backendApi = 'https://api.livego.store/api/video/http';
-        const rtmpUrl = `${srsRtmp}/${streamId}`;
-        const playbackUrl = `${backendApi}/live/${streamId}.flv`;
-        // Criar nova transmiss+�o
-        const newLive = await index_1.Streamer.create({
-            id: liveId,
-            hostId: userId,
-            name: user.name,
-            avatar: user.avatarUrl || '',
-            title: title,
-            category: category.toLowerCase(),
-            streamId: streamId,
-            streamKey: `sk_live_${streamId}`,
-            rtmpIngestUrl: rtmpUrl,
-            playbackUrl: playbackUrl,
-            hlsUrl: `${backendApi}/live/${streamId}.m3u8`,
-            isLive: false,
-            streamStatus: 'preparing',
-            startTime: new Date().toISOString(),
-            viewers: 0,
-            country: user.country || 'br',
-            tags: [category.toLowerCase(), 'live'],
-            quality: 'HD',
-            giftsEnabled: true,
-            chatEnabled: true
-        });
-        // Não marcar isLive:true — só rascunho
-        // (quem publicar de fato chamará POST /streams/:id/publish ou SRS on_publish)
-        await index_1.User.findOneAndUpdate({ id: userId }, {
-            $set: {
-                currentStreamId: liveId,
-                lastSeen: new Date().toISOString()
-            }
-        });
-        console.log(`[STARK] Live criada - liveId: ${liveId}, streamId: ${streamId}`);
-        const io = req.app.get('io');
-        if (io) {
-            io.emit('new_live', {
-                id: newLive.id || liveId,
-                hostId: newLive.hostId || userId,
-                name: newLive.name || title || `Live de ${user.name}`,
-                avatar: newLive.avatar || user?.avatarUrl || '',
+        const user = await (0, idHelper_1.findUserByAnyId)(index_1.User, userId);
+        if (!user)
+            return res.status(404).json({ code: 1, msg: 'Usuario nao encontrado', result: null });
+        // Verifica se realmente existe stream ativa (não só flag isLive no User)
+        if (user.isLive) {
+            const activeStream = await index_1.Streamer.findOne({
+                hostId: userId,
                 isLive: true,
-                streamStatus: 'active',
-                country: newLive.country || user?.country || 'BR',
-                viewers: 0,
-                timestamp: new Date().toISOString()
-            });
-            io.emit('stream_started', {
-                streamId: newLive.id || liveId,
-                hostId: newLive.hostId || userId,
-                name: newLive.name || title || `Live de ${user.name}`,
-                avatar: newLive.avatar || user?.avatarUrl || '',
-                timestamp: new Date().toISOString()
-            });
+                streamStatus: { $in: ['active', 'live'] }
+            }).lean();
+            if (activeStream) {
+                console.log(`[STARK-START] Usuario ${userId} ja possui uma stream ativa (${activeStream.id}). Reiniciando/atualizando a stream.`);
+                // Nao bloqueamos com erro 409, permitindo a reinicializacao da transmissao
+            }
+            else {
+                // Flag isLive travada sem stream ativa — reseta
+                console.log(`[STARK-START] Resetando isLive=false para ${userId} — sem stream ativa`);
+                await index_1.User.findOneAndUpdate({ id: userId }, { $set: { isLive: false } });
+            }
         }
-        // Retornar no formato exato do Buscast
+        const streamId = userId;
+        const liveId = String(Date.now());
+        const srsHost = process.env.SRS_HOST || '127.0.0.1';
+        const pushUrl = 'webrtc://' + srsHost + ':1935/live/' + streamId + '?txSecret=xxx&txTime=xxx';
+        const finalCountry = (country || user.country || 'BR').toLowerCase();
+        const finalCategory = (category || 'popular').toLowerCase();
+        await index_1.Streamer.findOneAndUpdate({ id: streamId }, { $set: { id: streamId, hostId: userId, name: user.name || userId, isLive: false, streamStatus: 'preparing', startTime: new Date(), streamKey: streamId, liveId: liveId, pushUrl: pushUrl, title: title, category: finalCategory, country: finalCountry } }, { upsert: true, new: true });
+        await index_1.User.findOneAndUpdate({ id: userId }, { $set: { isLive: true, isOnline: true, currentStreamId: streamId } });
+        // Registrar broadcaster no LiveUser para aparecer na lista de online
+        try {
+            const { LiveUser } = await Promise.resolve().then(() => __importStar(require('../models/LiveInvite')));
+            await LiveUser.findOneAndUpdate({ userId }, {
+                userId,
+                username: userId,
+                name: user.name || userId,
+                avatarUrl: user.avatarUrl || '',
+                status: 'broadcasting',
+                currentStreamId: streamId,
+                lastActive: new Date()
+            }, { upsert: true, new: true });
+        }
+        catch (liveUserErr) {
+            console.error(`[STARK-START] Erro ao registrar LiveUser para ${userId}:`, liveUserErr?.message || liveUserErr);
+        }
         res.json({
-            code: 1,
-            result: {
-                liveId: liveId.toString(),
-                streamId: streamId,
-                pushUrl: rtmpUrl
-            },
-            msg: "OK"
+            code: 0,
+            result: { pushUrl, liveId, streamId, startTime: String(Date.now()) },
+            msg: 'OK'
         });
     }
     catch (error) {
-        console.error('[STARK] Erro ao criar live:', error);
-        res.json({
-            code: 0,
-            msg: 'Erro interno ao criar live'
-        });
+        res.status(500).json({ code: 1, msg: 'Erro interno', result: null });
     }
 });
-// Endpoint /api/streams/start - Cria registro provis+�rio (isLive: false)
-// Frontend chama antes de capturar m+�dia para obter streamKey e URLs
+// Endpoint /api/streams/start - Cria registro provis+rio (isLive: false)
+// Frontend chama antes de capturar m+dia para obter streamKey e URLs
 // ===== ROUTE START =====
 router.post('/streams/start', async (req, res) => {
     try {
@@ -3585,15 +3705,15 @@ router.post('/streams/start', async (req, res) => {
         const liveTitle = title || name || 'Ao Vivo';
         const user = await index_1.User.findOne({ id: userId });
         if (!user) {
-            return res.status(404).json({ error: 'Usu+�rio n+�o encontrado', status: 'user_not_found' });
+            return res.status(404).json({ error: 'Usu+rio n+o encontrado', status: 'user_not_found' });
         }
-        // Gerar streamKey +�nica
+        // Gerar streamKey +nica
         const streamKey = userId;
         const liveId = (0, uuid_1.v4)();
         const srsHost = process.env.SRS_HOST || 'srs';
         const srsRtmp = `rtmp://${srsHost}:1935/live`;
         const backendApi = 'https://api.livego.store/api/video/http';
-        // Criar registro provis+�rio ��� isLive: false at+� SRS on_publish
+        // Criar registro provis+rio  isLive: false at+ SRS on_publish
         const stream = await index_1.Streamer.create({
             id: liveId,
             hostId: userId,
@@ -3615,7 +3735,26 @@ router.post('/streams/start', async (req, res) => {
             giftsEnabled: true,
             chatEnabled: true
         });
-        console.log(`[STREAMS START] Stream provis+�rio criado: ${streamKey} para usu+�rio ${userId}`);
+        console.log(`[STREAMS START] Stream provis+rio criado: ${streamKey} para usu+rio ${userId}`);
+        // Criar LiveCard (stream preparando)
+        try {
+            await index_1.LiveCard.findOneAndUpdate({ hostId: userId }, { $set: {
+                    hostId: userId,
+                    name: user.name || userId,
+                    avatar: user.avatarUrl || '',
+                    title: liveTitle,
+                    streamKey: streamKey,
+                    country: (user.country || 'BR').toLowerCase(),
+                    isLive: false,
+                    streamStatus: 'preparing',
+                    category: (category || 'popular').toLowerCase(),
+                    startTime: new Date(),
+                    updatedAt: new Date()
+                } }, { upsert: true });
+        }
+        catch (cardErr) {
+            console.warn('[STREAMS-START] Erro ao criar LiveCard:', cardErr);
+        }
         res.json({
             success: true,
             streamKey: streamKey,
@@ -3626,7 +3765,7 @@ router.post('/streams/start', async (req, res) => {
         });
     }
     catch (error) {
-        console.error('[STREAMS START] Erro ao criar stream provis+�rio:', error);
+        console.error('[STREAMS START] Erro ao criar stream provis+rio:', error);
         res.status(500).json({
             error: 'Erro interno ao criar stream',
             status: 'error',
@@ -3634,7 +3773,7 @@ router.post('/streams/start', async (req, res) => {
         });
     }
 });
-// Endpoint /api/lives/start - Porteiro oficial da transmiss+�o
+// Endpoint /api/lives/start - Porteiro oficial da transmiss+o
 // Frontend chama com { streamId } e espera { success: boolean }
 // ===== ROUTE START =====
 router.post('/lives/start', async (req, res) => {
@@ -3645,13 +3784,13 @@ router.post('/lives/start', async (req, res) => {
         }
         const { streamId } = req.body;
         if (!streamId) {
-            return res.status(400).json({ error: 'streamId +� obrigat+�rio', status: 'invalid_request' });
+            return res.status(400).json({ error: 'streamId + obrigat+rio', status: 'invalid_request' });
         }
         const user = await index_1.User.findOne({ id: userId });
         if (!user) {
-            return res.status(404).json({ error: 'Usu+�rio n+�o encontrado', status: 'user_not_found' });
+            return res.status(404).json({ error: 'Usu+rio n+o encontrado', status: 'user_not_found' });
         }
-        // Buscar stream existente por streamKey ou criar provis+�rio
+        // Buscar stream existente por streamKey ou criar provis+rio
         let stream = await index_1.Streamer.findOne({ streamKey: streamId });
         if (!stream) {
             stream = await index_1.Streamer.findOne({ id: streamId });
@@ -3661,7 +3800,7 @@ router.post('/lives/start', async (req, res) => {
         const backendApi = 'https://api.livego.store/api/video/http';
         const now = new Date();
         if (!stream) {
-            // Criar registro provis+�rio
+            // Criar registro provis+rio
             const liveId = (0, uuid_1.v4)();
             stream = await index_1.Streamer.create({
                 id: liveId,
@@ -3707,29 +3846,29 @@ router.get('/lives/:id', async (req, res) => {
         const { id } = req.params;
         const userAgent = req.get('User-Agent') || '';
         const referer = req.get('Referer') || '';
-        console.log(`���� [DEBUG] Getting live details for streamer: ${id}`);
-        console.log(`���� [SECURITY] User-Agent: ${userAgent}, Referer: ${referer}`);
-        // DETEC+�+�O DE GRAVA+�+�O - Verificar sinais de ferramentas de grava+�+�o
+        console.log(` [DEBUG] Getting live details for streamer: ${id}`);
+        console.log(` [SECURITY] User-Agent: ${userAgent}, Referer: ${referer}`);
+        // DETEC++O DE GRAVA++O - Verificar sinais de ferramentas de grava++o
         const recordingIndicators = [
             'ffmpeg', 'vlc', 'obs', 'streamrecorder', 'youtube-dl', 'yt-dlp',
             'wget', 'curl', 'python-requests', 'node-fetch', 'postman',
             'insomnia', 'swagger', 'api-client', 'httpie'
         ];
         const isRecordingAttempt = recordingIndicators.some(indicator => userAgent.toLowerCase().includes(indicator.toLowerCase()));
-        // Verificar se +� acesso direto +� API (sem referer do app)
+        // Verificar se + acesso direto + API (sem referer do app)
         const isDirectApiAccess = !referer || (referer.includes('localhost') && userAgent.includes('curl'));
         // Usar ID real diretamente (sem mapeamento)
         const streamer = await index_1.Streamer.findOne({ id });
         if (!streamer) {
-            console.log(`��� Streamer not found: ${id}`);
+            console.log(` Streamer not found: ${id}`);
             return res.status(404).json({ error: 'Streamer not found' });
         }
-        // Transformar streamer para formato protegido usando mapper flex+�vel
+        // Transformar streamer para formato protegido usando mapper flex+vel
         const protectedStream = (0, srsStreamMapper_1.mapStreamToProtectedFlexible)(streamer);
         res.json(protectedStream);
     }
     catch (error) {
-        console.error('��� Error getting live details:', error);
+        console.error(' Error getting live details:', error);
         res.status(500).json({ error: 'Internal server error' });
     }
 });
@@ -3739,14 +3878,14 @@ router.post('/lives/:id/end', async (req, res) => {
         // Usar ID real diretamente
         const realId = req.params.id;
         const userId = (0, auth_1.getUserIdFromToken)(req);
-        console.log(`[STREAM-END] Encerrando stream: ${realId} por usu+�rio: ${userId}`);
+        console.log(`[STREAM-END] Encerrando stream: ${realId} por usu+rio: ${userId}`);
         // Atualizar status para 'ended' no banco
         await index_1.Streamer.findOneAndUpdate({ id: realId }, {
             isLive: false,
             streamStatus: 'ended',
             endTime: new Date()
         });
-        // Atualizar status do usu+�rio
+        // Atualizar status do usu+rio
         await index_1.User.findOneAndUpdate({ id: userId }, { $set: {
                 isLive: false,
                 isOnline: false,
@@ -3778,7 +3917,7 @@ router.post('/lives/:id/end', async (req, res) => {
         return (0, responseHelpers_1.internalServerErrorResponse)(res, 'Erro ao encerrar stream', error);
     }
 });
-// GET /api/live/nearby - Streams pr+�ximas por localiza+�+�o
+// GET /api/live/nearby - Streams pr+ximas por localiza++o
 // ===== ROUTE START =====
 router.get('/live/nearby', async (req, res) => {
     try {
@@ -3789,7 +3928,7 @@ router.get('/live/nearby', async (req, res) => {
         const lat = parseFloat(latitude);
         const lng = parseFloat(longitude);
         const maxDist = parseInt(maxDistance);
-        // Buscar streams ativas pr+�ximas usando geoLocation do host
+        // Buscar streams ativas pr+ximas usando geoLocation do host
         const nearbyStreams = await index_1.Streamer.find({
             isLive: true,
             streamStatus: 'active',
@@ -3798,10 +3937,10 @@ router.get('/live/nearby', async (req, res) => {
         })
             .populate('hostId', 'geoLocation name avatarUrl')
             .limit(parseInt(limit));
-        // Filtrar streams que t+�m host com localiza+�+�o pr+�xima
+        // Filtrar streams que t+m host com localiza++o pr+xima
         const validStreams = nearbyStreams.filter(stream => stream.hostId);
-        console.log(` [NEARBY STREAMS] ${validStreams.length} streams encontradas pr+�ximas a (${lat}, ${lng})`);
-        // Retornar streams COM PROTE+�+�O DE DADOS SENS+�VEIS usando mapper flex+�vel
+        console.log(` [NEARBY STREAMS] ${validStreams.length} streams encontradas pr+ximas a (${lat}, ${lng})`);
+        // Retornar streams COM PROTE++O DE DADOS SENS+VEIS usando mapper flex+vel
         const protectedActiveStreams = (0, srsStreamMapper_1.mapStreamsToProtectedArrayFlexible)(validStreams);
         res.json(protectedActiveStreams);
     }
@@ -3810,7 +3949,7 @@ router.get('/live/nearby', async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
-// GET /api/live/following - Streams de usu+�rios que o usu+�rio segue
+// GET /api/live/following - Streams de usu+rios que o usu+rio segue
 // ===== ROUTE START =====
 router.get('/live/following', async (req, res) => {
     try {
@@ -3818,18 +3957,18 @@ router.get('/live/following', async (req, res) => {
         if (!userId) {
             return res.status(400).json({ error: 'User ID is required' });
         }
-        // Buscar usu+�rio e seus seguidos
+        // Buscar usu+rio e seus seguidos
         const User = await Promise.resolve().then(() => __importStar(require('../models'))).then(m => m.User);
         const user = await User.findOne({ id: userId });
         if (!user) {
             return res.status(404).json({ error: 'User not found' });
         }
-        // Buscar IDs dos usu+�rios que segue
+        // Buscar IDs dos usu+rios que segue
         const followingIds = user.followingList || [];
         if (followingIds.length === 0) {
             return res.json([]);
         }
-        // Buscar streams ativas dos usu+�rios que segue
+        // Buscar streams ativas dos usu+rios que segue
         const followingStreams = await index_1.Streamer.find({
             isLive: true,
             streamStatus: 'active',
@@ -3837,7 +3976,7 @@ router.get('/live/following', async (req, res) => {
             name: { $exists: true, $nin: ['', null] }
         })
             .sort({ viewers: -1 });
-        console.log(`���� [FOLLOWING STREAMS] ${followingStreams.length} streams de usu+�rios seguidos por ${userId}`);
+        console.log(` [FOLLOWING STREAMS] ${followingStreams.length} streams de usu+rios seguidos por ${userId}`);
         res.json(followingStreams);
     }
     catch (error) {
@@ -3859,7 +3998,7 @@ router.get('/live/new', async (req, res) => {
         })
             .sort({ startTime: -1 }) // Mais recentes primeiro
             .limit(parseInt(limit));
-        console.log(`���� [NEW STREAMS] ${newStreams.length} streams mais recentes`);
+        console.log(` [NEW STREAMS] ${newStreams.length} streams mais recentes`);
         res.json(newStreams);
     }
     catch (error) {
@@ -3882,7 +4021,7 @@ router.post('/streams/:id/like', async (req, res) => {
         if (!stream) {
             return res.status(404).json({ error: 'Stream not found' });
         }
-        // Verificar se j+� deu like
+        // Verificar se j+ deu like
         const existingLike = await index_1.StreamLike.findOne({ streamId, userId });
         if (existingLike) {
             return res.status(400).json({ error: 'Already liked' });
@@ -3963,7 +4102,7 @@ router.delete('/streams/:id/like', async (req, res) => {
     }
 });
 // === ROTAS DE GERENCIAMENTO DE STREAMS ===
-// POST /api/streams/:streamId/end - Encerrar stream espec+�fica por ID
+// POST /api/streams/:streamId/end - Encerrar stream espec+fica por ID
 // ===== ROUTE START =====
 router.post('/streams/:streamId/end', async (req, res) => {
     try {
@@ -3972,33 +4111,33 @@ router.post('/streams/:streamId/end', async (req, res) => {
         if (!userId) {
             return res.status(401).json({
                 success: false,
-                message: 'Usu+�rio n+�o autenticado'
+                message: 'Usu+rio n+o autenticado'
             });
         }
-        console.log(`[STREAM-END] Tentando encerrar stream: ${streamId} pelo usu+�rio: ${userId}`);
-        // Buscar stream espec+�fica
+        console.log(`[STREAM-END] Tentando encerrar stream: ${streamId} pelo usu+rio: ${userId}`);
+        // Buscar stream espec+fica
         const stream = await index_1.Streamer.findOne({ id: streamId });
         if (!stream) {
             return res.status(404).json({
                 success: false,
-                message: 'Stream n+�o encontrada'
+                message: 'Stream n+o encontrada'
             });
         }
-        // Verificar se o usu+�rio +� o dono da stream ou admin
+        // Verificar se o usu+rio + o dono da stream ou admin
         const user = await (0, idHelper_1.findUserByAnyId)(index_1.User, userId);
         const isAdmin = user?.level !== undefined && user.level >= 10; // Admin level 10+
         const isOwner = stream.hostId.toString() === userId;
         if (!isOwner && !isAdmin) {
             return res.status(403).json({
                 success: false,
-                message: 'Apenas o dono da stream ou administrador pode encerr+�-la'
+                message: 'Apenas o dono da stream ou administrador pode encerr+-la'
             });
         }
-        // Verificar se stream est+� ativa
+        // Verificar se stream est+ ativa
         if (!stream.isLive) {
             return res.status(400).json({
                 success: false,
-                message: 'Stream j+� est+� encerrada'
+                message: 'Stream j+ est+ encerrada'
             });
         }
         // Encerrar stream
@@ -4009,7 +4148,7 @@ router.post('/streams/:streamId/end', async (req, res) => {
             endedBy: isOwner ? 'owner' : 'admin',
             endedAt: new Date()
         });
-        // Atualizar status do usu+�rio se n+�o tiver outras streams ativas
+        // Atualizar status do usu+rio se n+o tiver outras streams ativas
         const otherActiveStreams = await index_1.Streamer.find({
             hostId: stream.hostId,
             isLive: true,
@@ -4060,7 +4199,7 @@ router.post('/streams/:streamId/end', async (req, res) => {
         });
     }
 });
-// POST /api/streams/end-all - Encerrar todas as streams do usu+�rio
+// POST /api/streams/end-all - Encerrar todas as streams do usu+rio
 // ===== ROUTE START =====
 router.post('/streams/end-all', async (req, res) => {
     try {
@@ -4068,11 +4207,11 @@ router.post('/streams/end-all', async (req, res) => {
         if (!userId) {
             return res.status(401).json({
                 success: false,
-                message: 'Usu+�rio n+�o autenticado'
+                message: 'Usu+rio n+o autenticado'
             });
         }
-        console.log(`[STREAM-END-ALL] Encerrando todas as streams do usu+�rio: ${userId}`);
-        // Buscar todas as streams ativas do usu+�rio
+        console.log(`[STREAM-END-ALL] Encerrando todas as streams do usu+rio: ${userId}`);
+        // Buscar todas as streams ativas do usu+rio
         const activeStreams = await index_1.Streamer.find({
             hostId: userId,
             isLive: true
@@ -4080,7 +4219,7 @@ router.post('/streams/end-all', async (req, res) => {
         if (activeStreams.length === 0) {
             return res.status(400).json({
                 success: false,
-                message: 'Nenhuma stream ativa encontrada para este usu+�rio'
+                message: 'Nenhuma stream ativa encontrada para este usu+rio'
             });
         }
         // Encerrar todas as streams
@@ -4146,29 +4285,29 @@ router.post('/streams/:streamId/heartbeat', async (req, res) => {
         if (!userId) {
             return res.status(401).json({
                 success: false,
-                message: 'Usu+�rio n+�o autenticado'
+                message: 'Usu+rio n+o autenticado'
             });
         }
-        // Buscar stream espec+�fica
+        // Buscar stream espec+fica
         const stream = await index_1.Streamer.findOne({ id: streamId });
         if (!stream) {
             return res.status(404).json({
                 success: false,
-                message: 'Stream n+�o encontrada'
+                message: 'Stream n+o encontrada'
             });
         }
-        // Verificar se o usu+�rio +� o dono da stream
+        // Verificar se o usu+rio + o dono da stream
         if (stream.hostId.toString() !== userId) {
             return res.status(403).json({
                 success: false,
                 message: 'Apenas o dono da stream pode atualizar heartbeat'
             });
         }
-        // Verificar se stream est+� ativa
+        // Verificar se stream est+ ativa
         if (!stream.isLive) {
             return res.status(400).json({
                 success: false,
-                message: 'Stream n+�o est+� ativa'
+                message: 'Stream n+o est+ ativa'
             });
         }
         // Atualizar heartbeat e viewer count (se fornecido)
@@ -4176,11 +4315,11 @@ router.post('/streams/:streamId/heartbeat', async (req, res) => {
             lastHeartbeat: new Date(),
             streamStatus: 'active' // Garantir status ativo com heartbeat
         };
-        // Se viewer count for enviado, atualizar tamb+�m
+        // Se viewer count for enviado, atualizar tamb+m
         if (req.body.viewers !== undefined && typeof req.body.viewers === 'number') {
-            updateData.viewers = Math.max(0, req.body.viewers); // Garantir n+�mero n+�o negativo
+            updateData.viewers = Math.max(0, req.body.viewers); // Garantir n+mero n+o negativo
         }
-        // Se bandwidth for enviado, atualizar tamb+�m (campo n+�o existe no modelo, removido por enquanto)
+        // Se bandwidth for enviado, atualizar tamb+m (campo n+o existe no modelo, removido por enquanto)
         // if (req.body.bandwidth !== undefined && typeof req.body.bandwidth === 'number') {
         //     updateData.bandwidth = req.body.bandwidth;
         // }
@@ -4191,7 +4330,7 @@ router.post('/streams/:streamId/heartbeat', async (req, res) => {
             streamId: streamId,
             lastHeartbeat: new Date().toISOString(),
             viewers: updateData.viewers || stream.viewers || 0
-            // bandwidth removido - campo n+�o existe no modelo
+            // bandwidth removido - campo n+o existe no modelo
         });
     }
     catch (error) {
@@ -4204,8 +4343,8 @@ router.post('/streams/:streamId/heartbeat', async (req, res) => {
         });
     }
 });
-// === ROTAS DE ADMINISTRA+�+�O ===
-// POST /api/admin/streams/:streamId/force-end - For+�ar encerramento (admin)
+// === ROTAS DE ADMINISTRA++O ===
+// POST /api/admin/streams/:streamId/force-end - For+ar encerramento (admin)
 // ===== ROUTE START =====
 router.post('/admin/streams/:streamId/force-end', async (req, res) => {
     try {
@@ -4215,37 +4354,37 @@ router.post('/admin/streams/:streamId/force-end', async (req, res) => {
         if (!userId) {
             return res.status(401).json({
                 success: false,
-                message: 'Usu+�rio n+�o autenticado'
+                message: 'Usu+rio n+o autenticado'
             });
         }
-        // Verificar se +� admin
+        // Verificar se + admin
         const user = await (0, idHelper_1.findUserByAnyId)(index_1.User, userId);
         if (!user || user.level === undefined || user.level < 10) {
             return res.status(403).json({
                 success: false,
-                message: 'Acesso negado. Apenas administradores podem for+�ar encerramento'
+                message: 'Acesso negado. Apenas administradores podem for+ar encerramento'
             });
         }
-        console.log(`[ADMIN-FORCE-END] Admin ${userId} for+�ando encerramento da stream: ${streamId}`);
+        console.log(`[ADMIN-FORCE-END] Admin ${userId} for+ando encerramento da stream: ${streamId}`);
         // Buscar stream
         const stream = await index_1.Streamer.findOne({ id: streamId });
         if (!stream) {
             return res.status(404).json({
                 success: false,
-                message: 'Stream n+�o encontrada'
+                message: 'Stream n+o encontrada'
             });
         }
-        // For+�ar encerramento
+        // For+ar encerramento
         await index_1.Streamer.findOneAndUpdate({ id: streamId }, {
             isLive: false,
             streamStatus: 'ended',
             endTime: new Date(),
             endedBy: 'admin_force',
             endedByAdmin: userId,
-            endReason: reason || 'Encerramento for+�ado por administrador',
+            endReason: reason || 'Encerramento for+ado por administrador',
             endedAt: new Date()
         });
-        // Atualizar status do usu+�rio se n+�o tiver outras streams ativas
+        // Atualizar status do usu+rio se n+o tiver outras streams ativas
         const otherActiveStreams = await index_1.Streamer.find({
             hostId: stream.hostId,
             isLive: true,
@@ -4259,7 +4398,7 @@ router.post('/admin/streams/:streamId/force-end', async (req, res) => {
                     lastSeen: new Date()
                 } });
         }
-        console.log(`[ADMIN-FORCE-END] Stream ${streamId} encerrada for�adamente pelo admin ${userId}`);
+        console.log(`[ADMIN-FORCE-END] Stream ${streamId} encerrada foradamente pelo admin ${userId}`);
         const io = req.app.get('io');
         if (io) {
             io.emit('card_removed', {
@@ -4280,25 +4419,25 @@ router.post('/admin/streams/:streamId/force-end', async (req, res) => {
         }
         res.json({
             success: true,
-            message: 'Stream encerrada for+�adamente com sucesso',
+            message: 'Stream encerrada for+adamente com sucesso',
             streamId: streamId,
             endedBy: 'admin_force',
             endedByAdmin: userId,
-            endReason: reason || 'Encerramento for+�ado por administrador',
+            endReason: reason || 'Encerramento for+ado por administrador',
             endedAt: new Date().toISOString()
         });
     }
     catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-        console.error('[ADMIN-FORCE-END] Erro ao for+�ar encerramento:', error);
+        console.error('[ADMIN-FORCE-END] Erro ao for+ar encerramento:', error);
         res.status(500).json({
             success: false,
-            message: 'Erro interno ao for+�ar encerramento',
+            message: 'Erro interno ao for+ar encerramento',
             error: errorMessage
         });
     }
 });
-// GET /api/admin/streams/zombie-stats - Estat+�sticas de streams zumbis
+// GET /api/admin/streams/zombie-stats - Estat+sticas de streams zumbis
 // ===== ROUTE START =====
 router.get('/admin/streams/zombie-stats', async (req, res) => {
     try {
@@ -4306,30 +4445,30 @@ router.get('/admin/streams/zombie-stats', async (req, res) => {
         if (!userId) {
             return res.status(401).json({
                 success: false,
-                message: 'Usu+�rio n+�o autenticado'
+                message: 'Usu+rio n+o autenticado'
             });
         }
-        // Verificar se +� admin
+        // Verificar se + admin
         const user = await (0, idHelper_1.findUserByAnyId)(index_1.User, userId);
         if (!user || user.level === undefined || user.level < 10) {
             return res.status(403).json({
                 success: false,
-                message: 'Acesso negado. Apenas administradores podem ver estat+�sticas'
+                message: 'Acesso negado. Apenas administradores podem ver estat+sticas'
             });
         }
-        // Servi+�o de limpeza de streams zumbis removido
+        // Servi+o de limpeza de streams zumbis removido
         res.json({
             success: true,
-            message: 'Servi+�o de limpeza de streams zumbis foi desativado',
+            message: 'Servi+o de limpeza de streams zumbis foi desativado',
             stats: { active: 0, zombie: 0, cleaned: 0 }
         });
     }
     catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-        console.error('[ADMIN-ZOMBIE-STATS] Erro ao obter estat+�sticas:', error);
+        console.error('[ADMIN-ZOMBIE-STATS] Erro ao obter estat+sticas:', error);
         res.status(500).json({
             success: false,
-            message: 'Erro interno ao obter estat+�sticas',
+            message: 'Erro interno ao obter estat+sticas',
             error: errorMessage
         });
     }
@@ -4342,10 +4481,10 @@ router.post('/admin/streams/cleanup-zombies', async (req, res) => {
         if (!userId) {
             return res.status(401).json({
                 success: false,
-                message: 'Usu+�rio n+�o autenticado'
+                message: 'Usu+rio n+o autenticado'
             });
         }
-        // Verificar se +� admin
+        // Verificar se + admin
         const user = await (0, idHelper_1.findUserByAnyId)(index_1.User, userId);
         if (!user || user.level === undefined || user.level < 10) {
             return res.status(403).json({
@@ -4354,10 +4493,10 @@ router.post('/admin/streams/cleanup-zombies', async (req, res) => {
             });
         }
         console.log(`[ADMIN-CLEANUP] Admin ${userId} tentando executar limpeza manual de streams zumbis`);
-        // Servi+�o de limpeza de streams zumbis foi removido
+        // Servi+o de limpeza de streams zumbis foi removido
         res.json({
             success: true,
-            message: 'Servi+�o de limpeza de streams zumbis foi desativado',
+            message: 'Servi+o de limpeza de streams zumbis foi desativado',
             stats: { active: 0, zombie: 0, cleaned: 0 },
             cleanedAt: new Date().toISOString()
         });
@@ -4375,7 +4514,7 @@ router.post('/admin/streams/cleanup-zombies', async (req, res) => {
 // ========================================
 // ENDPOINTS ESSENCIAIS QUE FALTAM
 // ========================================
-// POST /api/streams/prepare - Preparar live (cria registro mas n+�o inicia transmiss+�o)
+// POST /api/streams/prepare - Preparar live (cria registro mas n+o inicia transmiss+o)
 // ===== ROUTE START =====
 router.post('/streams/prepare', async (req, res) => {
     try {
@@ -4384,32 +4523,32 @@ router.post('/streams/prepare', async (req, res) => {
         if (!userId) {
             return res.status(401).json({
                 success: false,
-                message: 'Usu+�rio n+�o autenticado'
+                message: 'Usu+rio n+o autenticado'
             });
         }
         const { name, title, category = 'general', description, tags = [] } = req.body;
         // Aceitar tanto 'name' quanto 'title' - priorizar 'title' se ambos existirem
         const liveTitle = title || name;
-        // Valida+�+�es b+�sicas
+        // Valida++es b+sicas
         if (!liveTitle || liveTitle.trim() === '') {
             return res.status(400).json({
                 success: false,
-                message: 'T+�tulo da live +� obrigat+�rio (use "name" ou "title")'
+                message: 'T+tulo da live + obrigat+rio (use "name" ou "title")'
             });
         }
-        // Buscar usu+�rio
+        // Buscar usu+rio
         const user = await index_1.User.findOne({ id: userId });
         if (!user) {
             return res.status(404).json({
                 success: false,
-                message: 'Usu+�rio n+�o encontrado'
+                message: 'Usu+rio n+o encontrado'
             });
         }
         // Gerar IDs para a live
         const streamId = userId;
         const streamKey = userId;
-        // Configura+�+�es SRS
-        const srsHost = process.env.SRS_HOST || '72.60.249.175';
+        // Configura++es SRS
+        const srsHost = process.env.SRS_HOST || '127.0.0.1';
         const srsRtmpUrl = process.env.SRS_RTMP_URL || `rtmp://${srsHost}:1935/live`;
         const backendApi = (() => {
             const bu = process.env.BACKEND_URL || 'https://api.livego.store';
@@ -4439,7 +4578,7 @@ router.post('/streams/prepare', async (req, res) => {
             giftsEnabled: true,
             chatEnabled: true
         });
-        console.log(`[STREAM-PREPARE] Live preparada: ${streamId} para usu+�rio ${userId}`);
+        console.log(`[STREAM-PREPARE] Live preparada: ${streamId} para usu+rio ${userId}`);
         res.json({
             success: true,
             stream: {
@@ -4463,16 +4602,16 @@ router.post('/streams/prepare', async (req, res) => {
         });
     }
 });
-// POST /api/streams/:id/start - Iniciar transmiss+�o (marcar como ativa)
+// POST /api/streams/:id/start - Iniciar transmiss+o (marcar como ativa)
 // ===== ROUTE START =====
 router.post('/streams/:id/start', async (req, res) => {
     try {
-        console.log('[STREAM-START] Iniciando transmiss+�o...');
+        console.log('[STREAM-START] Iniciando transmiss+o...');
         const userId = (0, auth_1.getUserIdFromToken)(req);
         if (!userId) {
             return res.status(401).json({
                 success: false,
-                message: 'Usu+�rio n+�o autenticado'
+                message: 'Usu+rio n+o autenticado'
             });
         }
         const { id } = req.params;
@@ -4481,14 +4620,14 @@ router.post('/streams/:id/start', async (req, res) => {
         if (!stream) {
             return res.status(404).json({
                 success: false,
-                message: 'Stream n+�o encontrado'
+                message: 'Stream n+o encontrado'
             });
         }
-        // Verificar se j+� est+� ativa
+        // Verificar se j+ est+ ativa
         if (stream.isLive && stream.streamStatus === 'active') {
             return res.status(409).json({
                 success: false,
-                message: 'Stream j+� est+� ativa'
+                message: 'Stream j+ est+ ativa'
             });
         }
         // Atualizar para ativa
@@ -4496,21 +4635,21 @@ router.post('/streams/:id/start', async (req, res) => {
         stream.streamStatus = 'active';
         stream.startTime = new Date();
         await stream.save();
-        // Atualizar usu+�rio
+        // Atualizar usu+rio
         await index_1.User.findOneAndUpdate({ id: userId }, {
             isLive: true,
             isOnline: true,
             currentStreamId: id,
             lastSeen: new Date().toISOString()
         });
-        // Atualizar status online na cole+�+�o userstatuses
+        // Atualizar status online na cole++o userstatuses
         const { UserStatus } = await Promise.resolve().then(() => __importStar(require('../models')));
         await UserStatus.findOneAndUpdate({ userId: userId }, {
             isOnline: true,
             lastSeen: new Date(),
             updatedAt: new Date()
         }, { upsert: true, new: true });
-        console.log(`[STREAM-START] Stream ${id} iniciada para usu+�rio ${userId}`);
+        console.log(`[STREAM-START] Stream ${id} iniciada para usu+rio ${userId}`);
         const io = req.app.get('io');
         if (io) {
             io.emit('new_live', {
@@ -4648,36 +4787,6 @@ router.get('/stark/live/check/:streamId', async (req, res) => {
         res.status(500).json({ code: 1, msg: 'Erro interno', data: null });
     }
 });
-// STARK API (BuzzCast) - POST /api/stark/live/start
-// ========================================
-router.post('/stark/live/start', async (req, res) => {
-    try {
-        console.log('[STARK-START] Iniciando live via Stark API...');
-        const { userId, title, category } = req.body;
-        if (!userId || !title) {
-            return res.status(400).json({ code: 1, msg: 'Parametros obrigatorios: userId, title', result: null });
-        }
-        const user = await (0, idHelper_1.findUserByAnyId)(index_1.User, userId);
-        if (!user)
-            return res.status(404).json({ code: 1, msg: 'Usuario nao encontrado', result: null });
-        if (user.isLive)
-            return res.status(409).json({ code: 1, msg: 'Usuario ja esta ao vivo', result: null });
-        const streamId = userId;
-        const liveId = String(Date.now());
-        const srsHost = process.env.SRS_HOST || '2.25.192.154';
-        const pushUrl = 'webrtc://' + srsHost + ':1935/live/' + streamId + '?txSecret=xxx&txTime=xxx';
-        await index_1.Streamer.findOneAndUpdate({ id: streamId }, { $set: { id: streamId, hostId: userId, name: user.name || userId, isLive: true, streamStatus: 'active', startTime: new Date(), streamKey: streamId, liveId: liveId, pushUrl: pushUrl, title: title } }, { upsert: true, new: true });
-        await index_1.User.findOneAndUpdate({ id: userId }, { $set: { isLive: true, isOnline: true, currentStreamId: streamId } });
-        res.json({
-            code: 0,
-            result: { pushUrl, liveId, streamId, startTime: String(Date.now()) },
-            msg: 'OK'
-        });
-    }
-    catch (error) {
-        res.status(500).json({ code: 1, msg: 'Erro interno', result: null });
-    }
-});
 // ========================================
 // STARK API (BuzzCast) - POST /api/stark/live/publish
 // ========================================
@@ -4699,11 +4808,11 @@ router.post('/stark/live/publish', async (req, res) => {
             return res.status(409).json({ code: 1, msg: 'Stream ja esta sendo publicada', result: null });
         }
         // Gerar URLs de publicacao
-        const srsHost = process.env.SRS_HOST || '2.25.192.154';
+        const srsHost = process.env.SRS_HOST || '127.0.0.1';
         const whipUrl = 'https://' + srsHost + ':8000/whip/' + streamId;
         const whepUrl = 'https://' + srsHost + ':8000/whep/' + streamId;
         const rtmpUrl = 'rtmp://' + srsHost + ':1935/live/' + streamId;
-        const hlsUrl = 'https://livego.store/live/' + streamId + '.m3u8';
+        const hlsUrl = process.env.SRS_HLS_URL || ('https://livego.store/live/' + streamId + '.m3u8');
         // Atualizar stream com URLs de publicacao
         await index_1.Streamer.findOneAndUpdate({ id: streamId }, { $set: {
                 isLive: true,
@@ -4711,6 +4820,7 @@ router.post('/stark/live/publish', async (req, res) => {
                 rtmpIngestUrl: rtmpUrl,
                 hlsUrl: hlsUrl,
                 webrtcUrl: whipUrl,
+                playbackUrl: whepUrl,
                 updatedAt: new Date()
             } });
         // Salvar na colecao publishes
@@ -4733,6 +4843,28 @@ router.post('/stark/live/publish', async (req, res) => {
         }
         catch (dbErr) {
             console.warn('[STARK-PUBLISH] Erro na colecao publishes:', dbErr);
+        }
+        // Criar/atualizar LiveCard (so quando realmente publicar)
+        try {
+            const user = await index_1.User.findOne({ id: tokenUserId }).lean();
+            await index_1.LiveCard.findOneAndUpdate({ hostId: tokenUserId }, { $set: {
+                    hostId: tokenUserId,
+                    name: stream.name || user?.name || tokenUserId,
+                    avatar: stream.avatar || user?.avatarUrl || '',
+                    title: stream.title || user?.name || tokenUserId,
+                    streamKey: streamId,
+                    country: (stream.country || user?.country || 'BR').toLowerCase(),
+                    isLive: true,
+                    streamStatus: 'active',
+                    category: (stream.category || 'popular').toLowerCase(),
+                    playbackUrl: whepUrl,
+                    hlsUrl: hlsUrl,
+                    startTime: new Date(),
+                    updatedAt: new Date()
+                } }, { upsert: true });
+        }
+        catch (cardErr) {
+            console.warn('[STARK-PUBLISH] Erro ao criar/atualizar LiveCard:', cardErr);
         }
         console.log('[STARK-PUBLISH] Publicacao iniciada:', { userId: tokenUserId, streamId });
         res.json({
@@ -4847,6 +4979,18 @@ router.post('/stark/live/end', async (req, res) => {
         }
         catch (ioErr) {
             console.warn('[STARK-END] Erro ao emitir eventos socket:', ioErr);
+        }
+        // Atualizar LiveCard para ended
+        try {
+            await index_1.LiveCard.findOneAndUpdate({ hostId: tokenUserId }, { $set: {
+                    isLive: false,
+                    streamStatus: 'ended',
+                    endTime: endTime,
+                    updatedAt: endTime
+                } });
+        }
+        catch (cardErr) {
+            console.warn('[STARK-END] Erro ao atualizar LiveCard:', cardErr);
         }
         console.log('[STARK-END] Live encerrada:', { userId: tokenUserId, streamId, liveTime: liveTimeSeconds });
         res.json({

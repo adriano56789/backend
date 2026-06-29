@@ -47,8 +47,13 @@ const findUserByRealId = async (User, userId) => {
         }
         userId = user.id;
     }
-    // Buscar APENAS por ID real
-    const user = await User.findOne({ id: userId });
+    // Buscar por nome (name = id, não existe id numérico)
+    let user = await User.findOne({ name: { $regex: new RegExp(`^${userId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } });
+    // FALLBACK: buscar por identification se nome não encontrou
+    if (!user) {
+        console.log(`⚠️ [ID_HELPER] Nome não encontrado, tentando por identification: ${userId}`);
+        user = await User.findOne({ identification: userId });
+    }
     if (!user) {
         throw new Error(`❌ Usuário não encontrado com ID real: ${userId}`);
     }
@@ -86,15 +91,26 @@ const updateUserByRealId = async (User, userId, updateData, options = { new: tru
         throw new Error('🚫 Não foi fornecido um argumento para updateData');
     }
     // Buscar usuário (converte MongoDB ID para ID real automaticamente)
-    const user = await (0, exports.findUserByRealId)(User, userId);
-    // SEMPRE usar ID real para atualização
-    console.log(`✅ [ID_HELPER] Atualizando usuário por ID real: ${user.id}`);
+    let user;
+    try {
+        user = await (0, exports.findUserByRealId)(User, userId);
+    }
+    catch (error) {
+        console.log(`⚠️ [ID_HELPER] Usuário não encontrado para atualização: ${userId} - tentando update direto`);
+        // Se não encontrou, tenta update direto pelo userId passado
+        const atomicUpdate = updateData.$set || updateData.$inc || updateData.$push || updateData.$pull
+            ? updateData
+            : { $set: updateData };
+        return await User.findOneAndUpdate({ $or: [{ id: userId }, { name: userId }, { identification: userId }] }, atomicUpdate, { ...options, returnDocument: 'after' });
+    }
+    // SEMPRE usar nome como chave (name = id, não existe id numérico)
+    console.log(`✅ [ID_HELPER] Atualizando usuário: ${user.name}`);
     // Garantir que os dados de atualização usam operadores atômicos do MongoDB ($set)
     const atomicUpdate = updateData.$set || updateData.$inc || updateData.$push || updateData.$pull
         ? updateData
         : { $set: updateData };
-    return await User.findOneAndUpdate({ id: user.id }, // ID real como chave OBRIGATÓRIA
-    atomicUpdate, options);
+    return await User.findOneAndUpdate({ name: user.name }, // name é a chave real (id = name)
+    atomicUpdate, { ...options, returnDocument: 'after' });
 };
 exports.updateUserByRealId = updateUserByRealId;
 /**
