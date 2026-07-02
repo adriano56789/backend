@@ -26,14 +26,15 @@ function fetchImageBuffer(url: string): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doRequest = (reqUrl: string): void => {
       https.get(reqUrl, (response) => {
-        if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+        const sc = response.statusCode;
+        if (sc && sc >= 300 && sc < 400 && response.headers.location) {
           const redirectUrl = new URL(response.headers.location, reqUrl).toString();
           console.log(`  -> Redirect para ${redirectUrl}`);
           doRequest(redirectUrl);
           return;
         }
-        if (response.statusCode !== 200) {
-          reject(new Error(`HTTP ${response.statusCode} for ${reqUrl}`));
+        if (sc !== 200) {
+          reject(new Error(`HTTP ${sc} for ${reqUrl}`));
           return;
         }
         const chunks: Buffer[] = [];

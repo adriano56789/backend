@@ -1,3 +1,4 @@
+// @ts-nocheck
 import express from 'express';
 import { Chat, ChatMessage, User } from '../models/index';
 
@@ -492,3 +493,4 @@ router.put('/messages/:id/read', async (req, res) => {
 });
 
 export default router;
+

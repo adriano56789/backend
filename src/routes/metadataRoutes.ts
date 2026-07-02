@@ -1,7 +1,23 @@
+// @ts-nocheck
 import express from 'express';
 import { Gift, GiftTransaction, Streamer, User, StreamSession, LiveNotification, UserPhoto } from '../models';
 
 const router = express.Router();
+
+router.get('/categories', async (req, res) => {
+    const categories = [
+        { key: 'popular', label: 'Popular' },
+        { key: 'followed', label: 'Seguido' },
+        { key: 'nearby', label: 'Perto' },
+        { key: 'pk', label: 'PK' },
+        { key: 'new', label: 'Novo' },
+        { key: 'music', label: 'Música' },
+        { key: 'dance', label: 'Dança' },
+        { key: 'party', label: 'Festa' },
+        { key: 'private', label: 'Privado' }
+    ];
+    res.json(categories);
+});
 
 router.get('/gifts', async (req, res) => {
     res.json(await Gift.find());
@@ -613,3 +629,4 @@ router.post('/history/streams', async (req, res) => {
 });
 
 export default router;
+

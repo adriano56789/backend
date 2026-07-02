@@ -181,4 +181,33 @@ router.get('/user', async (req, res) => {
     }
 });
 
+// GET /location/ip — geolocalização por IP
+router.get('/ip', async (req, res) => {
+  try {
+    const clientIp = req.headers['x-forwarded-for']?.toString().split(',')[0].trim() || req.ip || '127.0.0.1';
+
+    // Usar ip-api.com (gratuito, sem chave, 45 req/min)
+    const response = await fetch(`http://ip-api.com/json/${clientIp}?fields=status,lat,lon,city,regionName,country,query&lang=pt`);
+    const data = await response.json();
+
+    if (data.status !== 'success') {
+      return res.json({ success: false, data: null });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        lat: data.lat,
+        lon: data.lon,
+        city: data.city || 'São Paulo',
+        region: data.regionName || 'SP',
+        country: data.country || 'Brasil'
+      }
+    });
+  } catch (error) {
+    console.error('[Location/IP] Erro:', error);
+    res.json({ success: false, data: null });
+  }
+});
+
 export default router;

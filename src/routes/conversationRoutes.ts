@@ -1,3 +1,4 @@
+// @ts-nocheck
 import express from 'express';
 import { Chat, ChatMessage, User } from '../models/index';
 

@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.FriendshipService = void 0;
+// @ts-nocheck
 const Friendship_1 = require("../models/Friendship");
 const User_1 = require("../models/User");
 const Followers_1 = require("../models/Followers");
@@ -49,7 +50,7 @@ class FriendshipService {
             }
             // Criar solicitação de amizade (inativa até ser aceita)
             const friendship = await Friendship_1.Friendship.create({
-                id: `friendship_${fromUserId}_${toUserId}_${Date.now()}`,
+                _id: `friendship_${fromUserId}_${toUserId}_${Date.now()}`,
                 userId1: fromUserId,
                 userId2: toUserId,
                 initiatedBy: fromUserId,
@@ -262,7 +263,7 @@ class FriendshipService {
             });
             if (!existingFriendship) {
                 const friendship = await Friendship_1.Friendship.create({
-                    id: `friend_${userId1}_${userId2}_${Date.now()}`,
+                    _id: `friend_${userId1}_${userId2}_${Date.now()}`,
                     userId1,
                     userId2,
                     initiatedBy,

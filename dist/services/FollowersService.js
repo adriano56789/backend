@@ -70,7 +70,7 @@ class FollowersService {
                 });
                 if (!existingFriendship) {
                     await Friendship_1.Friendship.create({
-                        id: `friend_${followerId}_${followingId}_${Date.now()}`,
+                        _id: `friend_${followerId}_${followingId}_${Date.now()}`,
                         userId1: followerId,
                         userId2: followingId,
                         initiatedBy: followerId,

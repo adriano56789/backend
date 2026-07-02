@@ -3,9 +3,24 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+// @ts-nocheck
 const express_1 = __importDefault(require("express"));
 const models_1 = require("../models");
 const router = express_1.default.Router();
+router.get('/categories', async (req, res) => {
+    const categories = [
+        { key: 'popular', label: 'Popular' },
+        { key: 'followed', label: 'Seguido' },
+        { key: 'nearby', label: 'Perto' },
+        { key: 'pk', label: 'PK' },
+        { key: 'new', label: 'Novo' },
+        { key: 'music', label: 'Música' },
+        { key: 'dance', label: 'Dança' },
+        { key: 'party', label: 'Festa' },
+        { key: 'private', label: 'Privado' }
+    ];
+    res.json(categories);
+});
 router.get('/gifts', async (req, res) => {
     res.json(await models_1.Gift.find());
 });

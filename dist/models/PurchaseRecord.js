@@ -41,7 +41,7 @@ const PurchaseRecordSchema = new mongoose_1.Schema({
     type: {
         type: String,
         required: true,
-        enum: ['purchase_diamonds', 'withdraw_earnings', 'withdraw_platform_earnings', 'purchase_frame', 'platform_fee_income', 'withdrawal', 'commission']
+        enum: ['purchase_diamonds', 'withdraw_earnings', 'withdraw_platform_earnings', 'purchase_frame', 'platform_fee_income', 'withdrawal', 'commission', 'block_attempt', 'gift_received', 'gift_sent']
     },
     description: { type: String, required: true },
     amountBRL: { type: Number, required: true },
@@ -49,7 +49,7 @@ const PurchaseRecordSchema = new mongoose_1.Schema({
     status: {
         type: String,
         required: true,
-        enum: ['Concluído', 'Pendente', 'Cancelado', 'Processando', 'Aprovado', 'Recusado'],
+        enum: ['Concluído', 'Pendente', 'Cancelado', 'Processando', 'Aprovado', 'Recusado', 'success', 'failed'],
         default: 'Pendente'
     },
     externalReference: { type: String, index: true },

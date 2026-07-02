@@ -235,27 +235,42 @@ UserRoutes.delete('/:id', async (req, res) => {
 UserRoutes.patch("/:id", async (req, res) => {
     try {
         const paramId = req.params.id;
-        let user;
-        // Primeiro tenta match exato
-        user = await User.findOneAndUpdate({ id: paramId }, req.body, { new: true });
+        // Sanitize update: remove internal/protected fields
+        const allowedFields = [
+            'name', 'displayName', 'avatarUrl', 'coverUrl', 'bio', 'gender',
+            'birthday', 'residence', 'profession', 'emotional_status', 'tags',
+            'city', 'state', 'country', 'age', 'isAvatarProtected',
+            'chatPermission', 'pipEnabled', 'locationPermission',
+            'showActivityStatus', 'showLocation', 'privateStreamSettings',
+            'activeFrameId', 'obras'
+        ];
+        const updateData: any = {};
+        for (const key of allowedFields) {
+            if (req.body[key] !== undefined) {
+                updateData[key] = req.body[key];
+            }
+        }
+
+        let user = await User.findOneAndUpdate({ id: paramId }, updateData, { new: true });
         if (!user) {
-            // Fallback case-insensitive
             user = await User.findOneAndUpdate(
                 { id: { $regex: new RegExp('^' + paramId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i') } },
-                req.body,
+                updateData,
                 { new: true }
             );
         }
         if (!user) {
+            console.error(`[PATCH USER] Usuário não encontrado: ${paramId}`);
             return res.status(404).json({ error: "Usuário não encontrado" });
         }
-        if (req.body.avatarUrl) {
+        if (updateData.avatarUrl) {
             const io = req.app.get("io");
             if (io) io.emit("avatar_updated", { userId: user.id, avatarUrl: user.avatarUrl, timestamp: new Date().toISOString() });
         }
         res.json({ success: true, user: standardizeUserResponse(user) });
     } catch (error: any) {
         console.error("Erro ao atualizar perfil do usuário:", error);
+        console.error("Body recebido:", JSON.stringify(req.body).substring(0, 500));
         res.status(500).json({ error: error.message || "Erro interno ao atualizar perfil" });
     }
 });
@@ -527,7 +542,7 @@ UserRoutes.post('/:id/toggle-follow', async (req, res) => {
 
                     await Friendship.create({
 
-                        id: `friendship_${followerId}_${followingId}_${Date.now()}`,
+                        _id: `friendship_${followerId}_${followingId}_${Date.now()}`,
 
                         userId1: followerId,
 

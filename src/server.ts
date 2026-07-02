@@ -64,11 +64,18 @@ import likesRoutes from './routes/likesRoutes'; // NOVO - Sistema de Likes
 import callInvitationRoutes from './routes/callInvitationRoutes'; // NOVO - Sistema de convites de chamada na live
 import activityRoutes from './routes/activityRoutes'; // NOVO - Sistema de Atividades
 import videoStreamRoutes from './routes/videoStreamRoutes'; // NOVO - API de Streaming de Vídeo
-import srsRoutes from './routes/srsRoutes'; // Callbacks SRS
+import srsRoutes from './routes/srsRoutes';
+import livekitRoutes from './routes/livekitRoutes'; // Callbacks SRS
 import appVersionRoutes from './routes/appVersionRoutes'; // NOVO - Sistema de controle de versão
 import debugRoutes from './routes/debugRoutes';
 import crudRoutes from './routes/crudRoutes';
 import liveInviteRoutes from './routes/liveInviteRoutes';
+import identificationRoutes from './routes/identificationRoutes';
+import userIdRoutes from './routes/userIdRoutes';
+import turnRoutes from './routes/turnRoutes';
+import stunRoutes from './routes/stunRoutes';
+import streamAccessRoutes from './routes/streamAccessRoutes';
+import protobufRoutes from './routes/protobufRoutes';
 import UserStatusManager from './middleware/UserStatusManager';
 import { blockBase64Middleware } from './middleware/blockBase64';
 import { mqttBridge } from './services/MqttBridge';
@@ -80,20 +87,7 @@ import { mqttBridge } from './services/MqttBridge';
 validateEnv();
 
 // ─── Orphan Process Killer (FFmpeg) ─────────────────────────────────
-const activeProcesses = new Set<any>();
-
-export function registerFfmpegProcess(proc: any) {
-  activeProcesses.add(proc);
-  proc.on('close', () => activeProcesses.delete(proc));
-}
-
-function killAllFfmpegProcesses() {
-  console.warn(`[SYSTEM] Matando ${activeProcesses.size} processos FFmpeg ativos...`);
-  for (const proc of activeProcesses) {
-    try { proc.kill('SIGKILL'); } catch (_) {}
-  }
-  activeProcesses.clear();
-}
+import { killAllFfmpegProcesses } from './services/FfmpegService';
 // ────────────────────────────────────────────────────────────────────
 
 const app = express();
@@ -232,7 +226,7 @@ connectDB().then(async () => {
                     hlsUrl: s.hlsUrl || '',
                     country: (s.country || 'BR').toLowerCase(),
                     isLive: true,
-                    streamStatus: s.streamStatus || 'active',
+                    streamStatus: (s.streamStatus === 'preparing' || s.streamStatus === 'paused' ? 'active' : s.streamStatus) || 'active',
                     category: s.category || 'popular',
                     isPrivate: s.isPrivate || false,
                     viewers: s.viewers || 0,
@@ -247,7 +241,7 @@ connectDB().then(async () => {
         console.warn('[MIGRATION] Erro ao migrar Streamers para LiveCards:', err);
     }
 
-    server.listen(port, '127.0.0.1', () => {
+    server.listen(port, '0.0.0.0', () => {
         console.log(`🌍 API Server started on http://127.0.0.1:${port}`);
     });
 }).catch(error => {
@@ -287,18 +281,10 @@ app.use(cors({
     preflightContinue: false
 }));
 
-// Middleware para headers adicionais (Fallback e Preflight manual)
+// Removido middleware manual de CORS - o cors() middleware acima já gerencia corretamente
+// Headers adicionais para OPTIONS (preflight) - só age quando o cors() não respondeu
 app.use((req, res, next) => {
-    const origin = req.headers.origin;
-
-    if (origin) {
-        res.header('Access-Control-Allow-Origin', origin);
-        res.header('Access-Control-Allow-Credentials', 'true');
-    }
-
     if (req.method === 'OPTIONS') {
-        res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-        res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Origin, Accept, Cache-Control, Pragma, cache-control, pragma, x-acesso-exclusivo-app');
         res.header('Access-Control-Max-Age', '1728000');
         return res.status(204).end();
     }
@@ -389,6 +375,8 @@ app.post('/api/earnings/withdraw/:userId', async (req, res) => {
 });
 app.use('/api/checkout', checkoutRoutes);
 app.use('/api/payment', checkoutRoutes); // groups pix/credit-card
+app.use('/api/identification', identificationRoutes); // API de identificação de usuários
+app.use('/api/user-id', userIdRoutes); // NOVO - API de gerenciamento de IDs únicos
 app.use('/api/purchase', purchaseRoutes); // dedicated purchase routes
 app.use('/api/admin', adminRoutes);
 app.use('/api/chats', chatRoutes); // Rotas de chat
@@ -433,11 +421,15 @@ app.use('/api/settings/:id', validateAndConvertUserId('id'));
 app.use('/api/zoom/user/:userId', validateAndConvertUserId('userId'));
 app.use('/api/zoom', zoomRoutes);
 
+app.use('/api/livekit', livekitRoutes); // NOVO - Salas LiveKit
+app.use('/api', turnRoutes); // NOVO - Credenciais TURN
+app.use('/api', stunRoutes); // STUN servers
 app.use('/api/srs', srsRoutes); // Callbacks do SRS PRIMEIRO (evita conflito com routes genéricos)
 app.use('/api', metadataRoutes); // handles /api/ranking, /api/gifts, /api/regions, /api/history
 app.use('/api', liveRoutes); // handles /api/live, /api/streams, /api/rtc, /api/lives, /api/permissions
 app.use('/api', settingsRoutes); // handles /api/settings, /api/notifications/settings
 app.use('/api/pk', pkRoutes);
+app.use('/api/protobuf', protobufRoutes);
 app.use('/api/live', liveInviteRoutes); // NOVO - Convites Co-Host/PK com SRS SFU WebRTC
 app.use('/api/interactions', interactionRoutes); // handles /api/interactions/presents, /api/interactions/streams
 app.use('/api/visitors', visitorRoutes); // NOVO - Registro de visitas por nome
@@ -446,6 +438,7 @@ app.use('/api', activityRoutes); // NOVO - Sistema de Atividades
 app.use('/api/video', videoStreamRoutes); // NOVO - API de Streaming de Vídeo
 app.use('/api', videoStreamRoutes); // RTC routes (/api/rtc/v1/publish, /api/rtc/v1/stop)
 app.use('/api/stats', statsRoutes); // NOVO - Estatísticas em tempo real
+app.use('/api/streams', streamAccessRoutes); // Validação de acesso a transmissões
 app.use('/api', debugRoutes); // Debug/monitoramento
 
 
@@ -464,9 +457,6 @@ app.post('/api/analytics', (req, res) => {
 // Fallback para API - retornar 404 para endpoints não encontrados
 // Servir avatares enviados ANTES das rotas da API com CORS headers
 app.use('/uploads', (req, res, next) => {
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
     res.header('Cross-Origin-Resource-Policy', 'cross-origin');
     next();
 }, express.static(path.join(__dirname, '../uploads')));
@@ -904,7 +894,7 @@ io.on('connection', (socket) => {
                 senderId,
                 receiverId: receiverId || senderId,
                 content,
-                messageType,
+                messageType: messageType as 'text' | 'image' | 'gift' | 'system',
                 isRead: false,
                 sentAt: new Date()
             });
@@ -1222,12 +1212,12 @@ io.on('connection', (socket) => {
                 // Verificar se já são amigos (seguimento mútuo)
                 const isAlreadyFollowing = await Followers.findOne({
                     followerId: data.followerId,
-                    followedId: data.followedId
+                    followingId: data.followedId
                 });
 
                 const isFollowedBack = await Followers.findOne({
                     followerId: data.followedId,
-                    followedId: data.followerId
+                    followingId: data.followerId
                 });
 
                 if (!isAlreadyFollowing) {
@@ -1235,7 +1225,7 @@ io.on('connection', (socket) => {
                     await Followers.create({
                         id: `follow_${data.followerId}_${data.followedId}_${Date.now()}`,
                         followerId: data.followerId,
-                        followedId: data.followedId,
+                        followingId: data.followedId,
                         createdAt: new Date()
                     });
 
@@ -1249,9 +1239,9 @@ io.on('connection', (socket) => {
                 // Se for follow mútuo, criar amizade
                 if (isFollowedBack && !isAlreadyFollowing) {
                     await Friendship.create({
-                        id: `friend_${data.followerId}_${data.followedId}_${Date.now()}`,
                         userId1: data.followerId,
                         userId2: data.followedId,
+                        initiatedBy: data.followerId,
                         createdAt: new Date()
                     });
 
@@ -1749,6 +1739,50 @@ wsIo.on('connection', (socket) => {
             console.log(`📡 [STREAM] Real status updated: ${data.status} for stream ${data.streamId}`);
         } catch (error) {
             console.error(`❌ [STREAM] Error updating status:`, error);
+        }
+    });
+
+    // Evento de live iniciada — broadcast para todos os usuários conectados
+    socket.on('live_started', async (data) => {
+        console.log(`📡 [LIVE] Live started by user ${data.userId}, stream: ${data.streamId}`);
+        try {
+            const user = await User.findOne({ id: data.userId }).lean();
+            if (user) {
+                const liveData = {
+                    id: data.streamId,
+                    hostId: data.userId,
+                    name: data.title || user.name,
+                    avatar: user.avatarUrl || '',
+                    category: data.category || 'popular',
+                    country: data.country || user.country || 'br',
+                    isLive: true,
+                    streamStatus: 'active',
+                    streamKey: data.streamId,
+                    startTime: new Date(),
+                    viewers: 0,
+                    tags: data.tags || [],
+                    isPrivate: data.isPrivate || false,
+                };
+                socket.broadcast.emit('new_live_stream', liveData);
+                console.log(`📡 [LIVE] new_live_stream broadcasted for ${data.streamId}`);
+            }
+        } catch (error) {
+            console.error(`❌ [LIVE] Error broadcasting live_started:`, error);
+        }
+    });
+
+    // Evento de live encerrada — broadcast para todos os usuários conectados
+    socket.on('live_ended', async (data) => {
+        console.log(`📡 [LIVE] Live ended by user ${data.userId}, stream: ${data.streamId}`);
+        try {
+            socket.broadcast.emit('live_stream_ended', {
+                streamId: data.streamId,
+                hostId: data.userId,
+                endedAt: new Date(),
+            });
+            console.log(`📡 [LIVE] live_stream_ended broadcasted for ${data.streamId}`);
+        } catch (error) {
+            console.error(`❌ [LIVE] Error broadcasting live_ended:`, error);
         }
     });
 

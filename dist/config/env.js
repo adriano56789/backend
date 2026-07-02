@@ -44,6 +44,12 @@ exports.ENV = {
     SRS_HTTP_PORT: process.env.SRS_HTTP_PORT || '8080',
     SRS_RTC_PORT: process.env.SRS_RTC_PORT || '8000',
     SRS_RTMP_PORT: process.env.SRS_RTMP_PORT || '1935',
+    // LiveKit (WebRTC/SFU)
+    LIVEKIT_API_KEY: process.env.LIVEKIT_API_KEY || 'devkey',
+    LIVEKIT_API_SECRET: process.env.LIVEKIT_API_SECRET || 'secret',
+    LIVEKIT_URL: process.env.LIVEKIT_URL || 'wss://sfu.livego.store',
+    // TURN/Coturn
+    TURN_SECRET: process.env.TURN_SECRET || 'dev_turn_secret_key_change_me',
     // EMQX (MQTT)
     MQTT_ENABLED: process.env.MQTT_ENABLED === 'true',
     EMQX_HOST: process.env.EMQX_HOST || 'localhost',

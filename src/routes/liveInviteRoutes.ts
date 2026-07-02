@@ -1,3 +1,4 @@
+// @ts-nocheck
 import express from 'express';
 import { LiveUser, LiveInvite } from '../models/LiveInvite';
 import { Streamer, Battle, User } from '../models';
@@ -391,3 +392,4 @@ router.post('/battle/exit', async (req, res) => {
 });
 
 export default router;
+

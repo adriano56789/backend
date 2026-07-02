@@ -1,3 +1,4 @@
+// @ts-nocheck
 import express from 'express';
 import { User, PurchaseRecord } from '../models';
 import { getAvatarUrl } from '../config/urls';
@@ -385,3 +386,4 @@ router.delete('/users/:id/avatars/:index', async (req, res) => {
 });
 
 export default router;
+

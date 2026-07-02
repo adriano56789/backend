@@ -48,6 +48,8 @@
     "express-validator": "^7.3.2",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
+    "livekit-client": "^2.20.0",
+    "livekit-server-sdk": "^2.16.0",
     "mercadopago": "file:../sdk-nodejs",
     "mongodb": "^7.2.0",
     "mongoose": "^9.7.1",

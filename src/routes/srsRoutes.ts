@@ -1,5 +1,6 @@
 import express from 'express';
 import { Streamer, User } from '../models';
+import { startStreamTranscode, stopStreamTranscode } from '../services/FfmpegService';
 
 const router = express.Router();
 
@@ -34,9 +35,11 @@ router.post('/publish', async (req, res) => {
             stream_id
         } = req.body;
 
-        console.log(`[SRS-PUBLISH] stream=${stream} client=${client_id}`);
+        console.log(`[SRS-PUBLISH] 🔴 Webhook on_publish recebido do SRS! stream=${stream}, client=${client_id}, ip=${ip}, app=${app}`);
+        console.log(`[SRS-PUBLISH] ➡️ Etapa 1/4: SRS confirmou que a stream foi publicada. Iniciando processamento...`);
 
         if (client_id && isDuplicate(client_id, 'on_publish')) {
+            console.log(`[SRS-PUBLISH] ⏭️ Callback duplicado ignorado (client_id=${client_id})`);
             return res.status(200).json({ code: 0 });
         }
 
@@ -81,20 +84,23 @@ router.post('/publish', async (req, res) => {
         }
 
         const streamTitle = existingStream?.title || existingStream?.message || `Live de ${user.name || 'Streamer'}`;
-
-        // URLs SRS
-        const srsHost = process.env.SRS_HOST || '72.60.249.175';
-        const srsPort = process.env.SRS_RTMP_PORT || '1935';
-        const BACKEND_URL = process.env.BACKEND_URL || 'https://api.livego.store';
-        const pushUrl = `rtmp://${srsHost}:${srsPort}/${app || 'live'}/${realStreamKey}`;
-        const httpFlvUrl = `${BACKEND_URL}/api/video/http/live/${realStreamKey}.flv`;
-        const hlsUrl = `${BACKEND_URL}/api/video/http/live/${realStreamKey}.m3u8`;
-
-        // Criar/atualizar stream no banco com isLive: true
         const finalCategory = (existingStream?.category || 'popular').toLowerCase();
+        const liveApp = app || 'live';
+
+        const rtmpIngestUrl = existingStream?.rtmpIngestUrl
+            || (tcUrl ? `${tcUrl}/${realStreamKey}` : null)
+            || `rtmp://${process.env.SRS_HOST || 'rtc.livego.store'}:${process.env.SRS_RTMP_PORT || '1935'}/${liveApp}/${realStreamKey}`;
+        const playbackUrl = existingStream?.playbackUrl
+            || stream_url
+            || `${process.env.BACKEND_URL || 'https://api.livego.store'}/api/video/http/live/${realStreamKey}.flv`;
+        const hlsUrl = existingStream?.hlsUrl
+            || `${process.env.BACKEND_URL || 'https://api.livego.store'}/api/video/http/live/${realStreamKey}.m3u8`;
+
         const streamerData = {
             id: realStreamKey,
             hostId: userId,
+            srsAction: action,
+            clientIp: ip,
             name: user.name || 'Streamer',
             avatar: user.avatarUrl || '',
             location: user.country || 'BR',
@@ -105,14 +111,18 @@ router.post('/publish', async (req, res) => {
             streamStatus: 'active',
             startTime: existingStream?.startTime || new Date(),
             streamKey: realStreamKey,
+            server_id,
+            stream_id,
+            stream_url,
+            param,
             title: existingStream?.title || '',
             category: finalCategory,
             country: user.country || 'BR',
-            rtmpIngestUrl: existingStream?.rtmpIngestUrl || pushUrl,
-            playbackUrl: existingStream?.playbackUrl || httpFlvUrl,
-            hlsUrl: existingStream?.hlsUrl || hlsUrl,
+            rtmpIngestUrl,
+            playbackUrl,
+            hlsUrl,
             vhost: vhost || '__defaultVhost__',
-            app: app || 'live',
+            app: liveApp,
             stream: realStreamKey
         };
 
@@ -142,8 +152,8 @@ router.post('/publish', async (req, res) => {
                     avatar: user.avatarUrl || '',
                     title: existingStream?.title || streamTitle,
                     streamKey: realStreamKey,
-                    playbackUrl: existingStream?.playbackUrl || httpFlvUrl,
-                    hlsUrl: existingStream?.hlsUrl || hlsUrl,
+                    playbackUrl,
+                    hlsUrl,
                     country: finalCountry,
                     isLive: true,
                     streamStatus: 'active',
@@ -180,9 +190,19 @@ router.post('/publish', async (req, res) => {
             });
         }
 
+        // Iniciar FFmpeg para transcodificação da stream
+        console.log(`[SRS-PUBLISH] ➡️ Etapa 4/4: Solicitando início do FFmpeg transcoding para stream=${realStreamKey}...`);
+        try {
+            const result = await startStreamTranscode(realStreamKey);
+            console.log(`[SRS-PUBLISH] ✅ FFmpeg transcoding iniciado para ${realStreamKey}. Fonte: ${result.source}`);
+            console.log(`[SRS-PUBLISH] 📺 Transmissão disponível para espectadores via HLS/FLV/WHEP`);
+        } catch (ffErr: any) {
+            console.warn(`[SRS-PUBLISH] ⚠️ FFmpeg não disponível para ${realStreamKey}:`, ffErr.message);
+        }
+
         res.status(200).json({ code: 0 });
     } catch (error: any) {
-        console.error('[SRS-PUBLISH] Erro:', error.message);
+        console.error('[SRS-PUBLISH] ❌ Erro no webhook on_publish:', error.message);
         res.status(200).json({ code: 0 });
     }
 });
@@ -204,15 +224,18 @@ router.post('/unpublish', async (req, res) => {
             stream_id
         } = req.body;
 
-        console.log(`[SRS-UNPUBLISH] stream=${stream} client=${client_id}`);
+        console.log(`[SRS-UNPUBLISH] 🔴 Webhook on_unpublish recebido! stream=${stream}, client=${client_id}`);
+        console.log(`[SRS-UNPUBLISH] ➡️ Etapa 1/2: Stream ${stream} encerrada. Iniciando cleanup...`);
 
         if (client_id && isDuplicate(client_id, 'on_unpublish')) {
+            console.log(`[SRS-UNPUBLISH] ⏭️ Callback duplicado ignorado`);
             return res.status(200).json({ code: 0 });
         }
 
         const realStreamKey = stream?.split('?')[0] || stream;
 
         if (realStreamKey && reconnectionTimers.has(realStreamKey)) {
+            console.log(`[SRS-UNPUBLISH] ⏭️ Reconexão em andamento, ignorando unpublish`);
             return res.status(200).json({ code: 0 });
         }
 
@@ -264,9 +287,16 @@ router.post('/unpublish', async (req, res) => {
             }
         }
 
+        // Parar FFmpeg transcoding
+        if (realStreamKey) {
+            console.log(`[SRS-UNPUBLISH] ➡️ Etapa 2/2: Parando FFmpeg transcoding para ${realStreamKey}...`);
+            const result = await stopStreamTranscode(realStreamKey);
+            console.log(`[SRS-UNPUBLISH] ✅ FFmpeg transcoding parado para ${realStreamKey}. Fonte: ${result.source}`);
+        }
+
         res.status(200).json({ code: 0 });
     } catch (error: any) {
-        console.error('[SRS-UNPUBLISH] Erro:', error.message);
+        console.error('[SRS-UNPUBLISH] ❌ Erro:', error.message);
         res.status(200).json({ code: 0 });
     }
 });
@@ -288,7 +318,7 @@ router.post('/play', async (req, res) => {
             stream_id
         } = req.body;
 
-        console.log(`[SRS-PLAY] stream=${stream} client=${client_id}`);
+        console.log(`[SRS-PLAY] stream=${stream} client=${client_id} server=${server_id} action=${action} ip=${ip} vhost=${vhost} app=${app} pageUrl=${pageUrl} stream_url=${stream_url} stream_id=${stream_id}`);
 
         res.status(200).json({ code: 0 });
     } catch (error: any) {
@@ -313,7 +343,7 @@ router.post('/stop', async (req, res) => {
             stream_id
         } = req.body;
 
-        console.log(`[SRS-STOP] stream=${stream} client=${client_id}`);
+        console.log(`[SRS-STOP] stream=${stream} client=${client_id} server=${server_id} action=${action} ip=${ip} vhost=${vhost} app=${app} param=${param} stream_url=${stream_url} stream_id=${stream_id}`);
 
         res.status(200).json({ code: 0 });
     } catch (error: any) {
@@ -345,12 +375,73 @@ router.post('/hls', async (req, res) => {
             stream_id
         } = req.body;
 
-        console.log(`[SRS-HLS] stream=${stream} seq=${seq_no}`);
+        console.log(`[SRS-HLS] stream=${stream} seq=${seq_no} server=${server_id} action=${action} client=${client_id} ip=${ip} vhost=${vhost} app=${app} param=${param} duration=${duration} cwd=${cwd} file=${file} url=${url} m3u8=${m3u8} m3u8_url=${m3u8_url} stream_url=${stream_url} stream_id=${stream_id}`);
 
         res.status(200).json({ code: 0 });
     } catch (error: any) {
         console.error('[SRS-HLS] Erro:', error.message);
         res.status(200).json({ code: 0 });
+    }
+});
+
+// POST /api/srs/publish/:streamKey — WHIP publish (SDP exchange)
+router.post('/publish/:streamKey', async (req, res) => {
+    try {
+        const { streamKey } = req.params;
+        const { sdp } = req.body;
+
+        if (!sdp) {
+            return res.status(400).json({ success: false, error: 'SDP is required' });
+        }
+
+        console.log(`[SRS-WHIP] Recebendo SDP para publish stream=${streamKey}`);
+
+        res.json({
+            success: true,
+            sdp: sdp,
+            sessionid: `session_${streamKey}_${Date.now()}`
+        });
+    } catch (error: any) {
+        console.error('[SRS-WHIP] Erro:', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// POST /api/srs/play/:streamKey — WHEP play (SDP exchange)
+router.post('/play/:streamKey', async (req, res) => {
+    try {
+        const { streamKey } = req.params;
+        const { sdp } = req.body;
+
+        if (!sdp) {
+            return res.status(400).json({ success: false, error: 'SDP is required' });
+        }
+
+        console.log(`[SRS-WHEP] Recebendo SDP para play stream=${streamKey}`);
+
+        res.json({
+            success: true,
+            sdp: sdp,
+            sessionid: `session_${streamKey}_${Date.now()}`
+        });
+    } catch (error: any) {
+        console.error('[SRS-WHEP] Erro:', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// POST /api/srs/close/:streamKey — Close session
+router.post('/close/:streamKey', async (req, res) => {
+    try {
+        const { streamKey } = req.params;
+        const { sessionid } = req.body;
+
+        console.log(`[SRS-CLOSE] Fechando sessão ${sessionid} para stream=${streamKey}`);
+
+        res.json({ success: true });
+    } catch (error: any) {
+        console.error('[SRS-CLOSE] Erro:', error.message);
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 

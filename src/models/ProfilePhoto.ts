@@ -4,7 +4,7 @@ export interface IProfilePhoto extends Document {
     userId: string;
     obraId: string;
     photoUrl: string;
-    photoType: 'avatar' | 'cover' | 'gallery';
+    photoType: 'avatar' | 'cover' | 'gallery' | 'video';
     isActive: boolean;
     isMain: boolean;
     order: number;

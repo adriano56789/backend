@@ -49,13 +49,19 @@ export const findUserByRealId = async (User: any, userId: string) => {
         userId = user.id;
     }
     
-    // Buscar por nome (name = id, não existe id numérico)
-    let user = await User.findOne({ name: { $regex: new RegExp(`^${userId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } });
+    // Buscar por id (campo numérico real do usuário)
+    let user = await User.findOne({ id: userId });
     
-    // FALLBACK: buscar por identification se nome não encontrou
+    // FALLBACK 1: buscar por identification se id não encontrou
     if (!user) {
-        console.log(`⚠️ [ID_HELPER] Nome não encontrado, tentando por identification: ${userId}`);
+        console.log(`⚠️ [ID_HELPER] ID não encontrado, tentando por identification: ${userId}`);
         user = await User.findOne({ identification: userId });
+    }
+    
+    // FALLBACK 2: buscar por nome (compatibilidade com dados antigos)
+    if (!user) {
+        console.log(`⚠️ [ID_HELPER] Identification não encontrado, tentando por nome: ${userId}`);
+        user = await User.findOne({ name: { $regex: new RegExp(`^${userId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') } });
     }
 
     if (!user) {
@@ -114,8 +120,8 @@ export const updateUserByRealId = async (User: any, userId: string, updateData: 
         );
     }
     
-    // SEMPRE usar nome como chave (name = id, não existe id numérico)
-    console.log(`✅ [ID_HELPER] Atualizando usuário: ${user.name}`);
+    // SEMPRE usar id como chave (campo numérico real)
+    console.log(`✅ [ID_HELPER] Atualizando usuário: ${user.id}`);
 
     // Garantir que os dados de atualização usam operadores atômicos do MongoDB ($set)
     const atomicUpdate = updateData.$set || updateData.$inc || updateData.$push || updateData.$pull
@@ -123,7 +129,7 @@ export const updateUserByRealId = async (User: any, userId: string, updateData: 
         : { $set: updateData };
 
     return await User.findOneAndUpdate(
-        { name: user.name }, // name é a chave real (id = name)
+        { id: user.id }, // id é a chave real (campo numérico)
         atomicUpdate,
         { ...options, returnDocument: 'after' }
     );

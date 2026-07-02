@@ -1,4 +1,5 @@
 import express from 'express';
+import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { User } from '../models';
@@ -19,7 +20,6 @@ router.post('/register', async (req, res) => {
         await connectDB();
 
         const {
-            name,
             email,
             password,
             country = "br",
@@ -48,8 +48,8 @@ router.post('/register', async (req, res) => {
             // Serão gerados automaticamente abaixo
         } = req.body;
 
-        if (!name || !email || !password) {
-            return res.status(400).json({ error: 'Por favor, forneça nome, email e senha' });
+        if (!email || !password) {
+            return res.status(400).json({ error: 'Por favor, forneça email e senha' });
         }
 
         const userExists = await User.findOne({ email });
@@ -87,7 +87,8 @@ router.post('/register', async (req, res) => {
         };
 
         const newUserId = await generateUniqueNumericId();
-        console.log(`[REGISTER] ID numérico gerado: ${newUserId}`);
+        const permanentStreamId = crypto.randomUUID();
+        console.log(`[REGISTER] ID numérico gerado: ${newUserId}, permanentStreamId: ${permanentStreamId}`);
 
         // Função para normalizar tags
         const normalizeTags = (tags: any): string[] => {
@@ -106,8 +107,9 @@ router.post('/register', async (req, res) => {
         const userData: any = {
             // APENAS CAMPOS ESSENCIAIS NO CADASTRO
             id: newUserId, // ID real gerado automaticamente (não MongoDB _id)
+            permanentStreamId: permanentStreamId,
             identification: "pending", // Será atualizado após criação
-            name: name?.trim() || "",
+            name: email.split('@')[0].replace(/[^a-zA-Z0-9]/g, ' ') || 'Usuário',
             email: email?.trim().toLowerCase() || "",
             password: hashedPassword,
             
@@ -157,11 +159,11 @@ router.post('/register', async (req, res) => {
         const user = await User.create(userData);
         console.log(`[REGISTER] User created: id=${user.id} (${user.id.length} chars), identification=${user.identification} (${user.identification?.length} chars)`);
 
-        // Gerar campos de stream usando o id manual
-        const streamKey = `${user.id}`;
+        // Gerar campos de stream usando UUID único
+        const streamKey = `stream_${crypto.randomUUID()}`;
         const roomId = `room_${user.id}`;
         const srsHost = process.env.SRS_HOST || 'srs';
-        const rtmpIngestUrl = `rtmp://${srsHost}:1935/live`;
+        const rtmpIngestUrl = `rtmp://${srsHost}:1935/live/${streamKey}`;
         const srtIngestUrl = `srt://${srsHost}:10000?streamid=${streamKey}`;
         const playbackUrl = `https://api.livego.store/api/video/http/live/${streamKey}.flv`;
 
@@ -171,6 +173,7 @@ router.post('/register', async (req, res) => {
             {
                 $set: {
                 identification: user.id, // Usar id manual como identification
+                permanentStreamId: permanentStreamId,
                 streamKey: streamKey,
                 roomId: roomId,
                 rtmpIngestUrl: rtmpIngestUrl,
@@ -321,7 +324,7 @@ router.post('/login', async (req, res) => {
             return res.status(401).json({ error: 'Email ou senha inválidos' });
         }
 
-        const token = jwt.sign({ id: user.id, _id: user._id }, JWT_SECRET, { expiresIn: '30d' });
+        const token = jwt.sign({ id: user.id, _id: user.id }, JWT_SECRET, { expiresIn: '30d' });
 
         activityLogger.logManualActivity({
             userId: user.id,

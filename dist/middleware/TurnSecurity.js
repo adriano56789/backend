@@ -1,49 +1,52 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.validateTurnCredentials = exports.turnSecurityMiddleware = void 0;
+const env_1 = require("../config/env");
 /**
  * Middleware para proteger credenciais TURN em produção
  * Evita uso não autorizado do servidor TURN
+ * Usa as mesmas origens configuradas no CORS_ORIGIN do env.ts
  */
 const turnSecurityMiddleware = (req, res, next) => {
-    // Headers de segurança para TURN
+    // Usar origens configuradas no ENV em vez de hardcoded
+    const corsOrigins = env_1.ENV.CORS_ORIGIN.split(',').map(o => o.trim());
     const allowedOrigins = [
-        'https://72.60.249.175:3000',
+        ...corsOrigins,
         'http://localhost:3000',
-        'https://localhost:3000'
+        'https://localhost:3000',
+        'https://72.60.249.175:3000',
     ];
     const origin = req.headers.origin;
     const userAgent = req.headers['user-agent'];
-    // Validação de origem
+    // Validação de origem (se presente - mobile apps não enviam origin)
     if (origin && !allowedOrigins.includes(origin)) {
-        console.warn(`[TURN-SECURITY] Origin não permitido: ${origin}`);
-        return res.status(403).json({
-            success: false,
-            message: 'Origem não permitida'
-        });
+        // Verificar se é uma origem localhost (genérica)
+        const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
+        if (!isLocalhost) {
+            console.warn(`[TURN-SECURITY] Origin não permitido: ${origin}`);
+            return res.status(403).json({
+                success: false,
+                message: 'Origem não permitida',
+            });
+        }
     }
-    // Rate limiting para TURN
-    const turnRateLimit = {
-        windowMs: 60 * 1000, // 1 minuto
-        maxRequests: 10, // máximo 10 requisições por minuto
-        message: 'Limite de requisições TURN excedido'
-    };
-    // Validação básica de User-Agent para bots
+    // Validação básica de User-Agent para bots conhecidos
     const suspiciousAgents = [
         'curl',
         'wget',
         'python-requests',
-        'postman'
+        'postman',
+        'go-http-client',
     ];
     if (userAgent && suspiciousAgents.some(agent => userAgent.toLowerCase().includes(agent))) {
         console.warn(`[TURN-SECURITY] User-Agent suspeito: ${userAgent}`);
         return res.status(403).json({
             success: false,
-            message: 'Acesso não permitido'
+            message: 'Acesso não permitido',
         });
     }
     // Log de acesso para auditoria
-    console.log(`[TURN-SECURITY] Acesso permitido - Origin: ${origin}, IP: ${req.ip}`);
+    console.log(`[TURN-SECURITY] Acesso permitido - Origin: ${origin || 'N/A'}, IP: ${req.ip}`);
     next();
 };
 exports.turnSecurityMiddleware = turnSecurityMiddleware;
@@ -52,21 +55,18 @@ exports.turnSecurityMiddleware = turnSecurityMiddleware;
  */
 const validateTurnCredentials = (req, res, next) => {
     const { username, password } = req.body;
-    // Validação de credenciais básicas
     if (!username || !password) {
         return res.status(400).json({
             success: false,
-            message: 'Credenciais TURN são obrigatórias'
+            message: 'Credenciais TURN são obrigatórias',
         });
     }
-    // Validação de força da senha
     if (password.length < 16) {
         return res.status(400).json({
             success: false,
-            message: 'Senha TURN muito curta (mínimo 16 caracteres)'
+            message: 'Senha TURN muito curta (mínimo 16 caracteres)',
         });
     }
-    // Validação de formato da senha
     const hasUpperCase = /[A-Z]/.test(password);
     const hasLowerCase = /[a-z]/.test(password);
     const hasNumbers = /[0-9]/.test(password);
@@ -74,7 +74,7 @@ const validateTurnCredentials = (req, res, next) => {
     if (!hasUpperCase || !hasLowerCase || !hasNumbers || !hasSpecialChars) {
         return res.status(400).json({
             success: false,
-            message: 'Senha TURN deve conter letras maiúsculas, minúsculas, números e caracteres especiais'
+            message: 'Senha TURN deve conter letras maiúsculas, minúsculas, números e caracteres especiais',
         });
     }
     console.log(`[TURN-SECURITY] Credenciais validadas para usuário: ${username}`);

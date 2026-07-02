@@ -28,7 +28,7 @@ const FILE_MAPPINGS: FileMapping[] = [
   { filename: 'api.orders.json', modelName: 'Order' },
   { filename: 'api.profilephotos.json', modelName: 'ProfilePhoto' },
   { filename: 'api.streamers.json', modelName: 'Streamer' },
-  { filename: 'api.streamkeys.json', modelName: 'StreamKey' },
+  { filename: 'api.streamkeys.json', modelName: 'Streamer' },
   { filename: 'api.userlevels.json', modelName: 'UserLevel' },
   { filename: 'api.users.json', modelName: 'User' },
   { filename: 'api.userstatuses.json', modelName: 'UserStatus' },

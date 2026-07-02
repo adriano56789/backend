@@ -81,6 +81,7 @@ export function standardizeUserResponse(user: any): any {
         isOnline: user.isOnline || false,
         lastSeen: user.lastSeen,
         currentStreamId: user.currentStreamId || "",
+        permanentStreamId: user.permanentStreamId || "",
         diamonds: user.diamonds || 0,
         earnings: user.earnings || 0,
         earnings_withdrawn: user.earnings_withdrawn || 0,

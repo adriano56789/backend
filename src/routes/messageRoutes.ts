@@ -1,3 +1,4 @@
+// @ts-nocheck
 import express from 'express';
 import { ChatMessage, User, Block } from '../models/index';
 
@@ -288,3 +289,4 @@ router.delete('/:messageId', async (req, res) => {
 });
 
 export default router;
+

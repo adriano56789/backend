@@ -37,6 +37,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
+const crypto_1 = __importDefault(require("crypto"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const models_1 = require("../models");
@@ -55,12 +56,12 @@ router.post('/register', async (req, res) => {
     try {
         // Garantir conexão com MongoDB
         await (0, db_1.connectDB)();
-        const { name, email, password, country = "br", age = 25, gender = "male", bio = "", residence = "k", tags = "", profession = "", location = "", distance = "", birthday = "01/01/1990", emotional_status = "0", isVIP = false, isAvatarProtected = false, chatPermission = "all", pipEnabled = true, locationPermission = "granted", showActivityStatus = true, showLocation = true, withdrawal_method, avatarUrl, coverUrl, streamServerUrl
+        const { email, password, country = "br", age = 25, gender = "male", bio = "", residence = "k", tags = "", profession = "", location = "", distance = "", birthday = "01/01/1990", emotional_status = "0", isVIP = false, isAvatarProtected = false, chatPermission = "all", pipEnabled = true, locationPermission = "granted", showActivityStatus = true, showLocation = true, withdrawal_method, avatarUrl, coverUrl, streamServerUrl
         // Removidos: rtmpIngestUrl, srtIngestUrl, streamKey, playbackUrl, roomId
         // Serão gerados automaticamente abaixo
          } = req.body;
-        if (!name || !email || !password) {
-            return res.status(400).json({ error: 'Por favor, forneça nome, email e senha' });
+        if (!email || !password) {
+            return res.status(400).json({ error: 'Por favor, forneça email e senha' });
         }
         const userExists = await models_1.User.findOne({ email });
         if (userExists) {
@@ -94,7 +95,8 @@ router.post('/register', async (req, res) => {
             return uniqueId;
         };
         const newUserId = await generateUniqueNumericId();
-        console.log(`[REGISTER] ID numérico gerado: ${newUserId}`);
+        const permanentStreamId = crypto_1.default.randomUUID();
+        console.log(`[REGISTER] ID numérico gerado: ${newUserId}, permanentStreamId: ${permanentStreamId}`);
         // Função para normalizar tags
         const normalizeTags = (tags) => {
             if (!tags)
@@ -112,8 +114,9 @@ router.post('/register', async (req, res) => {
         const userData = {
             // APENAS CAMPOS ESSENCIAIS NO CADASTRO
             id: newUserId, // ID real gerado automaticamente (não MongoDB _id)
+            permanentStreamId: permanentStreamId,
             identification: "pending", // Será atualizado após criação
-            name: name?.trim() || "",
+            name: email.split('@')[0].replace(/[^a-zA-Z0-9]/g, ' ') || 'Usuário',
             email: email?.trim().toLowerCase() || "",
             password: hashedPassword,
             // Campos básicos do usuário - normalizados
@@ -154,17 +157,18 @@ router.post('/register', async (req, res) => {
         // Campos de stream são gerados automaticamente após criação - não verificar aqui
         const user = await models_1.User.create(userData);
         console.log(`[REGISTER] User created: id=${user.id} (${user.id.length} chars), identification=${user.identification} (${user.identification?.length} chars)`);
-        // Gerar campos de stream usando o id manual
-        const streamKey = `${user.id}`;
+        // Gerar campos de stream usando UUID único
+        const streamKey = `stream_${crypto_1.default.randomUUID()}`;
         const roomId = `room_${user.id}`;
         const srsHost = process.env.SRS_HOST || 'srs';
-        const rtmpIngestUrl = `rtmp://${srsHost}:1935/live`;
+        const rtmpIngestUrl = `rtmp://${srsHost}:1935/live/${streamKey}`;
         const srtIngestUrl = `srt://${srsHost}:10000?streamid=${streamKey}`;
         const playbackUrl = `https://api.livego.store/api/video/http/live/${streamKey}.flv`;
         // Atualizar usuário com campos de stream, identification e status online + persistir atividade
         await models_1.User.updateOne({ id: user.id }, {
             $set: {
                 identification: user.id, // Usar id manual como identification
+                permanentStreamId: permanentStreamId,
                 streamKey: streamKey,
                 roomId: roomId,
                 rtmpIngestUrl: rtmpIngestUrl,
@@ -296,7 +300,7 @@ router.post('/login', async (req, res) => {
             console.log('[LOGIN-DEBUG] Falha: senha incorreta');
             return res.status(401).json({ error: 'Email ou senha inválidos' });
         }
-        const token = jsonwebtoken_1.default.sign({ id: user.id, _id: user._id }, JWT_SECRET, { expiresIn: '30d' });
+        const token = jsonwebtoken_1.default.sign({ id: user.id, _id: user.id }, JWT_SECRET, { expiresIn: '30d' });
         ActivityLogger_1.activityLogger.logManualActivity({
             userId: user.id,
             activityType: UserActivity_1.ActivityType.LOGIN,

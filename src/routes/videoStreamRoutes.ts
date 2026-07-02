@@ -55,7 +55,7 @@ router.post('/stream/start', async (req, res) => {
             { id: streamId },
             { $set: {
                 isLive: true,
-                streamStatus: 'live',
+                streamStatus: 'active',
                 title: title || streamer.title,
                 description: description || streamer.description,
                 startTime: new Date(),
@@ -357,8 +357,35 @@ router.post('/stream/webrtc/publish', async (req, res) => {
             // Atualizar status do stream
             await Streamer.findOneAndUpdate(
                 { id: streamId },
-                { $set: { isLive: true, streamStatus: 'live', startTime: new Date(), webrtcSessionId: result.sessionid } }
+                { $set: { isLive: true, streamStatus: 'active', startTime: new Date(), webrtcSessionId: result.sessionid } }
             );
+
+            // Criar/atualizar LiveCard
+            try {
+                const { LiveCard } = await import('../models');
+                await LiveCard.findOneAndUpdate(
+                    { hostId: streamId },
+                    { $set: {
+                        hostId: streamer.hostId || streamId,
+                        name: streamer.name || 'Live',
+                        avatar: streamer.avatar || '',
+                        title: streamer.title || streamer.message || 'Ao Vivo',
+                        streamKey: streamId,
+                        country: (streamer.country || 'BR').toLowerCase(),
+                        isLive: true,
+                        streamStatus: 'active',
+                        category: (streamer.category || 'popular').toLowerCase(),
+                        playbackUrl: streamer.playbackUrl || '',
+                        hlsUrl: streamer.hlsUrl || '',
+                        viewers: streamer.viewers || 0,
+                        startTime: new Date(),
+                        updatedAt: new Date()
+                    } },
+                    { upsert: true }
+                );
+            } catch (cardErr) {
+                console.warn('[VIDEO-STREAM] Erro ao criar LiveCard:', cardErr);
+            }
 
             res.json({
                 success: true,
@@ -489,7 +516,6 @@ router.get('/http/live/:filename', async (req, res) => {
                     : response.headers.get('content-type') || 'application/octet-stream';
 
         res.set('Content-Type', contentType);
-        res.set('Access-Control-Allow-Origin', '*');
         res.set('Cache-Control', 'no-cache');
 
         if (filename.endsWith('.m3u8')) {
@@ -534,9 +560,38 @@ router.post('/rtc/v1/publish', async (req, res) => {
             if (streamKey) {
                 await Streamer.findOneAndUpdate(
                     { id: streamKey },
-                    { $set: { isLive: true, streamStatus: 'live', startTime: new Date(), webrtcSessionId: result.sessionid } }
+                { $set: { isLive: true, streamStatus: 'active', startTime: new Date(), webrtcSessionId: result.sessionid } }
                 );
+
+                // Criar/atualizar LiveCard
+                try {
+                    const streamer = await Streamer.findOne({ id: streamKey }).lean();
+                    const { LiveCard } = await import('../models');
+                    await LiveCard.findOneAndUpdate(
+                        { hostId: streamKey },
+                        { $set: {
+                            hostId: streamer?.hostId || streamKey,
+                            name: streamer?.name || 'Live',
+                            avatar: streamer?.avatar || '',
+                            title: streamer?.title || streamer?.message || 'Ao Vivo',
+                            streamKey,
+                            country: (streamer?.country || 'BR').toLowerCase(),
+                            isLive: true,
+                            streamStatus: 'active',
+                            category: (streamer?.category || 'popular').toLowerCase(),
+                            playbackUrl: streamer?.playbackUrl || '',
+                            hlsUrl: streamer?.hlsUrl || '',
+                            viewers: streamer?.viewers || 0,
+                            startTime: new Date(),
+                            updatedAt: new Date()
+                        } },
+                        { upsert: true }
+                    );
+                } catch (cardErr) {
+                    console.warn('[RTC] Erro ao criar LiveCard:', cardErr);
+                }
             }
+
 
             res.json({
                 success: true,
@@ -642,6 +697,36 @@ router.post('/rtc/v1/play', async (req, res) => {
             details: error.message
         });
     }
+});
+
+// @route GET /api/rtc/ice-servers
+// Retorna servidores ICE (STUN/TURN) para WebRTC
+router.get('/rtc/ice-servers', (req, res) => {
+  const turnHost = process.env.TURN_HOST || process.env.SRS_HOST || '72.60.249.175';
+  const turnPort = process.env.TURN_PORT || '3478';
+  const turnUsername = process.env.TURN_USERNAME || 'livego';
+  const turnCredential = process.env.TURN_CREDENTIAL || process.env.SRS_TURN_PASSWORD || 'livegosecretpassword';
+
+  res.json({
+    success: true,
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun3.l.google.com:19302' },
+      { urls: 'stun:stun4.l.google.com:19302' },
+      {
+        urls: `turn:${turnHost}:${turnPort}?transport=udp`,
+        username: turnUsername,
+        credential: turnCredential
+      },
+      {
+        urls: `turn:${turnHost}:${turnPort}?transport=tcp`,
+        username: turnUsername,
+        credential: turnCredential
+      }
+    ]
+  });
 });
 
 // Helper para construir URL base do SRS com protocolo dinâmico

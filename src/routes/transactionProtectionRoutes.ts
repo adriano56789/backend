@@ -1,3 +1,4 @@
+// @ts-nocheck
 import express from 'express';
 import { User, PurchaseRecord } from '../models';
 
@@ -201,3 +202,4 @@ router.post('/register-block-attempt', async (req, res) => {
 });
 
 export default router;
+

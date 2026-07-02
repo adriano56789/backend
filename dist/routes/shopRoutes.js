@@ -704,6 +704,31 @@ const checkExpiredAvatars = async (req, res, next) => {
         next();
     }
 };
+router.get('/user/:userId/inventory', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const [mochilas, quadros, carros, bolhas, aneis, avatars] = await Promise.all([
+            models_1.UserInventory.find({ userId, category: 'mochila' }).exec(),
+            models_1.UserInventory.find({ userId, category: 'quadro' }).exec(),
+            models_1.UserInventory.find({ userId, category: 'carro' }).exec(),
+            models_1.UserInventory.find({ userId, category: 'bolha' }).exec(),
+            models_1.UserInventory.find({ userId, category: 'anel' }).exec(),
+            models_1.UserAvatar.find({ userId }).exec(),
+        ]);
+        res.json({
+            mochilas: mochilas.map(i => ({ itemId: i.itemId })),
+            quadros: quadros.map(i => ({ itemId: i.itemId })),
+            carros: carros.map(i => ({ itemId: i.itemId })),
+            bolhas: bolhas.map(i => ({ itemId: i.itemId })),
+            aneis: aneis.map(i => ({ itemId: i.itemId })),
+            avatars: avatars.map(i => ({ avatarId: i.avatarId, isCurrent: i.isCurrent })),
+        });
+    }
+    catch (error) {
+        console.error('Erro ao buscar inventário do usuário:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
 // Aplicar middleware nas rotas de equipar de avatares
 router.use('/avatars/equip', checkExpiredAvatars);
 router.use('/avatars/:avatarId/equip', checkExpiredAvatars);

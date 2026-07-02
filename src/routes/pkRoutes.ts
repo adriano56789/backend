@@ -340,4 +340,66 @@ router.post('/heart', async (req, res) => {
   res.json({ success: true });
 });
 
+// GET /api/pk/invites/pending/:userId — convites PK pendentes
+router.get('/invites/pending/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await User.findOne({ id: userId }).select('_id').lean();
+    if (!user) {
+      return res.status(404).json({ success: false, error: 'Usuário não encontrado' });
+    }
+
+    const { PKInvite } = await import('../models');
+    const invites = await PKInvite.find({
+      invitedId: user._id.toString(),
+      status: 'pending'
+    })
+      .populate('inviterId', 'id name displayName avatarUrl')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.json({ success: true, invites });
+  } catch (error: any) {
+    console.error('[PK] Erro ao buscar convites pendentes:', error);
+    res.json({ success: true, invites: [] });
+  }
+});
+
+// POST /api/pk/invites/:inviteId/respond — responder a convite PK
+router.post('/invites/:inviteId/respond', async (req, res) => {
+  try {
+    const { inviteId } = req.params;
+    const { status } = req.body;
+
+    if (!status || !['accepted', 'declined'].includes(status)) {
+      return res.status(400).json({ success: false, error: 'Status deve ser accepted ou declined' });
+    }
+
+    const { PKInvite } = await import('../models');
+    const invite = await PKInvite.findByIdAndUpdate(
+      inviteId,
+      { $set: { status, respondedAt: new Date() } },
+      { new: true }
+    ).populate('inviterId', 'id name displayName avatarUrl');
+
+    if (!invite) {
+      return res.status(404).json({ success: false, error: 'Convite não encontrado' });
+    }
+
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user_${(invite as any).invitedId}`).emit('pk_invite_response', {
+        inviteId,
+        status,
+        battleId: (invite as any).battleId || null
+      });
+    }
+
+    res.json({ success: true, invite });
+  } catch (error: any) {
+    console.error('[PK] Erro ao responder convite:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 export default router;

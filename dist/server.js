@@ -36,7 +36,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.registerFfmpegProcess = registerFfmpegProcess;
 const express_1 = __importDefault(require("express"));
 const helmet_1 = __importDefault(require("helmet"));
 const http_1 = __importDefault(require("http"));
@@ -101,11 +100,18 @@ const likesRoutes_1 = __importDefault(require("./routes/likesRoutes")); // NOVO 
 const callInvitationRoutes_1 = __importDefault(require("./routes/callInvitationRoutes")); // NOVO - Sistema de convites de chamada na live
 const activityRoutes_1 = __importDefault(require("./routes/activityRoutes")); // NOVO - Sistema de Atividades
 const videoStreamRoutes_1 = __importDefault(require("./routes/videoStreamRoutes")); // NOVO - API de Streaming de Vídeo
-const srsRoutes_1 = __importDefault(require("./routes/srsRoutes")); // Callbacks SRS
+const srsRoutes_1 = __importDefault(require("./routes/srsRoutes"));
+const livekitRoutes_1 = __importDefault(require("./routes/livekitRoutes")); // Callbacks SRS
 const appVersionRoutes_1 = __importDefault(require("./routes/appVersionRoutes")); // NOVO - Sistema de controle de versão
 const debugRoutes_1 = __importDefault(require("./routes/debugRoutes"));
 const crudRoutes_1 = __importDefault(require("./routes/crudRoutes"));
 const liveInviteRoutes_1 = __importDefault(require("./routes/liveInviteRoutes"));
+const identificationRoutes_1 = __importDefault(require("./routes/identificationRoutes"));
+const userIdRoutes_1 = __importDefault(require("./routes/userIdRoutes"));
+const turnRoutes_1 = __importDefault(require("./routes/turnRoutes"));
+const stunRoutes_1 = __importDefault(require("./routes/stunRoutes"));
+const streamAccessRoutes_1 = __importDefault(require("./routes/streamAccessRoutes"));
+const protobufRoutes_1 = __importDefault(require("./routes/protobufRoutes"));
 const UserStatusManager_1 = __importDefault(require("./middleware/UserStatusManager"));
 const blockBase64_1 = require("./middleware/blockBase64");
 const MqttBridge_1 = require("./services/MqttBridge");
@@ -114,21 +120,7 @@ const MqttBridge_1 = require("./services/MqttBridge");
 // import { withdrawalCronJob } from './scripts/withdrawalCronJob'; // NOVO - Cron job de saques
 (0, validateEnv_1.validateEnv)();
 // ─── Orphan Process Killer (FFmpeg) ─────────────────────────────────
-const activeProcesses = new Set();
-function registerFfmpegProcess(proc) {
-    activeProcesses.add(proc);
-    proc.on('close', () => activeProcesses.delete(proc));
-}
-function killAllFfmpegProcesses() {
-    console.warn(`[SYSTEM] Matando ${activeProcesses.size} processos FFmpeg ativos...`);
-    for (const proc of activeProcesses) {
-        try {
-            proc.kill('SIGKILL');
-        }
-        catch (_) { }
-    }
-    activeProcesses.clear();
-}
+const FfmpegService_1 = require("./services/FfmpegService");
 // ────────────────────────────────────────────────────────────────────
 const app = (0, express_1.default)();
 app.set('trust proxy', 1);
@@ -256,7 +248,7 @@ else {
                     hlsUrl: s.hlsUrl || '',
                     country: (s.country || 'BR').toLowerCase(),
                     isLive: true,
-                    streamStatus: s.streamStatus || 'active',
+                    streamStatus: (s.streamStatus === 'preparing' || s.streamStatus === 'paused' ? 'active' : s.streamStatus) || 'active',
                     category: s.category || 'popular',
                     isPrivate: s.isPrivate || false,
                     viewers: s.viewers || 0,
@@ -272,7 +264,7 @@ else {
     catch (err) {
         console.warn('[MIGRATION] Erro ao migrar Streamers para LiveCards:', err);
     }
-    server.listen(port, '127.0.0.1', () => {
+    server.listen(port, '0.0.0.0', () => {
         console.log(`🌍 API Server started on http://127.0.0.1:${port}`);
     });
 }).catch(error => {
@@ -307,16 +299,10 @@ app.use((0, cors_1.default)({
     optionsSuccessStatus: 200,
     preflightContinue: false
 }));
-// Middleware para headers adicionais (Fallback e Preflight manual)
+// Removido middleware manual de CORS - o cors() middleware acima já gerencia corretamente
+// Headers adicionais para OPTIONS (preflight) - só age quando o cors() não respondeu
 app.use((req, res, next) => {
-    const origin = req.headers.origin;
-    if (origin) {
-        res.header('Access-Control-Allow-Origin', origin);
-        res.header('Access-Control-Allow-Credentials', 'true');
-    }
     if (req.method === 'OPTIONS') {
-        res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-        res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Origin, Accept, Cache-Control, Pragma, cache-control, pragma, x-acesso-exclusivo-app');
         res.header('Access-Control-Max-Age', '1728000');
         return res.status(204).end();
     }
@@ -407,6 +393,8 @@ app.post('/api/earnings/withdraw/:userId', async (req, res) => {
 });
 app.use('/api/checkout', checkoutRoutes_1.default);
 app.use('/api/payment', checkoutRoutes_1.default); // groups pix/credit-card
+app.use('/api/identification', identificationRoutes_1.default); // API de identificação de usuários
+app.use('/api/user-id', userIdRoutes_1.default); // NOVO - API de gerenciamento de IDs únicos
 app.use('/api/purchase', purchaseRoutes_1.default); // dedicated purchase routes
 app.use('/api/admin', adminRoutes_1.default);
 app.use('/api/chats', chatRoutes_1.default); // Rotas de chat
@@ -450,11 +438,15 @@ app.use('/api/settings/:id', (0, idValidation_1.validateAndConvertUserId)('id'))
 // app.use('/api/level/:userId', validateAndConvertUserId('userId')); // REMOVIDO - causa erro MONGODB_ID_EXPOSED
 app.use('/api/zoom/user/:userId', (0, idValidation_1.validateAndConvertUserId)('userId'));
 app.use('/api/zoom', zoomRoutes_1.default);
+app.use('/api/livekit', livekitRoutes_1.default); // NOVO - Salas LiveKit
+app.use('/api', turnRoutes_1.default); // NOVO - Credenciais TURN
+app.use('/api', stunRoutes_1.default); // STUN servers
 app.use('/api/srs', srsRoutes_1.default); // Callbacks do SRS PRIMEIRO (evita conflito com routes genéricos)
 app.use('/api', metadataRoutes_1.default); // handles /api/ranking, /api/gifts, /api/regions, /api/history
 app.use('/api', liveRoutes_1.default); // handles /api/live, /api/streams, /api/rtc, /api/lives, /api/permissions
 app.use('/api', settingsRoutes_1.default); // handles /api/settings, /api/notifications/settings
 app.use('/api/pk', pkRoutes_1.default);
+app.use('/api/protobuf', protobufRoutes_1.default);
 app.use('/api/live', liveInviteRoutes_1.default); // NOVO - Convites Co-Host/PK com SRS SFU WebRTC
 app.use('/api/interactions', interactionRoutes_1.default); // handles /api/interactions/presents, /api/interactions/streams
 app.use('/api/visitors', visitorRoutes_1.default); // NOVO - Registro de visitas por nome
@@ -463,6 +455,7 @@ app.use('/api', activityRoutes_1.default); // NOVO - Sistema de Atividades
 app.use('/api/video', videoStreamRoutes_1.default); // NOVO - API de Streaming de Vídeo
 app.use('/api', videoStreamRoutes_1.default); // RTC routes (/api/rtc/v1/publish, /api/rtc/v1/stop)
 app.use('/api/stats', statsRoutes_1.default); // NOVO - Estatísticas em tempo real
+app.use('/api/streams', streamAccessRoutes_1.default); // Validação de acesso a transmissões
 app.use('/api', debugRoutes_1.default); // Debug/monitoramento
 // Rota para analytics - receber eventos via sendBeacon
 app.post('/api/analytics', (req, res) => {
@@ -479,9 +472,6 @@ app.post('/api/analytics', (req, res) => {
 // Fallback para API - retornar 404 para endpoints não encontrados
 // Servir avatares enviados ANTES das rotas da API com CORS headers
 app.use('/uploads', (req, res, next) => {
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
     res.header('Cross-Origin-Resource-Policy', 'cross-origin');
     next();
 }, express_1.default.static(path_1.default.join(__dirname, '../uploads')));
@@ -843,7 +833,7 @@ io.on('connection', (socket) => {
                 senderId,
                 receiverId: receiverId || senderId,
                 content,
-                messageType,
+                messageType: messageType,
                 isRead: false,
                 sentAt: new Date()
             });
@@ -1120,18 +1110,18 @@ io.on('connection', (socket) => {
                 // Verificar se já são amigos (seguimento mútuo)
                 const isAlreadyFollowing = await Followers.findOne({
                     followerId: data.followerId,
-                    followedId: data.followedId
+                    followingId: data.followedId
                 });
                 const isFollowedBack = await Followers.findOne({
                     followerId: data.followedId,
-                    followedId: data.followerId
+                    followingId: data.followerId
                 });
                 if (!isAlreadyFollowing) {
                     // Criar relação de follow
                     await Followers.create({
                         id: `follow_${data.followerId}_${data.followedId}_${Date.now()}`,
                         followerId: data.followerId,
-                        followedId: data.followedId,
+                        followingId: data.followedId,
                         createdAt: new Date()
                     });
                     // Atualizar contadores
@@ -1143,9 +1133,9 @@ io.on('connection', (socket) => {
                 // Se for follow mútuo, criar amizade
                 if (isFollowedBack && !isAlreadyFollowing) {
                     await Friendship.create({
-                        id: `friend_${data.followerId}_${data.followedId}_${Date.now()}`,
                         userId1: data.followerId,
                         userId2: data.followedId,
+                        initiatedBy: data.followerId,
                         createdAt: new Date()
                     });
                     // Atualizar listas de amigos
@@ -1582,6 +1572,50 @@ wsIo.on('connection', (socket) => {
             console.error(`❌ [STREAM] Error updating status:`, error);
         }
     });
+    // Evento de live iniciada — broadcast para todos os usuários conectados
+    socket.on('live_started', async (data) => {
+        console.log(`📡 [LIVE] Live started by user ${data.userId}, stream: ${data.streamId}`);
+        try {
+            const user = await index_1.User.findOne({ id: data.userId }).lean();
+            if (user) {
+                const liveData = {
+                    id: data.streamId,
+                    hostId: data.userId,
+                    name: data.title || user.name,
+                    avatar: user.avatarUrl || '',
+                    category: data.category || 'popular',
+                    country: data.country || user.country || 'br',
+                    isLive: true,
+                    streamStatus: 'active',
+                    streamKey: data.streamId,
+                    startTime: new Date(),
+                    viewers: 0,
+                    tags: data.tags || [],
+                    isPrivate: data.isPrivate || false,
+                };
+                socket.broadcast.emit('new_live_stream', liveData);
+                console.log(`📡 [LIVE] new_live_stream broadcasted for ${data.streamId}`);
+            }
+        }
+        catch (error) {
+            console.error(`❌ [LIVE] Error broadcasting live_started:`, error);
+        }
+    });
+    // Evento de live encerrada — broadcast para todos os usuários conectados
+    socket.on('live_ended', async (data) => {
+        console.log(`📡 [LIVE] Live ended by user ${data.userId}, stream: ${data.streamId}`);
+        try {
+            socket.broadcast.emit('live_stream_ended', {
+                streamId: data.streamId,
+                hostId: data.userId,
+                endedAt: new Date(),
+            });
+            console.log(`📡 [LIVE] live_stream_ended broadcasted for ${data.streamId}`);
+        }
+        catch (error) {
+            console.error(`❌ [LIVE] Error broadcasting live_ended:`, error);
+        }
+    });
     // Eventos de entrada/saída de usuários na live
     socket.on('user_joined_live', (data) => {
         console.log(`👤 [USER] User joined live:`, data);
@@ -1604,7 +1638,7 @@ wsIo.on('connection', (socket) => {
 // ─── Orphan Process Signals ────────────────────────────────────────
 ['SIGINT', 'SIGTERM', 'exit'].forEach((signal) => {
     process.on(signal, () => {
-        killAllFfmpegProcesses();
+        (0, FfmpegService_1.killAllFfmpegProcesses)();
         if (signal !== 'exit')
             process.exit(0);
     });

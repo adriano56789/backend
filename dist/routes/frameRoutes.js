@@ -162,6 +162,21 @@ router.get('/frames/current/:userId', async (req, res) => {
     }
 });
 // Limpar frames expirados (pode ser chamado por um cron job)
+router.post('/frames/unequip', async (req, res) => {
+    try {
+        const { userId } = req.body;
+        if (!userId) {
+            return res.status(400).json({ error: 'User ID required' });
+        }
+        await models_1.UserFrame.updateMany({ userId, isActive: true }, { $set: { isEquipped: false } });
+        await models_1.User.findOneAndUpdate({ id: userId }, { $set: { activeFrameId: null, updatedAt: new Date() } }).exec();
+        res.json({ success: true, message: 'Frame desequipado com sucesso' });
+    }
+    catch (error) {
+        console.error('Erro ao desequipar frame:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
 router.post('/frames/cleanup-expired', async (req, res) => {
     try {
         const result = await models_1.UserFrame.updateMany({

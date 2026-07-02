@@ -80,6 +80,7 @@ const UserSchema = new mongoose_1.Schema({
     isOnline: { type: Boolean, default: false },
     lastSeen: { type: Date },
     currentStreamId: { type: String },
+    permanentStreamId: { type: String },
     diamonds: { type: Number, default: 0 },
     earnings: { type: Number, default: 0 },
     earnings_withdrawn: { type: Number, default: 0 },

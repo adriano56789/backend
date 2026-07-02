@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -307,5 +340,56 @@ router.post('/heart', async (req, res) => {
         await models_1.User.findOneAndUpdate({ id: userId }, { $push: { recentActivities: { action: 'pk_heart_sent', resource: 'pk_battle', timestamp: new Date(), endpoint: '/api/pk/heart' } } }).catch(console.error);
     }
     res.json({ success: true });
+});
+// GET /api/pk/invites/pending/:userId — convites PK pendentes
+router.get('/invites/pending/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const user = await models_1.User.findOne({ id: userId }).select('_id').lean();
+        if (!user) {
+            return res.status(404).json({ success: false, error: 'Usuário não encontrado' });
+        }
+        const { PKInvite } = await Promise.resolve().then(() => __importStar(require('../models')));
+        const invites = await PKInvite.find({
+            invitedId: user._id.toString(),
+            status: 'pending'
+        })
+            .populate('inviterId', 'id name displayName avatarUrl')
+            .sort({ createdAt: -1 })
+            .lean();
+        res.json({ success: true, invites });
+    }
+    catch (error) {
+        console.error('[PK] Erro ao buscar convites pendentes:', error);
+        res.json({ success: true, invites: [] });
+    }
+});
+// POST /api/pk/invites/:inviteId/respond — responder a convite PK
+router.post('/invites/:inviteId/respond', async (req, res) => {
+    try {
+        const { inviteId } = req.params;
+        const { status } = req.body;
+        if (!status || !['accepted', 'declined'].includes(status)) {
+            return res.status(400).json({ success: false, error: 'Status deve ser accepted ou declined' });
+        }
+        const { PKInvite } = await Promise.resolve().then(() => __importStar(require('../models')));
+        const invite = await PKInvite.findByIdAndUpdate(inviteId, { $set: { status, respondedAt: new Date() } }, { new: true }).populate('inviterId', 'id name displayName avatarUrl');
+        if (!invite) {
+            return res.status(404).json({ success: false, error: 'Convite não encontrado' });
+        }
+        const io = req.app.get('io');
+        if (io) {
+            io.to(`user_${invite.invitedId}`).emit('pk_invite_response', {
+                inviteId,
+                status,
+                battleId: invite.battleId || null
+            });
+        }
+        res.json({ success: true, invite });
+    }
+    catch (error) {
+        console.error('[PK] Erro ao responder convite:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
 });
 exports.default = router;

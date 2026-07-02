@@ -45,6 +45,7 @@ export interface IUser extends Document {
   isOnline?: boolean;
   lastSeen?: Date;
   currentStreamId?: string;
+  permanentStreamId?: string;
   diamonds: number;
   earnings: number;
   earnings_withdrawn: number;
@@ -133,6 +134,7 @@ const UserSchema: Schema = new Schema({
   isOnline: { type: Boolean, default: false },
   lastSeen: { type: Date },
   currentStreamId: { type: String },
+  permanentStreamId: { type: String },
   diamonds: { type: Number, default: 0 },
   earnings: { type: Number, default: 0 },
   earnings_withdrawn: { type: Number, default: 0 },

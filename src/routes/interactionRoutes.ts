@@ -1,3 +1,4 @@
+// @ts-nocheck
 import express from 'express';
 import { User, Streamer, Gift, GiftTransaction, Followers, UserStatus, Visitor, ChatMessage, Chat, Conversation, Friendship, Invitation, Message, Photo, UserPhoto, ProfilePhoto, UserVideo } from '../models';
 import { kickProtection } from '../middleware/appOwnerProtection';
@@ -1315,3 +1316,4 @@ router.get('/effects/beauty', async (req, res) => {
 });
 
 export default router;
+

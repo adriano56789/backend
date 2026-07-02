@@ -3,11 +3,11 @@ import mongoose, { Schema, Document } from 'mongoose';
 export interface IPurchaseRecord extends Document {
     id: string;
     userId: string;
-    type: 'purchase_diamonds' | 'withdraw_earnings' | 'withdraw_platform_earnings' | 'purchase_frame' | 'platform_fee_income' | 'withdrawal' | 'commission';
+    type: 'purchase_diamonds' | 'withdraw_earnings' | 'withdraw_platform_earnings' | 'purchase_frame' | 'platform_fee_income' | 'withdrawal' | 'commission' | 'block_attempt' | 'gift_received' | 'gift_sent';
     description: string;
     amountBRL: number;
     amountCoins: number;
-    status: 'Concluído' | 'Pendente' | 'Cancelado' | 'Processando' | 'Aprovado' | 'Recusado';
+    status: 'Concluído' | 'Pendente' | 'Cancelado' | 'Processando' | 'Aprovado' | 'Recusado' | 'success' | 'failed';
     externalReference?: string;
     paymentId?: string;
     metadata?: any;
@@ -21,7 +21,7 @@ const PurchaseRecordSchema: Schema = new Schema({
     type: {
         type: String,
         required: true,
-        enum: ['purchase_diamonds', 'withdraw_earnings', 'withdraw_platform_earnings', 'purchase_frame', 'platform_fee_income', 'withdrawal', 'commission']
+        enum: ['purchase_diamonds', 'withdraw_earnings', 'withdraw_platform_earnings', 'purchase_frame', 'platform_fee_income', 'withdrawal', 'commission', 'block_attempt', 'gift_received', 'gift_sent']
     },
     description: { type: String, required: true },
     amountBRL: { type: Number, required: true },
@@ -29,7 +29,7 @@ const PurchaseRecordSchema: Schema = new Schema({
     status: {
         type: String,
         required: true,
-        enum: ['Concluído', 'Pendente', 'Cancelado', 'Processando', 'Aprovado', 'Recusado'],
+        enum: ['Concluído', 'Pendente', 'Cancelado', 'Processando', 'Aprovado', 'Recusado', 'success', 'failed'],
         default: 'Pendente'
     },
     externalReference: { type: String, index: true },

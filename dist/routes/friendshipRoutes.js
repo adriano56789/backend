@@ -37,7 +37,7 @@ router.post('/', async (req, res) => {
         }
         // Criar amizade + persistir atividade
         const friendship = await models_1.Friendship.create({
-            id: `friendship_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            _id: `friendship_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             userId1,
             userId2,
             initiatedBy: userId1,
