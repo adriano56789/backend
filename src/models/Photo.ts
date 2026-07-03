@@ -22,6 +22,6 @@ const PhotoSchema: Schema = new Schema({
     isPublic: { type: Boolean, default: true },
     likes: { type: Number, default: 0 },
     comments: { type: Number, default: 0 }
-}, { timestamps: true });
+}, { timestamps: true, id: false });
 
 export const Photo = mongoose.model<IPhoto>('Photo', PhotoSchema);

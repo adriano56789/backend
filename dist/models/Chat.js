@@ -53,5 +53,5 @@ const ChatSchema = new mongoose_1.Schema({
         isPinned: Boolean,
         isMuted: Boolean
     }
-}, { timestamps: true });
+}, { timestamps: true, id: false });
 exports.Chat = mongoose_1.default.model('Chat', ChatSchema);

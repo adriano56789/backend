@@ -53,6 +53,7 @@ export interface ILiveInvite extends Document {
     inviteLink: string;
     srsSfuConfig: ISrsSfuConfig;
     createdAt: Date;
+    updatedAt: Date;
 }
 
 const SrsSfuConfigSchema = new Schema<ISrsSfuConfig>(
@@ -84,8 +85,7 @@ const LiveInviteSchema = new Schema<ILiveInvite>(
         },
         streamId: { type: String, required: true, index: true },
         inviteLink: { type: String, required: true },
-        srsSfuConfig: { type: SrsSfuConfigSchema, required: true },
-        createdAt: { type: Date, default: Date.now, index: true }
+        srsSfuConfig: { type: SrsSfuConfigSchema, required: true }
     },
     { timestamps: true }
 );

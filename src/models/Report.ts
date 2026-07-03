@@ -22,6 +22,6 @@ const ReportSchema: Schema = new Schema({
   status: { type: String, enum: ['pending', 'reviewed', 'dismissed', 'action_taken'], default: 'pending', index: true },
   reviewedBy: { type: String },
   reviewedAt: { type: Date }
-}, { timestamps: true });
+}, { timestamps: true, id: false });
 
 export const Report = mongoose.model<IReport>('Report', ReportSchema);

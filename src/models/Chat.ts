@@ -40,6 +40,6 @@ const ChatSchema: Schema = new Schema({
         isPinned: Boolean,
         isMuted: Boolean
     }
-}, { timestamps: true });
+}, { timestamps: true, id: false });
 
 export const Chat = mongoose.model<IChat>('Chat', ChatSchema);

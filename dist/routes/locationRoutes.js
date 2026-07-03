@@ -7,13 +7,11 @@ const express_1 = __importDefault(require("express"));
 const models_1 = require("../models");
 const auth_1 = require("../middleware/auth");
 const userResponse_1 = require("../utils/userResponse");
+const httpClient_1 = require("../utils/httpClient");
 const router = express_1.default.Router();
 async function reverseGeocode(lat, lng) {
     try {
-        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&lang=pt`, { headers: { 'User-Agent': 'LiveApp/1.0' } });
-        if (!res.ok)
-            return { city: '', state: '', country: '', residence: '' };
-        const data = await res.json();
+        const data = await httpClient_1.httpClient.get(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&lang=pt`, { headers: { 'User-Agent': 'LiveApp/1.0' } });
         const addr = data?.address || {};
         const city = addr.city || addr.town || addr.village || addr.municipality || addr.county || '';
         const state = addr.state || '';
@@ -159,9 +157,7 @@ router.get('/user', async (req, res) => {
 router.get('/ip', async (req, res) => {
     try {
         const clientIp = req.headers['x-forwarded-for']?.toString().split(',')[0].trim() || req.ip || '127.0.0.1';
-        // Usar ip-api.com (gratuito, sem chave, 45 req/min)
-        const response = await fetch(`http://ip-api.com/json/${clientIp}?fields=status,lat,lon,city,regionName,country,query&lang=pt`);
-        const data = await response.json();
+        const data = await httpClient_1.httpClient.get(`http://ip-api.com/json/${clientIp}?fields=status,lat,lon,city,regionName,country,query&lang=pt`);
         if (data.status !== 'success') {
             return res.json({ success: false, data: null });
         }

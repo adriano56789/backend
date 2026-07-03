@@ -44,6 +44,5 @@ const UserPhotoSchema = new mongoose_1.Schema({
     likes: { type: Number, default: 0 },
     comments: { type: Number, default: 0 },
     isPublic: { type: Boolean, default: true },
-    postedAt: { type: Date, default: Date.now }
-}, { timestamps: true });
+}, { timestamps: true, id: false });
 exports.UserPhoto = mongoose_1.default.model('UserPhoto', UserPhotoSchema);

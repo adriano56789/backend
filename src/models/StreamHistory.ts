@@ -40,6 +40,6 @@ const StreamHistorySchema: Schema = new Schema({
   category: { type: String },
   tags: [{ type: String }],
   country: { type: String }
-}, { timestamps: true });
+}, { timestamps: true, id: false });
 
 export const StreamHistory = mongoose.model<IStreamHistory>('StreamHistory', StreamHistorySchema);

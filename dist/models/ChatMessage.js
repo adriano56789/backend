@@ -44,12 +44,11 @@ const ChatMessageSchema = new mongoose_1.Schema({
     messageType: { type: String, enum: ['text', 'image', 'gift', 'system'], default: 'text' },
     isRead: { type: Boolean, default: false },
     readAt: { type: Date },
-    sentAt: { type: Date, default: Date.now },
     metadata: {
         imageUrl: String,
         giftId: String,
         giftValue: Number,
         systemType: String
     }
-}, { timestamps: true });
+}, { timestamps: true, id: false });
 exports.ChatMessage = mongoose_1.default.model('ChatMessage', ChatMessageSchema);

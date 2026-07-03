@@ -3,17 +3,38 @@ import express from 'express';
 import { User } from '../models';
 import { getUserIdFromToken } from '../middleware/auth';
 import { standardizeUserResponse } from '../utils/userResponse';
+import { httpClient } from '../utils/httpClient';
 
 const router = express.Router();
 
+interface NominatimResponse {
+  address?: {
+    city?: string;
+    town?: string;
+    village?: string;
+    municipality?: string;
+    county?: string;
+    state?: string;
+    country?: string;
+  };
+}
+
+interface IpApiResponse {
+  status: string;
+  lat: number;
+  lon: number;
+  city: string;
+  regionName: string;
+  country: string;
+  query: string;
+}
+
 async function reverseGeocode(lat: number, lng: number): Promise<{ city: string; state: string; country: string; residence: string }> {
     try {
-        const res = await fetch(
+        const data = await httpClient.get<NominatimResponse>(
             `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&lang=pt`,
             { headers: { 'User-Agent': 'LiveApp/1.0' } }
         );
-        if (!res.ok) return { city: '', state: '', country: '', residence: '' };
-        const data = await res.json();
         const addr = data?.address || {};
         const city = addr.city || addr.town || addr.village || addr.municipality || addr.county || '';
         const state = addr.state || '';
@@ -186,9 +207,7 @@ router.get('/ip', async (req, res) => {
   try {
     const clientIp = req.headers['x-forwarded-for']?.toString().split(',')[0].trim() || req.ip || '127.0.0.1';
 
-    // Usar ip-api.com (gratuito, sem chave, 45 req/min)
-    const response = await fetch(`http://ip-api.com/json/${clientIp}?fields=status,lat,lon,city,regionName,country,query&lang=pt`);
-    const data = await response.json();
+    const data = await httpClient.get<IpApiResponse>(`http://ip-api.com/json/${clientIp}?fields=status,lat,lon,city,regionName,country,query&lang=pt`);
 
     if (data.status !== 'success') {
       return res.json({ success: false, data: null });

@@ -44,5 +44,5 @@ const PhotoSchema = new mongoose_1.Schema({
     isPublic: { type: Boolean, default: true },
     likes: { type: Number, default: 0 },
     comments: { type: Number, default: 0 }
-}, { timestamps: true });
+}, { timestamps: true, id: false });
 exports.Photo = mongoose_1.default.model('Photo', PhotoSchema);

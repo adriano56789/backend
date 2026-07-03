@@ -6,6 +6,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { Streamer, User, Message, Followers, Friendship, Block, UserLevel, StreamKeyAssociation, GiftTransaction, StreamLike, Battle, LiveCard } from '../models/index';
 import { getUserIdFromToken, generateJWT } from '../middleware/auth';
 import { ResponseHelper } from '../middleware/responseHelper';
+import { AccessToken } from 'livekit-server-sdk';
+import { ENV } from '../config/env';
 
 import { 
 
@@ -78,6 +80,56 @@ import { findUserByAnyId } from '../utils/idHelper';
 
 
 const router = express.Router();
+
+// Parameter middleware to normalize stream IDs (remove 'stream_' prefix if present)
+router.param('id', (req, res, next, val) => {
+    if (val && typeof val === 'string' && val.startsWith('stream_')) {
+        req.params.id = val.replace('stream_', '');
+    }
+    next();
+});
+
+router.param('streamId', (req, res, next, val) => {
+    if (val && typeof val === 'string' && val.startsWith('stream_')) {
+        req.params.streamId = val.replace('stream_', '');
+    }
+    next();
+});
+
+// GET /api/lives/:id/livekit-token - Gerar token de acesso LiveKit para o StreamRoom
+router.get('/lives/:id/livekit-token', async (req, res) => {
+  const room = req.params.id; // Isso já estará normalizado sem o prefixo 'stream_'
+  const identity = req.query.identity as string || `user_${Date.now()}`;
+  const isPublisher = req.query.publisher === 'true';
+
+  try {
+    const at = new AccessToken(ENV.LIVEKIT_API_KEY, ENV.LIVEKIT_API_SECRET, {
+      identity,
+      ttl: '6h',
+    });
+    // Configurar permissões
+    at.addGrant({
+      roomJoin: true,
+      room: `stream_${room}`, // O LiveKit espera a sala com o prefixo 'stream_' para consistência
+      canPublish: isPublisher,
+      canPublishData: true,
+      canSubscribe: true,
+    });
+    
+    const token = await at.toJwt();
+    res.json({
+      success: true,
+      token,
+      identity,
+      room: `stream_${room}`,
+      serverUrl: ENV.LIVEKIT_URL || 'wss://sfu.livego.store',
+      livekitUrl: ENV.LIVEKIT_URL || 'wss://sfu.livego.store',
+    });
+  } catch (error: any) {
+    console.error('[LIVEKIT-TOKEN] Erro:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
 
 
@@ -6750,12 +6802,12 @@ router.put('/streams/:id/quality', async (req, res) => {
 
 
 
-// API STARK - Iniciar live (padr+o Buscast)
+// API STARK - Iniciar live (DEPRECATED - Usar WHIP/WHEP diretamente)
 
 // ===== ROUTE START =====
 router.post('/stark/live/start', async (req, res) => {
     try {
-        console.log('[STARK-START] Iniciando live via Stark API...');
+        console.warn('[STARK-START] ⚠️ DEPRECATED: Usar WHIP endpoint /api/rtc/v1/whip/ em vez de STARK API');
         const { userId, title, category, country } = req.body;
         if (!userId || !title) {
             return res.status(400).json({ code: 1, msg: 'Parametros obrigatorios: userId, title', result: null });

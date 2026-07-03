@@ -53,5 +53,5 @@ const StreamHistorySchema = new mongoose_1.Schema({
     category: { type: String },
     tags: [{ type: String }],
     country: { type: String }
-}, { timestamps: true });
+}, { timestamps: true, id: false });
 exports.StreamHistory = mongoose_1.default.model('StreamHistory', StreamHistorySchema);

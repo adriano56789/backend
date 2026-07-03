@@ -55,5 +55,5 @@ const PurchaseRecordSchema = new mongoose_1.Schema({
     externalReference: { type: String, index: true },
     paymentId: { type: String, index: true },
     metadata: { type: mongoose_1.Schema.Types.Mixed }
-}, { timestamps: true });
+}, { timestamps: true, id: false });
 exports.PurchaseRecord = mongoose_1.default.model('PurchaseRecord', PurchaseRecordSchema);

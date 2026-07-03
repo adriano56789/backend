@@ -42,7 +42,7 @@ const FollowersSchema = new mongoose_1.Schema({
     followedAt: { type: Date, default: Date.now },
     isActive: { type: Boolean, default: true },
     unfollowedAt: { type: Date }
-}, { timestamps: true });
+}, { timestamps: true, id: false });
 // Create composite index
 FollowersSchema.index({ followerId: 1, followingId: 1 }, { unique: true });
 exports.Followers = mongoose_1.default.model('Followers', FollowersSchema, 'follows');

@@ -18,6 +18,6 @@ const VisitorSchema: Schema = new Schema({
   visitedAt: { type: Date, default: Date.now },
   visitorName: { type: String },
   visitorAvatar: { type: String }
-}, { timestamps: true });
+}, { timestamps: true, id: false });
 
 export const Visitor = mongoose.model<IVisitor>('Visitor', VisitorSchema);

@@ -9,7 +9,6 @@ export interface IUserPhoto extends Document {
     likes: number;
     comments: number;
     isPublic: boolean;
-    postedAt: Date;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -23,7 +22,6 @@ const UserPhotoSchema: Schema = new Schema({
     likes: { type: Number, default: 0 },
     comments: { type: Number, default: 0 },
     isPublic: { type: Boolean, default: true },
-    postedAt: { type: Date, default: Date.now }
-}, { timestamps: true });
+}, { timestamps: true, id: false });
 
 export const UserPhoto = mongoose.model<IUserPhoto>('UserPhoto', UserPhotoSchema);

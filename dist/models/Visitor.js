@@ -42,5 +42,5 @@ const VisitorSchema = new mongoose_1.Schema({
     visitedAt: { type: Date, default: Date.now },
     visitorName: { type: String },
     visitorAvatar: { type: String }
-}, { timestamps: true });
+}, { timestamps: true, id: false });
 exports.Visitor = mongoose_1.default.model('Visitor', VisitorSchema);

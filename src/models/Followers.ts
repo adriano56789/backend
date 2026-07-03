@@ -18,7 +18,7 @@ const FollowersSchema: Schema = new Schema({
     followedAt: { type: Date, default: Date.now },
     isActive: { type: Boolean, default: true },
     unfollowedAt: { type: Date }
-}, { timestamps: true });
+}, { timestamps: true, id: false });
 
 // Create composite index
 FollowersSchema.index({ followerId: 1, followingId: 1 }, { unique: true });

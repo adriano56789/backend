@@ -253,7 +253,6 @@ else {
                     isPrivate: s.isPrivate || false,
                     viewers: s.viewers || 0,
                     startTime: s.startTime || new Date(),
-                    updatedAt: new Date()
                 });
                 migrated++;
             }
@@ -444,6 +443,7 @@ app.use('/api', stunRoutes_1.default); // STUN servers
 app.use('/api/srs', srsRoutes_1.default); // Callbacks do SRS PRIMEIRO (evita conflito com routes genéricos)
 app.use('/api', metadataRoutes_1.default); // handles /api/ranking, /api/gifts, /api/regions, /api/history
 app.use('/api', liveRoutes_1.default); // handles /api/live, /api/streams, /api/rtc, /api/lives, /api/permissions
+app.use('/api', likesRoutes_1.default); // handles stream likes
 app.use('/api', settingsRoutes_1.default); // handles /api/settings, /api/notifications/settings
 app.use('/api/pk', pkRoutes_1.default);
 app.use('/api/protobuf', protobufRoutes_1.default);
@@ -834,18 +834,16 @@ io.on('connection', (socket) => {
                 receiverId: receiverId || senderId,
                 content,
                 messageType: messageType,
-                isRead: false,
-                sentAt: new Date()
+                isRead: false
             });
             // Atualizar última mensagem do chat
             await Chat.findOneAndUpdate({ id: chatId }, { $set: {
                     lastMessage: {
                         content: message.content,
                         senderId: message.senderId,
-                        timestamp: message.sentAt,
+                        timestamp: message.createdAt,
                         messageType: message.messageType
-                    },
-                    updatedAt: new Date()
+                    }
                 } });
             // Buscar detalhes do remetente
             const sender = await User.findOne({ id: senderId }).select('id name avatarUrl');
@@ -860,7 +858,7 @@ io.on('connection', (socket) => {
                 content: message.content,
                 messageType: message.messageType,
                 isRead: message.isRead,
-                sentAt: message.sentAt,
+                sentAt: message.createdAt,
                 sender: { id: sender.id, name: sender.name, avatarUrl: sender.avatarUrl || '' }
             };
             // Enviar para todos os participantes do chat

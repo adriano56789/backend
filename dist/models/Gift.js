@@ -47,5 +47,6 @@ const GiftSchema = new mongoose_1.Schema({
     },
     videoUrl: { type: String },
     triggersAutoFollow: { type: Boolean, default: false }
-}, { timestamps: true });
+}, { timestamps: true, id: false });
+GiftSchema.index({ category: 1 });
 exports.Gift = mongoose_1.default.model('Gift', GiftSchema);

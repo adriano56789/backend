@@ -261,8 +261,7 @@ router.post('/', async (req, res) => {
                 receiverId: body.toUserId || body.targetUserId || '',
                 content: body.message || body.content || body.text || '',
                 messageType: 'text',
-                isRead: false,
-                sentAt: new Date()
+                isRead: false
             });
             const io = req.app.get('io');
             if (io) {

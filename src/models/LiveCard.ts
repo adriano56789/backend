@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document } from 'mongoose';
+import crypto from 'crypto';
 
 export interface ILiveCard extends Document {
     hostId: string;
@@ -6,8 +7,8 @@ export interface ILiveCard extends Document {
     avatar: string;
     title: string;
     streamKey: string;
-    playbackUrl: string;
-    hlsUrl: string;
+    playbackUrl: string | null;
+    hlsUrl: string | null;
     country: string;
     isLive: boolean;
     streamStatus: 'active' | 'live' | 'ended';
@@ -17,9 +18,8 @@ export interface ILiveCard extends Document {
     notice: string;
     metaData: Map<string, string>;
     isPrivate: boolean;
-    startTime: Date;
-    endTime?: Date;
-    updatedAt: Date;
+    startTime: Date | null;
+    endTime?: Date | null;
 }
 
 const LiveCardSchema = new Schema<ILiveCard>({
@@ -27,24 +27,34 @@ const LiveCardSchema = new Schema<ILiveCard>({
     name: { type: String, required: true },
     avatar: { type: String, default: '' },
     title: { type: String, default: '' },
-    streamKey: { type: String, default: '' },
-    playbackUrl: { type: String, default: '' },
-    hlsUrl: { type: String, default: '' },
+    streamKey: { type: String, required: true },
+    playbackUrl: { type: String, default: null },
+    hlsUrl: { type: String, default: null },
     country: { type: String, default: 'br', index: true },
     isLive: { type: Boolean, default: false },
-    streamStatus: { type: String, enum: ['active', 'live', 'ended'], default: 'ended' },
+    streamStatus: {
+        type: String,
+        enum: ['active', 'live', 'ended'],
+        default: 'ended'
+    },
     viewers: { type: Number, default: 0 },
     category: { type: String, default: 'popular' },
     categoryList: { type: [String], default: [] },
     notice: { type: String, default: '' },
     metaData: { type: Map, of: String, default: {} },
     isPrivate: { type: Boolean, default: false },
-    startTime: { type: Date, default: Date.now },
-    endTime: { type: Date },
-    updatedAt: { type: Date, default: Date.now }
+    startTime: { type: Date, default: null },
+    endTime: { type: Date, default: null }
 }, { timestamps: true });
 
 LiveCardSchema.index({ isLive: 1, country: 1 });
 LiveCardSchema.index({ streamStatus: 1 });
+
+LiveCardSchema.pre('save', function (this: any, next: any) {
+    if (!this.streamKey) {
+        this.streamKey = crypto.randomBytes(16).toString('hex');
+    }
+    next();
+});
 
 export const LiveCard = mongoose.model<ILiveCard>('LiveCard', LiveCardSchema);

@@ -1,0 +1,169 @@
+services:
+  mongodb:
+    image: mongo:7
+    container_name: app-mongodb
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - livego-net
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: app-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - livego-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  emqx:
+    image: emqx/emqx:5.7.2
+    container_name: app-emqx
+    restart: always
+    ports:
+      - "1883:1883"
+      - "8083:8083"
+      - "8084:8084"
+      - "8883:8883"
+      - "18083:18083"
+    environment:
+      EMQX_NAME: livego
+      EMQX_CLUSTER__DISCOVERY_STRATEGY: manual
+      EMQX_LISTENERS__TCP__DEFAULT__BIND: 0.0.0.0:1883
+      EMQX_LISTENERS__WS__DEFAULT__BIND: 0.0.0.0:8083
+      EMQX_LISTENERS__SSL__DEFAULT__BIND: 0.0.0.0:8883
+      EMQX_LISTENERS__WSS__DEFAULT__BIND: 0.0.0.0:8084
+      EMQX_DASHBOARD__LISTENERS__HTTP__BIND: 0.0.0.0:18083
+      EMQX_AUTHENTICATION__1__ENABLE: "true"
+      EMQX_AUTHENTICATION__1__MECHANISM: jwt
+      EMQX_AUTHENTICATION__1__USE_JWKS: "false"
+      EMQX_AUTHENTICATION__1__SECRET: livego_mqtt_service_token
+      EMQX_AUTHENTICATION__1__ALGORITHM: hmac-based
+      EMQX_AUTHORIZATION__NO_MATCH: deny
+      EMQX_AUTHORIZATION__SOURCES__1__TYPE: built_in_database
+      EMQX_LOG__CONSOLE_HANDLER__LEVEL: warning
+    healthcheck:
+      test: ["CMD", "emqx", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - livego-net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: app-backend
+    restart: always
+    ports:
+      - "3000:3000"
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - WS_PORT=3001
+      - HOST=0.0.0.0
+      - MONGODB_URI=mongodb://mongodb:27017/api
+      - REDIS_URL=redis://redis:6379
+      - REDIS_ENABLED=true
+      - MQTT_ENABLED=true
+      - EMQX_HOST=emqx
+      - EMQX_PORT=1883
+      - EMQX_SERVICE_TOKEN=livego_mqtt_service_token
+      - JWT_SECRET=livego_jwt_secret_2024_production_secure_change_me
+      - JWT_REFRESH_SECRET=livego_refresh_secret_2024_production
+      - FRONTEND_URL=https://livego.store
+      - BACKEND_URL=https://api.livego.store
+      - CORS_ORIGIN=https://livego.store,https://www.livego.store,https://api.livego.store
+      - MERCADO_PAGO_ACCESS_TOKEN=APP_USR-8544166678866013-071608-5a99eb2e81c9d1321005f213a0ed2ce1-198663456
+      - MERCADO_PAGO_PUBLIC_KEY=APP_USR-dac29668-9ab3-483f-ad46-8216c93786b2
+      - MERCADO_PAGO_CLIENT_ID=8544166678866013
+      - MERCADO_PAGO_CLIENT_SECRET=OvtQrTNHPFDNhptfkrldHwqQ9QjYzWhq
+    volumes:
+      - ./uploads:/app/uploads
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - livego-net
+
+  srs:
+    image: ossrs/srs:5
+    container_name: app-srs
+    restart: unless-stopped
+    ports:
+      - "1935:1935"
+      - "1985:1985"
+      - "8080:8080"
+      - "8000:8000/udp"
+      - "1990:1990"
+      - "8088:8088"
+    volumes:
+      - ./srs-docker.conf:/usr/local/srs/conf/srs.conf:ro
+    environment:
+      - CANDIDATE=2.25.192.154
+    networks:
+      - livego-net
+
+  coturn:
+    image: coturn/coturn:4.5.2
+    container_name: app-coturn
+    restart: unless-stopped
+    ports:
+      - "3478:3478/udp"
+      - "3478:3478/tcp"
+      - "5349:5349/udp"
+      - "5349:5349/tcp"
+      - "49152-65535:49152-65535/udp"
+    volumes:
+      - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
+    networks:
+      - livego-net
+
+  livekit:
+    image: livekit/livekit-server:latest
+    container_name: app-livekit
+    restart: unless-stopped
+    network_mode: host
+    command: --config /etc/livekit.yaml
+    volumes:
+      - /opt/livekit/livekit.yaml:/etc/livekit.yaml:ro
+    environment:
+      - LIVEKIT_API_KEY=dfd8670dd9bc2f158eb5da850fcb47778f19fc9c88ed8f76f2d1d34cd0d29c66
+      - LIVEKIT_API_SECRET=8529e52ace6e923af0a1b72dffe29fc59372faa96b302c398c9142e197f7636d
+    extra_hosts:
+      - "host.docker.internal:127.0.0.1"
+
+  ffmpeg:
+    image: alpine:latest
+    container_name: app-ffmpeg
+    restart: unless-stopped
+    entrypoint: ["sh", "-c", "apk add --no-cache ffmpeg && sleep infinity"]
+    networks:
+      - livego-net
+
+volumes:
+  mongodb_data:
+  redis_data:
+
+networks:
+  livego-net:
+    driver: bridge

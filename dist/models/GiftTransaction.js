@@ -50,5 +50,5 @@ const GiftTransactionSchema = new mongoose_1.Schema({
     quantity: { type: Number, default: 1 },
     totalValue: { type: Number, required: true },
     transactionHash: { type: String, index: true }
-}, { timestamps: true });
+}, { timestamps: true, id: false });
 exports.GiftTransaction = mongoose_1.default.model('GiftTransaction', GiftTransactionSchema);

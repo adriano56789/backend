@@ -6,6 +6,13 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const models_1 = require("../models");
 const router = express_1.default.Router();
+// Parameter middleware to normalize stream IDs (remove 'stream_' prefix if present)
+router.param('id', (req, res, next, val) => {
+    if (val && typeof val === 'string' && val.startsWith('stream_')) {
+        req.params.id = val.replace('stream_', '');
+    }
+    next();
+});
 // POST /api/streams/:id/like - Adicionar curtida na transmissão
 router.post('/streams/:id/like', async (req, res) => {
     try {

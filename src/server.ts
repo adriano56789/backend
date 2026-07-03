@@ -231,7 +231,6 @@ connectDB().then(async () => {
                     isPrivate: s.isPrivate || false,
                     viewers: s.viewers || 0,
                     startTime: s.startTime || new Date(),
-                    updatedAt: new Date()
                 });
                 migrated++;
             }
@@ -427,6 +426,7 @@ app.use('/api', stunRoutes); // STUN servers
 app.use('/api/srs', srsRoutes); // Callbacks do SRS PRIMEIRO (evita conflito com routes genéricos)
 app.use('/api', metadataRoutes); // handles /api/ranking, /api/gifts, /api/regions, /api/history
 app.use('/api', liveRoutes); // handles /api/live, /api/streams, /api/rtc, /api/lives, /api/permissions
+app.use('/api', likesRoutes); // handles stream likes
 app.use('/api', settingsRoutes); // handles /api/settings, /api/notifications/settings
 app.use('/api/pk', pkRoutes);
 app.use('/api/protobuf', protobufRoutes);
@@ -895,8 +895,7 @@ io.on('connection', (socket) => {
                 receiverId: receiverId || senderId,
                 content,
                 messageType: messageType as 'text' | 'image' | 'gift' | 'system',
-                isRead: false,
-                sentAt: new Date()
+                isRead: false
             });
 
             // Atualizar última mensagem do chat
@@ -906,10 +905,9 @@ io.on('connection', (socket) => {
                     lastMessage: {
                         content: message.content,
                         senderId: message.senderId,
-                        timestamp: message.sentAt,
+                        timestamp: message.createdAt,
                         messageType: message.messageType
-                    },
-                    updatedAt: new Date()
+                    }
                 } }
             );
 
@@ -926,7 +924,7 @@ io.on('connection', (socket) => {
                 content: message.content,
                 messageType: message.messageType,
                 isRead: message.isRead,
-                sentAt: message.sentAt,
+                sentAt: message.createdAt,
                 sender: { id: sender.id, name: sender.name, avatarUrl: sender.avatarUrl || '' }
             };
 
