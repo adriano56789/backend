@@ -13,10 +13,12 @@ const router = express_1.default.Router();
 const activeCredentials = new Map();
 const requestTracker = new Map();
 const TURN_SECRET = env_1.ENV.TURN_SECRET || 'dev_turn_secret_key_change_me';
+const TURN_HOST = process.env.TURN_HOST || '2.25.192.154';
+const TURN_PORT = process.env.TURN_PORT || '3478';
 const TURN_CONFIGS = {
-    BR: { urls: ['turn:72.60.249.175:3478'], maxConnections: 2000, secret: TURN_SECRET },
-    US: { urls: ['turn:104.21.45.100:3479'], maxConnections: 2000, secret: TURN_SECRET },
-    EU: { urls: ['turn:104.21.67.200:3480'], maxConnections: 2000, secret: TURN_SECRET },
+    BR: { urls: [`turn:${TURN_HOST}:${TURN_PORT}`], maxConnections: 2000, secret: TURN_SECRET },
+    US: { urls: [`turn:${TURN_HOST}:${TURN_PORT}`], maxConnections: 2000, secret: TURN_SECRET },
+    EU: { urls: [`turn:${TURN_HOST}:${TURN_PORT}`], maxConnections: 2000, secret: TURN_SECRET },
 };
 // Helper para registrar atividade recente no User
 async function pushActivity(userId, activity) {
