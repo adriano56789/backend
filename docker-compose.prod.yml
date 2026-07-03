@@ -90,6 +90,8 @@ services:
       - JWT_REFRESH_SECRET=livego_refresh_secret_2024_production
       - FRONTEND_URL=https://livego.store
       - BACKEND_URL=https://api.livego.store
+      - SRS_HOST=srs
+      - SRS_API_PORT=1985
       - CORS_ORIGIN=https://livego.store,https://www.livego.store,https://api.livego.store
       - MERCADO_PAGO_ACCESS_TOKEN=APP_USR-8544166678866013-071608-5a99eb2e81c9d1321005f213a0ed2ce1-198663456
       - MERCADO_PAGO_PUBLIC_KEY=APP_USR-dac29668-9ab3-483f-ad46-8216c93786b2
