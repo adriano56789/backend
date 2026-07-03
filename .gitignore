@@ -3,11 +3,13 @@ node_modules/
 
 # Build
 dist/
+build/
 
 # Ambiente
 .env
 .env.local
 .env.production
+.env.backend
 
 # Certificados
 *.pem
@@ -22,6 +24,11 @@ logs/
 data/
 uploads/
 
+# Scripts de deploy/config local
+scripts/deploy-*.sh
+scripts/*.conf
+*.local.conf
+
 # IDE
 .idea/
 .vscode/
@@ -32,5 +39,8 @@ Thumbs.db
 
 # PM2
 .pm2/
+
+# Docker
+docker-compose.override.yml
 
 nul

@@ -22,7 +22,7 @@ export const ENV = {
   CORS_ORIGIN: process.env.CORS_ORIGIN || 'http://localhost:5173,http://127.0.0.1:5173,https://livego.store,https://api.livego.store',
 
   // Financial & Admin
-  ADM_EMAIL: process.env.ADM_EMAIL || 'admin@livego.test',
+  ADM_EMAIL: process.env.ADM_EMAIL || '',
   APP_PIX_KEY: process.env.APP_PIX_KEY || 'dev_pix_key',
   PLATFORM_FEE_PERCENTAGE: parseInt(process.env.PLATFORM_FEE_PERCENTAGE || '20'),
   MIN_WITHDRAWAL_AMOUNT: parseInt(process.env.MIN_WITHDRAWAL_AMOUNT || '5'),
