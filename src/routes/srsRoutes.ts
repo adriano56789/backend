@@ -4,6 +4,16 @@ import { startStreamTranscode, stopStreamTranscode } from '../services/FfmpegSer
 
 const router = express.Router();
 
+const DEFAULT_AVATAR = 'https://ui-avatars.com/api/?name=User&background=7c3aed&color=fff&size=100';
+
+function resolveAvatar(user: any): string {
+  if (user.avatarUrl && user.avatarUrl.trim() !== '') return user.avatarUrl;
+  if (user.name && user.name.trim() !== '') {
+    return `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=7c3aed&color=fff&size=100`;
+  }
+  return DEFAULT_AVATAR;
+}
+
 // Idempotência: evita processar callbacks duplicados do SRS
 const processedCallbacks = new Set<string>();
 const RECONNECT_WINDOW_MS = 15000;
@@ -44,6 +54,8 @@ router.post('/publish', async (req, res) => {
         }
 
         const realStreamKey = stream?.split('?')[0] || stream;
+        // Normalizar: remover prefixo 'stream_' para compatibilidade com IDs salvos
+        const normalizedId = realStreamKey?.startsWith('stream_') ? realStreamKey.replace('stream_', '') : realStreamKey;
 
         if (realStreamKey && reconnectionTimers.has(realStreamKey)) {
             const timer = reconnectionTimers.get(realStreamKey);
@@ -52,12 +64,13 @@ router.post('/publish', async (req, res) => {
             console.log(`[SRS-PUBLISH] Reconexão detectada — stream ${realStreamKey}`);
         }
 
-        // Buscar documento Streamer existente por streamKey ou id
+        // Buscar documento Streamer existente por streamKey, id (normalizada) ou normalizedId
         const existingStream = realStreamKey
             ? await Streamer.findOne({
                 $or: [
                     { streamKey: realStreamKey },
-                    { id: realStreamKey }
+                    { id: realStreamKey },
+                    ...(normalizedId !== realStreamKey ? [{ id: normalizedId }] : [])
                 ]
               }).lean()
             : null;
@@ -66,7 +79,12 @@ router.post('/publish', async (req, res) => {
 
         // Se não achou pelo Streamer, tentar pelo User (currentStreamId)
         if (!userId && realStreamKey) {
-            const userByStream = await User.findOne({ currentStreamId: realStreamKey }).lean();
+            const userByStream = await User.findOne({
+                $or: [
+                    { currentStreamId: realStreamKey },
+                    ...(normalizedId !== realStreamKey ? [{ currentStreamId: normalizedId }] : [])
+                ]
+            }).lean();
             if (userByStream) {
                 userId = userByStream.id;
             }
@@ -96,13 +114,23 @@ router.post('/publish', async (req, res) => {
         const hlsUrl = existingStream?.hlsUrl
             || `${process.env.BACKEND_URL || 'https://api.livego.store'}/api/video/http/live/${realStreamKey}.m3u8`;
 
+        // CRÍTICO: usar normalizedId (sem prefixo stream_) para o campo id,
+        // pois todas as rotas backend usam router.param('id') que remove o prefixo,
+        // e o frontend constrói URLs com stream_<userId>
+        const storedId = normalizedId || realStreamKey;
+
+        const whipUrl = `${process.env.BACKEND_URL || 'https://api.livego.store'}/api/rtc/v1/whip/?app=${liveApp}&stream=${encodeURIComponent(realStreamKey)}`;
+        const whepUrl = `${process.env.BACKEND_URL || 'https://api.livego.store'}/api/rtc/v1/whep/?app=${liveApp}&stream=${encodeURIComponent(realStreamKey)}`;
+        const webrtcUrl = `webrtc://${process.env.SRS_HOST || 'srs'}:8000/live/${realStreamKey}`;
+        const flvUrl = `${process.env.BACKEND_URL || 'https://api.livego.store'}/api/video/http/live/${realStreamKey}.flv`;
+
         const streamerData = {
-            id: realStreamKey,
+            id: storedId,
             hostId: userId,
             srsAction: action,
             clientIp: ip,
             name: user.name || 'Streamer',
-            avatar: user.avatarUrl || '',
+            avatar: resolveAvatar(user),
             location: user.country || 'BR',
             time: 'Ao Vivo',
             message: streamTitle,
@@ -121,13 +149,24 @@ router.post('/publish', async (req, res) => {
             rtmpIngestUrl,
             playbackUrl,
             hlsUrl,
+            webrtcUrl,
+            flvUrl,
+            whipUrl,
+            whepUrl,
             vhost: vhost || '__defaultVhost__',
             app: liveApp,
-            stream: realStreamKey
+            stream: realStreamKey,
+            liveId: storedId,
+            srsClientId: client_id,
+            webrtcSessionId: stream_id || client_id,
+            srsPublishData: {
+                server_id, action, client_id, ip, vhost, app,
+                tcUrl, stream, param, stream_url, stream_id
+            }
         };
 
         await Streamer.findOneAndUpdate(
-            { id: realStreamKey },
+            { id: storedId },
             { $set: streamerData },
             { upsert: true, new: true }
         );
@@ -135,7 +174,7 @@ router.post('/publish', async (req, res) => {
         // Atualizar status do usuário
         await User.findOneAndUpdate(
             { id: userId },
-            { $set: { isLive: true, currentStreamId: realStreamKey } }
+            { $set: { isLive: true, currentStreamId: storedId } }
         );
 
         console.log(`[SRS-PUBLISH] Transmissão registrada: ${realStreamKey} para usuário ${userId}`);
@@ -149,11 +188,13 @@ router.post('/publish', async (req, res) => {
                 { $set: {
                     hostId: userId,
                     name: user.name || userId,
-                    avatar: user.avatarUrl || '',
+                    avatar: resolveAvatar(user),
                     title: existingStream?.title || streamTitle,
                     streamKey: realStreamKey,
                     playbackUrl,
                     hlsUrl,
+                    webrtcUrl,
+                    flvUrl,
                     country: finalCountry,
                     isLive: true,
                     streamStatus: 'active',
@@ -174,7 +215,7 @@ router.post('/publish', async (req, res) => {
                 id: realStreamKey,
                 hostId: userId,
                 name: user.name || 'Live',
-                avatar: user.avatarUrl || '',
+                avatar: resolveAvatar(user),
                 isLive: true,
                 streamStatus: 'active',
                 country: user.country || 'BR',
@@ -233,6 +274,9 @@ router.post('/unpublish', async (req, res) => {
         }
 
         const realStreamKey = stream?.split('?')[0] || stream;
+        // Normalizar: remover prefixo 'stream_' para compatibilidade
+        const normalizedId = realStreamKey?.startsWith('stream_') ? realStreamKey.replace('stream_', '') : realStreamKey;
+        const storedId = normalizedId || realStreamKey;
 
         if (realStreamKey && reconnectionTimers.has(realStreamKey)) {
             console.log(`[SRS-UNPUBLISH] ⏭️ Reconexão em andamento, ignorando unpublish`);
@@ -241,8 +285,16 @@ router.post('/unpublish', async (req, res) => {
 
         // Atualizar status da stream para offline
         const updated = await Streamer.findOneAndUpdate(
-            { id: realStreamKey, isLive: true },
-            { $set: { isLive: false, streamStatus: 'ended', endTime: new Date() } }
+            { id: storedId, isLive: true },
+            { $set: {
+                isLive: false,
+                streamStatus: 'ended',
+                endTime: new Date(),
+                srsUnpublishData: {
+                    server_id, action, client_id, ip, vhost, app,
+                    tcUrl, stream, param, stream_url, stream_id
+                }
+            } }
         );
 
         if (updated) {
@@ -270,17 +322,17 @@ router.post('/unpublish', async (req, res) => {
             const io = req.app.get('io');
             if (io) {
                 io.emit('card_removed', {
-                    streamId: realStreamKey || updated?.id,
+                    streamId: storedId,
                     hostId: updated?.hostId || '',
                     timestamp: new Date().toISOString()
                 });
                 io.emit('stream_ended', {
-                    streamId: realStreamKey || updated?.id,
+                    streamId: storedId,
                     hostId: updated?.hostId || '',
                     timestamp: new Date().toISOString()
                 });
                 io.emit('stream_stopped', {
-                    streamId: realStreamKey || updated?.id,
+                    streamId: storedId,
                     hostId: updated?.hostId || '',
                     timestamp: new Date().toISOString()
                 });

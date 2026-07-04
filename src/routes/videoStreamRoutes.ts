@@ -702,19 +702,16 @@ router.post('/rtc/v1/play', async (req, res) => {
 // @route GET /api/rtc/ice-servers
 // Retorna servidores ICE (STUN/TURN) para WebRTC
 router.get('/rtc/ice-servers', (req, res) => {
-  const turnHost = process.env.TURN_HOST || process.env.SRS_HOST || '72.60.249.175';
+  const turnHost = process.env.TURN_HOST || process.env.SRS_HOST || 'livego.store';
   const turnPort = process.env.TURN_PORT || '3478';
   const turnUsername = process.env.TURN_USERNAME || 'livego';
   const turnCredential = process.env.TURN_CREDENTIAL || process.env.SRS_TURN_PASSWORD || 'livegosecretpassword';
+  const stunUrl = process.env.STUN_URL || `stun:${turnHost}:${turnPort}`;
 
   res.json({
     success: true,
     iceServers: [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:stun2.l.google.com:19302' },
-      { urls: 'stun:stun3.l.google.com:19302' },
-      { urls: 'stun:stun4.l.google.com:19302' },
+      { urls: stunUrl },
       {
         urls: `turn:${turnHost}:${turnPort}?transport=udp`,
         username: turnUsername,

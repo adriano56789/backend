@@ -97,6 +97,12 @@ services:
       - MERCADO_PAGO_PUBLIC_KEY=APP_USR-dac29668-9ab3-483f-ad46-8216c93786b2
       - MERCADO_PAGO_CLIENT_ID=8544166678866013
       - MERCADO_PAGO_CLIENT_SECRET=OvtQrTNHPFDNhptfkrldHwqQ9QjYzWhq
+      - TURN_HOST=2.25.192.154
+      - TURN_PORT=3478
+      - TURN_USERNAME=livego
+      - TURN_CREDENTIAL=livegosecretpassword
+      - TURN_SECRET=dev_turn_secret_key_change_me
+      - STUN_URL=stun:2.25.192.154:3478
     volumes:
       - ./uploads:/app/uploads
     depends_on:

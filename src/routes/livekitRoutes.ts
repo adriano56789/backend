@@ -5,9 +5,9 @@ import { ENV } from '../config/env';
 const router = express.Router();
 
 // LiveKit Server SDK client
-const livekitHost = ENV.LIVEKIT_URL?.replace('wss://', '').replace('ws://', '') || 'sfu.livego.store';
+const livekitServerUrl = ENV.LIVEKIT_SERVER_URL || `https://${ENV.LIVEKIT_URL?.replace('wss://', '').replace('ws://', '') || 'sfu.livego.store'}`;
 const roomService = new RoomServiceClient(
-  `https://${livekitHost}`,
+  livekitServerUrl,
   ENV.LIVEKIT_API_KEY,
   ENV.LIVEKIT_API_SECRET
 );
@@ -257,7 +257,7 @@ router.post('/rooms/:roomName/participants/:identity/tracks/:trackSid/mute', asy
 // ========================================
 
 const ingressClient = new IngressClient(
-  `https://${livekitHost}`,
+  livekitServerUrl,
   ENV.LIVEKIT_API_KEY,
   ENV.LIVEKIT_API_SECRET
 );

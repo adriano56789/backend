@@ -27,6 +27,17 @@ import {
 
 } from '../mappers/srsStreamMapper';
 
+const DEFAULT_AVATAR = 'https://ui-avatars.com/api/?name=User&background=7c3aed&color=fff&size=100';
+
+function resolveAvatar(user: any): string {
+  if (!user) return DEFAULT_AVATAR;
+  if (user.avatarUrl && user.avatarUrl.trim() !== '') return user.avatarUrl;
+  if (user.name && user.name.trim() !== '') {
+    return `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=7c3aed&color=fff&size=100`;
+  }
+  return DEFAULT_AVATAR;
+}
+
 // import { 
 
 //     validateBody, 
@@ -1855,7 +1866,7 @@ router.post('/srs/publish', async (req, res) => {
 
             name: user.name,
 
-            avatar: user.avatarUrl || '',
+            avatar: resolveAvatar(user),
 
             location: user.country || 'BR',
 
@@ -2791,8 +2802,12 @@ router.post('/streams/:id/join', async (req, res) => {
 
 
         // Verificar se stream está ativa
+        // O host pode entrar mesmo em 'preparing' (antes do callback SRS chegar)
+        const isHost = String(stream.hostId) === String(userId);
+        const isActive = stream.isLive && ['active', 'live'].includes(stream.streamStatus);
+        const isPreparing = !stream.isLive && stream.streamStatus === 'preparing';
 
-        if (!stream.isLive || !['active', 'live'].includes(stream.streamStatus)) {
+        if (!isActive && !(isHost && isPreparing)) {
 
             return res.status(400).json({ 
 
@@ -3245,7 +3260,11 @@ router.post('/streams', async (req, res) => {
         const streamTitle = name || title || `Live de ${user.name}`;
         const finalCountry = (country || user.country || 'BR').toLowerCase();
 
-        const streamKey = 'stream_' + uuidv4();
+        // Usar streamId do body quando fornecido (frontend envia "stream_<userId>" no initiateStream)
+        // Isso garante que o streamKey corresponda ao que o WHIP publish usa
+        const frontendStreamId = req.body.streamId;
+        const streamKey = frontendStreamId || ('stream_' + uuidv4());
+
         const stream = await Streamer.findOneAndUpdate(
             { id: hostId },
             {
@@ -3342,7 +3361,7 @@ router.post('/streams/:id/publish', async (req, res) => {
                 streamId: stream.id || id,
                 hostId: stream.hostId || hostId,
                 name: stream.name || user.name,
-                avatar: stream.avatar || user?.avatarUrl || '',
+                avatar: stream.avatar || resolveAvatar(user),
                 timestamp: new Date().toISOString()
             });
         }
@@ -3354,7 +3373,7 @@ router.post('/streams/:id/publish', async (req, res) => {
                 { $set: {
                     hostId,
                     name: stream.name || user.name,
-                    avatar: stream.avatar || user?.avatarUrl || '',
+                    avatar: stream.avatar || resolveAvatar(user),
                     title: stream.title || user.name,
                     streamKey: stream.streamKey || id,
                     country: (stream.country || user?.country || 'BR').toLowerCase(),
@@ -3488,6 +3507,10 @@ router.get('/streams', async (req, res) => {
             streamKey: card.streamKey,
             playbackUrl: card.playbackUrl,
             hlsUrl: card.hlsUrl,
+            webrtcUrl: card.webrtcUrl,
+            flvUrl: card.flvUrl,
+            whipUrl: card.whipUrl,
+            whepUrl: card.whepUrl,
             viewers: card.viewers || 0,
             category: card.category || 'popular',
             categoryList: card.categoryList || [],
@@ -3503,12 +3526,12 @@ router.get('/streams', async (req, res) => {
                 return {
                     ...stream,
                     name: stream.name || host?.name || stream.hostId,
-                    avatar: stream.avatar || host?.avatarUrl || '',
+                    avatar: stream.avatar || resolveAvatar(host),
                     message: stream.title || '',
                     host: host ? {
                         id: host.id,
                         name: host.name,
-                        avatar: host.avatarUrl || '',
+                        avatar: resolveAvatar(host),
                         level: host.level || 1,
                         country: host.country || 'BR'
                     } : null
@@ -5040,11 +5063,20 @@ router.post('/streams/:id/save', async (req, res) => {
 
     try {
 
+        // Apenas campos seguros para atualização (não permitir sobrescrever isLive, streamStatus, etc)
+        const allowedFields = ['name', 'title', 'message', 'description', 'category', 'tags', 'isPrivate', 'coverUrl', 'country'];
+        const updateData: any = {};
+        for (const field of allowedFields) {
+            if (req.body[field] !== undefined) {
+                updateData[field] = req.body[field];
+            }
+        }
+
         const stream = await Streamer.findOneAndUpdate(
 
             { id: req.params.id },
 
-            req.body,
+            { $set: updateData },
 
             { new: true }
 

@@ -43,4 +43,10 @@ Thumbs.db
 # Docker
 docker-compose.override.yml
 
-nul
+# Auxiliary deployment artifacts
+dist.zip
+dist_to_deploy/
+diagnose.sh
+fix_html.py
+livego.b64
+livego.nginx.conf

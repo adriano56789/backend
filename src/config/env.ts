@@ -52,10 +52,18 @@ export const ENV = {
   // LiveKit (WebRTC/SFU)
   LIVEKIT_API_KEY: process.env.LIVEKIT_API_KEY || 'devkey',
   LIVEKIT_API_SECRET: process.env.LIVEKIT_API_SECRET || 'secret',
-  LIVEKIT_URL: process.env.LIVEKIT_URL || 'wss://sfu.livego.store',
+  LIVEKIT_URL: process.env.LIVEKIT_URL || 'wss://api.livego.store/livekit',
+  LIVEKIT_SERVER_URL: process.env.LIVEKIT_SERVER_URL || `http://172.16.4.1:7880`,
 
   // TURN/Coturn
   TURN_SECRET: process.env.TURN_SECRET || 'dev_turn_secret_key_change_me',
+  TURN_HOST: process.env.TURN_HOST || '2.25.192.154',
+  TURN_PORT: process.env.TURN_PORT || '3478',
+  TURN_USERNAME: process.env.TURN_USERNAME || 'livego',
+  TURN_CREDENTIAL: process.env.TURN_CREDENTIAL || 'livegosecretpassword',
+
+  // STUN
+  STUN_URL: process.env.STUN_URL || 'stun:2.25.192.154:3478',
 
   // EMQX (MQTT)
   MQTT_ENABLED: process.env.MQTT_ENABLED === 'true',

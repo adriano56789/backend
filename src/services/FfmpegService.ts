@@ -1,7 +1,9 @@
 import { spawn, ChildProcess } from 'child_process';
 import axios from 'axios';
 
-const SRS_RTMP_URL = process.env.SRS_RTMP_URL || 'rtmp://127.0.0.1/live';
+const SRS_RTMP_HOST = process.env.SRS_HOST || '127.0.0.1';
+const SRS_RTMP_PORT = process.env.SRS_RTMP_PORT || '1935';
+const SRS_RTMP_URL = process.env.SRS_RTMP_URL || `rtmp://${SRS_RTMP_HOST}:${SRS_RTMP_PORT}/live`;
 const MAX_CONCURRENT_FFMPEG = parseInt(process.env.MAX_CONCURRENT_FFMPEG || '3', 10);
 const FFMPEG_DOCKER_API = process.env.FFMPEG_DOCKER_API || 'http://localhost:5000';
 const USE_DOCKER_FFMPEG = process.env.USE_DOCKER_FFMPEG === 'true';

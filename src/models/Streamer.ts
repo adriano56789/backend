@@ -71,6 +71,8 @@ export interface IStreamer extends Document {
   vhost?: string;
   app?: string;
   stream?: string;
+  whipUrl?: string;
+  whepUrl?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -147,7 +149,9 @@ const StreamerSchema: Schema = new Schema({
   token: { type: String },
   vhost: { type: String },
   app: { type: String },
-  stream: { type: String }
+  stream: { type: String },
+  whipUrl: { type: String },
+  whepUrl: { type: String }
 }, { timestamps: true, id: false });
 
 // Create indexes

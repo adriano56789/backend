@@ -9,6 +9,10 @@ export interface ILiveCard extends Document {
     streamKey: string;
     playbackUrl: string | null;
     hlsUrl: string | null;
+    webrtcUrl?: string | null;
+    flvUrl?: string | null;
+    whipUrl?: string | null;
+    whepUrl?: string | null;
     country: string;
     isLive: boolean;
     streamStatus: 'active' | 'live' | 'ended';
@@ -30,6 +34,10 @@ const LiveCardSchema = new Schema<ILiveCard>({
     streamKey: { type: String, required: true },
     playbackUrl: { type: String, default: null },
     hlsUrl: { type: String, default: null },
+    webrtcUrl: { type: String, default: null },
+    flvUrl: { type: String, default: null },
+    whipUrl: { type: String, default: null },
+    whepUrl: { type: String, default: null },
     country: { type: String, default: 'br', index: true },
     isLive: { type: Boolean, default: false },
     streamStatus: {

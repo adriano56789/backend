@@ -8,23 +8,11 @@ interface StunServer {
   region: string;
 }
 
-const DEFAULT_STUN_SERVERS: StunServer[] = [
-  { urls: ['stun:stun.l.google.com:19302'], region: 'global' },
-  { urls: ['stun:stun1.l.google.com:19302'], region: 'global' },
-  { urls: ['stun:stun2.l.google.com:19302'], region: 'global' },
-  { urls: ['stun:stun3.l.google.com:19302'], region: 'global' },
-  { urls: ['stun:stun4.l.google.com:19302'], region: 'global' },
-];
-
 function getStunServersConfig(): StunServer[] {
-  const customStun = (process.env.STUN_URL);
-  if (customStun) {
-    return [
-      ...DEFAULT_STUN_SERVERS,
-      { urls: [customStun], region: 'custom' },
-    ];
-  }
-  return DEFAULT_STUN_SERVERS;
+  const stunUrl = process.env.STUN_URL || 'stun:livego.store:3478';
+  return [
+    { urls: [stunUrl], region: 'custom' },
+  ];
 }
 
 // GET /api/stun/servers — Retorna lista de servidores STUN
