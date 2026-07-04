@@ -3415,7 +3415,8 @@ router.get('/streams', async (req, res) => {
 
         // Sincronizar streams ativas do SRS com o banco
         try {
-            const srsUrl = `http://127.0.0.1:1985/api/v1/streams/`;
+            const srsApiUrl = process.env.SRS_API_URL || 'http://172.16.4.1:1985';
+            const srsUrl = `${srsApiUrl}/api/v1/streams/`;
             const srsRes = await fetch(srsUrl, { signal: AbortSignal.timeout(5000) });
             if (srsRes.ok) {
                 const srsData = await srsRes.json();
@@ -3425,6 +3426,8 @@ router.get('/streams', async (req, res) => {
                     const streamKey = srs.name;
                     if (!streamKey) continue;
                     const hostId = streamKey.replace('stream_', '');
+                    const roomId = srs.id || streamKey;
+                    const app = srs.app || 'live';
                     const exists = await LiveCard.findOne({ hostId, isLive: true, streamStatus: { $in: ['active', 'live'] } }).lean();
                     if (!exists) {
                         const user = await User.findOne({ id: hostId }).lean();
@@ -3450,7 +3453,13 @@ router.get('/streams', async (req, res) => {
                             { $set: { isLive: true, streamStatus: 'active', streamKey } },
                             { upsert: true }
                         );
-                        console.log(`[SRS-SYNC] LiveCard criado para stream SRS ativa: ${streamKey}`);
+                        const { StreamRoom } = await import('../models/index');
+                        await StreamRoom.findOneAndUpdate(
+                            { roomId },
+                            { $set: { roomId, hostId, streamKey, app } },
+                            { upsert: true }
+                        );
+                        console.log(`[SRS-SYNC] LiveCard + StreamRoom criados para: ${streamKey}`);
                     }
                 }
             }
