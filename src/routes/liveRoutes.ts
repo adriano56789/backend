@@ -3413,6 +3413,51 @@ router.get('/streams', async (req, res) => {
 
         const parseLimit = Math.min(parseInt(limit as string) || 50, 100);
 
+        // Sincronizar streams ativas do SRS com o banco
+        try {
+            const srsUrl = `http://127.0.0.1:1985/api/v1/streams/`;
+            const srsRes = await fetch(srsUrl, { signal: AbortSignal.timeout(5000) });
+            if (srsRes.ok) {
+                const srsData = await srsRes.json();
+                const srsStreams = srsData?.streams || [];
+                for (const srs of srsStreams) {
+                    if (!srs.publish?.active) continue;
+                    const streamKey = srs.name;
+                    if (!streamKey) continue;
+                    const hostId = streamKey.replace('stream_', '');
+                    const exists = await LiveCard.findOne({ hostId, isLive: true, streamStatus: { $in: ['active', 'live'] } }).lean();
+                    if (!exists) {
+                        const user = await User.findOne({ id: hostId }).lean();
+                        await LiveCard.findOneAndUpdate(
+                            { hostId },
+                            { $set: {
+                                hostId,
+                                name: user?.name || hostId,
+                                avatar: user?.avatarUrl || '',
+                                title: user?.name || hostId,
+                                streamKey,
+                                country: (user?.country || 'BR').toLowerCase(),
+                                isLive: true,
+                                streamStatus: 'active',
+                                category: (req.query.category as string || 'popular').toLowerCase(),
+                                startTime: new Date(),
+                                updatedAt: new Date()
+                            } },
+                            { upsert: true }
+                        );
+                        await Streamer.findOneAndUpdate(
+                            { id: hostId },
+                            { $set: { isLive: true, streamStatus: 'active', streamKey } },
+                            { upsert: true }
+                        );
+                        console.log(`[SRS-SYNC] LiveCard criado para stream SRS ativa: ${streamKey}`);
+                    }
+                }
+            }
+        } catch (srsErr) {
+            console.warn('[SRS-SYNC] Erro ao sincronizar com SRS:', srsErr);
+        }
+
         // Construir filtro base
         const baseFilter: any = {};
         if (isLive === 'true') {
