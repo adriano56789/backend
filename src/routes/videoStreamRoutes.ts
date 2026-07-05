@@ -726,11 +726,9 @@ router.get('/rtc/ice-servers', (req, res) => {
   });
 });
 
-// Helper para construir URL base do SRS com protocolo dinâmico
+// Helper para construir URL base do SRS — usa ENV.SRS_API_URL centralizado
 const getSrsApiBaseUrl = (): string => {
-  const host = ENV.SRS_HOST || 'localhost';
-  const port = ENV.SRS_API_PORT || '1985';
-  return `http://${host}:${port}`;
+  return ENV.SRS_API_URL;
 };
 
 const rawSdpParser = express.text({ type: '*/*' });

@@ -295,7 +295,12 @@ app.use((req, res, next) => {
 import { emptyResponseTracker } from './middleware/emptyResponseTracker';
 app.use('/api', emptyResponseTracker);
 
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({
+  limit: '50mb',
+  verify: (req: any, _res, buf) => {
+    req.rawBody = buf.toString('utf-8');
+  }
+}));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(cookieParser());
 

@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import { ENV } from './env';
 dotenv.config();
 
 export const URL_CONFIG = {
@@ -8,7 +9,7 @@ export const URL_CONFIG = {
     frontendUrl: process.env.FRONTEND_URL || 'https://livego.store',
     uploadsUrl: process.env.BASE_URL || 'https://livego.store',
     srsHost: process.env.SRS_HOST || 'srs',
-    srsApiUrl: process.env.SRS_API_URL || 'https://srs:1990',
+    srsApiUrl: ENV.SRS_API_URL,
     srsRtmpUrl: process.env.SRS_RTMP_URL || 'rtmp://srs:1935/live',
     srsHttpUrl: process.env.SRS_HTTP_URL || 'https://srs:8088/live'
   }

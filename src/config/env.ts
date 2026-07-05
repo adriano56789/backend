@@ -43,7 +43,7 @@ export const ENV = {
 
   // SRS
   SRS_HOST: process.env.SRS_HOST || 'localhost',
-  SRS_API_URL: process.env.SRS_API_URL || 'http://localhost:1985',
+  SRS_API_URL: process.env.SRS_API_URL || 'http://' + (process.env.SRS_HOST || 'localhost') + ':' + (process.env.SRS_API_PORT || '1985'),
   SRS_API_PORT: process.env.SRS_API_PORT || '1985',
   SRS_HTTP_PORT: process.env.SRS_HTTP_PORT || '8080',
   SRS_RTC_PORT: process.env.SRS_RTC_PORT || '8000',

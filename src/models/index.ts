@@ -57,4 +57,5 @@ export { EmptyApiLog } from './EmptyApiLog';
 export { StreamParticipant } from './StreamParticipant';
 export { PurchaseAuditTrail } from './PurchaseAuditTrail';
 export { StreamRoom } from './StreamRoom';
+export { LiveKitWebhookLog } from './LiveKitWebhookLog';
 

@@ -1,13 +1,8 @@
-class SRSService {
-  private readonly srsHost = process.env.SRS_HOST || 'localhost';
-  private readonly srsApiPort = process.env.SRS_API_PORT || '1985';
-  private readonly srsHttpPort = process.env.SRS_HTTP_PORT || '8080';
-  private readonly srsRtcPort = process.env.SRS_RTC_PORT || '8000';
+import { ENV } from '../config/env';
 
+class SRSService {
   private readonly getApiUrl = (): string => {
-    const port = this.srsApiPort;
-    const protocol = port === '1985' ? 'http' : 'https';
-    return `${protocol}://${this.srsHost}:${port}`;
+    return ENV.SRS_API_URL;
   };
 
   constructor() {}
@@ -22,21 +17,17 @@ class SRSService {
   }
 
   getHlsUrl(streamId: string): string {
-    const srsHost = process.env.SRS_HOST || 'localhost';
-    const srsPort = process.env.SRS_HTTP_PORT || '8080';
     const normalizedId = streamId.startsWith('stream_') ? streamId : `stream_${streamId}`;
-    return `http://${srsHost}:${srsPort}/live/${normalizedId}.m3u8`;
+    return `http://${ENV.SRS_HOST}:${ENV.SRS_HTTP_PORT}/live/${normalizedId}.m3u8`;
   }
 
   getFlvUrl(streamId: string): string {
-    const srsHost = process.env.SRS_HOST || 'localhost';
-    const srsPort = process.env.SRS_HTTP_PORT || '8080';
     const normalizedId = streamId.startsWith('stream_') ? streamId : `stream_${streamId}`;
-    return `http://${srsHost}:${srsPort}/live/${normalizedId}.flv`;
+    return `http://${ENV.SRS_HOST}:${ENV.SRS_HTTP_PORT}/live/${normalizedId}.flv`;
   }
 
   private getWebRTCHost(): string {
-    return this.srsHost;
+    return ENV.SRS_HOST;
   }
 
   public sanitizeSDP(sdp: string): string {

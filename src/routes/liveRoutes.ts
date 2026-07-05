@@ -506,7 +506,7 @@ router.post('/token/user/online/infos', async (req, res) => {
 
                 vhost: '__defaultVhost__',
 
-                api: process.env.SRS_API_URL || 'https://srs:1990'
+                api: ENV.SRS_API_URL
 
             },
 
@@ -3019,7 +3019,7 @@ router.post('/streams/:id/publish-token', async (req, res) => {
 
         const srsHost = process.env.SRS_HOST || 'srs';
 
-        const srsApiUrl = process.env.SRS_API_URL || `https://${srsHost}:1990`;
+        const srsApiUrl = ENV.SRS_API_URL;
 
 
 
@@ -3415,7 +3415,7 @@ router.get('/streams', async (req, res) => {
 
         // Sincronizar streams ativas do SRS com o banco
         try {
-            const srsApiUrl = process.env.SRS_API_URL || 'http://172.16.4.1:1985';
+            const srsApiUrl = ENV.SRS_API_URL;
             const srsUrl = `${srsApiUrl}/api/v1/streams/`;
             const srsRes = await fetch(srsUrl, { signal: AbortSignal.timeout(5000) });
             if (srsRes.ok) {
@@ -4149,7 +4149,7 @@ router.post('/start', async (req, res) => {
 
     // URLs via proxy backend (evita mixed content em produção)
     const BACKEND_URL = (process.env.BACKEND_URL || 'https://api.livego.store').replace(/\/+$/, '');
-    const SRS_API_URL = process.env.SRS_API_URL || 'https://srs:1990';
+    const SRS_API_URL = ENV.SRS_API_URL;
     const backendHttp = `${BACKEND_URL}/api/video/http`;
 
     // Criar/Atualizar stream no banco (sem restrição de live ativa)
