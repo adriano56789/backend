@@ -711,12 +711,6 @@ router.get('/rtc/ice-servers', (req, res) => {
   res.json({
     success: true,
     iceServers: [
-      { urls: stunUrl },
-      {
-        urls: `turn:${turnHost}:${turnPort}?transport=udp`,
-        username: turnUsername,
-        credential: turnCredential
-      },
       {
         urls: `turn:${turnHost}:${turnPort}?transport=tcp`,
         username: turnUsername,
