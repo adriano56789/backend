@@ -519,173 +519,87 @@ io.on('connection', (socket) => {
         socket.handshake.headers['x-real-ip'] ||
         'unknown';
 
-    socket.on('join_stream', async (data: { streamId: string }) => {
-        try {
-            const userId = socket.data.userId;
-            const { streamId } = data;
-
-            // VALIDAÇÃO CRÍTICA: Evitar processamento duplicado
-            if (!userId || !streamId) {
-                console.warn('⚠️ join_stream: dados inválidos', { userId, streamId });
-                return;
-            }
-
-            // Verificar se este socket já está associado a este usuário nesta stream
-            const currentUserId = socketToUser.get(socket.id);
-            if (currentUserId === userId) {
-                const userEntry = onlineUsers.get(userId);
-                if (userEntry && userEntry.streamId === streamId && userEntry.socketIds.has(socket.id)) {
-                    console.warn(`🛑 Socket ${socket.id} já está na stream ${streamId} como usuário ${userId} - IGNORANDO`);
-                    return;
-                }
-            }
-
-            console.log(`👤 Usuário ${userId} entrando na stream ${streamId} via WebSocket (socket: ${socket.id})`);
-
-            // 🔥 NOVO: Registrar usuário com IP virtual
-            const virtualUser = virtualIPManager.registerUser(userId, realIP as string, socket.id);
-            console.log(`🌐 IP Virtual atribuído: ${virtualUser.virtualIP} (IP real: ${realIP})`);
-
-            // Verificar se existe sala virtual para esta stream
-            let virtualRoom = virtualIPManager.getRoomByStreamId(streamId);
-            if (!virtualRoom) {
-                // Criar sala virtual se não existir
-                virtualRoom = virtualIPManager.createRoom(streamId, userId);
-                console.log(`🏠 Sala virtual criada: ${virtualRoom.roomCode} para stream ${streamId}`);
-            }
-
-            // Entrar na sala virtual
-            virtualIPManager.joinRoom(userId, virtualRoom.roomId);
-
-            // Mapear socket para usuário (sistema legado)
-            socketToUser.set(socket.id, userId);
-
-            // Verificar se usuário já está online (sistema legado)
-            let userEntry: any = onlineUsers.get(userId);
-            const isFirstConnection = !userEntry;
-            const isChangingStream = userEntry && userEntry.streamId !== streamId;
-
-            if (!userEntry) {
-                // Novo usuário online
-                userEntry = {
-                    userId,
-                    streamId,
-                    socketIds: new Set([socket.id]),
-                    lastSeen: new Date(),
-                    firstConnectionTime: new Date()
-                };
-                onlineUsers.set(userId, userEntry);
-            } else {
-                // Usuário já online, adicionar socket e atualizar stream se necessário
-                if (!userEntry.socketIds.has(socket.id)) {
-                    userEntry.socketIds.add(socket.id);
-                }
-                if (isChangingStream) {
-                    console.log(`🔄 Usuário ${userId} mudando da stream ${userEntry.streamId} para ${streamId}`);
-                    userEntry.streamId = streamId;
-                }
-                userEntry.lastSeen = new Date();
-            }
-
-            // Entrar na sala do Socket.IO (legado)
-            socket.join(streamId);
-
-            // Atualizar status no banco (sempre atualizar o currentStreamId)
-            const models = await import('./models');
-            if (isFirstConnection || isChangingStream) {
-                console.log(`📤 [JOIN_STREAM] Enviando update de status para o banco (User ${userId})...`);
-                const updateResult = await models.User.findOneAndUpdate(
-                    { id: userId },
-                    { $set: { isOnline: true, currentStreamId: streamId, lastSeen: new Date().toISOString() } },
-                    { new: true }
-                );
-                console.log(`✅ [JOIN_STREAM] Resposta MongoDB recebida. Status atualizado: ${updateResult?.isOnline}, streamId: ${updateResult?.currentStreamId}`);
-            }
-
-            const onlineUsersInStream = Array.from(onlineUsers.values())
-                .filter((user: any) => user.streamId === streamId)
-                .map((user: any) => ({ userId: user.userId, lastSeen: user.lastSeen }));
-
-            io.to(streamId).emit('online_users_updated', {
-                streamId,
-                users: onlineUsersInStream,
-                count: onlineUsersInStream.length
-            });
-            io.to(streamId).emit('viewers_count_updated', {
-                streamId,
-                count: onlineUsersInStream.length
-            });
-            // Buscar dados do usuário para emitir evento individual
-            let userName = 'Usuário';
-            let userAvatar = '';
-            let userLevel = 0;
-            try {
-                const userDoc = await models.User.findOne({ id: userId }).select('name avatarUrl level').lean();
-                if (userDoc) {
-                    userName = (userDoc as any).name || 'Usuário';
-                    userAvatar = (userDoc as any).avatarUrl || '';
-                    userLevel = (userDoc as any).level || 0;
-                }
-            } catch (_) {}
-
-            // Obter hostId da stream para classificar fã vs visitante
-            let hostId = '';
-            try {
-                const streamDoc = await models.Streamer.findOne({ id: streamId }).select('hostId').lean();
-                if (streamDoc) hostId = (streamDoc as any).hostId || '';
-            } catch (_) {}
-
-            // Registrar no OnlineTracker e obter contagens atualizadas
-            const counts = await onlineTracker.userJoin(streamId, userId, hostId, userName, userAvatar);
-
-            // Emitir evento de join para toda a sala
-            io.to(streamId).emit('user_joined_stream', {
-                userId,
-                userName,
-                userAvatar,
-                userLevel,
-                streamId,
-                timestamp: new Date().toISOString()
-            });
-
-            // Emitir evento de presença para todos na stream
-            io.to(streamId).emit('user:join', {
-                userId,
-                userName,
-                userAvatar,
-                userLevel,
-                streamId,
-                role: userId === hostId ? 'host' : counts.role,
-                fans: counts.fans,
-                visitors: counts.visitors,
-                total: counts.fans + counts.visitors,
-                timestamp: new Date().toISOString()
-            });
-
-            // Broadcast atualização de contagem para todos na stream
-            io.to(streamId).emit('online_counts_updated', {
-                streamId,
-                fans: counts.fans,
-                visitors: counts.visitors,
-                total: counts.fans + counts.visitors
-            });
-
-            // Persistir viewer count no banco
-            const viewerCount = onlineUsersInStream.length;
-            try {
-                const { Streamer } = await import('./models/Streamer');
-                await Streamer.findOneAndUpdate(
-                    { id: streamId },
-                    { $set: { viewers: viewerCount } }
-                );
-            } catch (e) {
-                // Falha silenciosa — não travar o join por causa do DB
-            }
-
-            console.log(`✅ Usuário ${userId} conectado à stream ${streamId} (sockets: ${userEntry.socketIds.size}) - IP Virtual: ${virtualUser.virtualIP}`);
-        } catch (error) {
-            console.error('❌ Erro ao entrar na stream via WebSocket:', error);
+    async function handleJoinStream(streamId: string) {
+      const userId = socket.data.userId;
+      if (!userId || !streamId) {
+        console.warn('⚠️ join_stream: dados inválidos', { userId, streamId });
+        return;
+      }
+      const currentUserId = socketToUser.get(socket.id);
+      if (currentUserId === userId) {
+        const userEntry = onlineUsers.get(userId);
+        if (userEntry && userEntry.streamId === streamId && userEntry.socketIds.has(socket.id)) {
+          console.warn(`🛑 Socket ${socket.id} já está na stream ${streamId} como usuário ${userId}`);
+          return;
         }
+      }
+      console.log(`👤 Usuário ${userId} entrando na stream ${streamId} (socket: ${socket.id})`);
+      const virtualUser = virtualIPManager.registerUser(userId, realIP as string, socket.id);
+      let virtualRoom = virtualIPManager.getRoomByStreamId(streamId);
+      if (!virtualRoom) {
+        virtualRoom = virtualIPManager.createRoom(streamId, userId);
+      }
+      virtualIPManager.joinRoom(userId, virtualRoom.roomId);
+      socketToUser.set(socket.id, userId);
+      let userEntry: any = onlineUsers.get(userId);
+      const isFirstConnection = !userEntry;
+      const isChangingStream = userEntry && userEntry.streamId !== streamId;
+      if (!userEntry) {
+        userEntry = { userId, streamId, socketIds: new Set([socket.id]), lastSeen: new Date(), firstConnectionTime: new Date() };
+        onlineUsers.set(userId, userEntry);
+      } else {
+        if (!userEntry.socketIds.has(socket.id)) userEntry.socketIds.add(socket.id);
+        if (isChangingStream) userEntry.streamId = streamId;
+        userEntry.lastSeen = new Date();
+      }
+      socket.join(streamId);
+      const models = await import('./models');
+      if (isFirstConnection || isChangingStream) {
+        await models.User.findOneAndUpdate(
+          { id: userId },
+          { $set: { isOnline: true, currentStreamId: streamId, lastSeen: new Date().toISOString() } }
+        );
+      }
+      const onlineUsersInStream = Array.from(onlineUsers.values())
+        .filter((u: any) => u.streamId === streamId)
+        .map((u: any) => ({ userId: u.userId, lastSeen: u.lastSeen }));
+      io.to(streamId).emit('online_users_updated', { streamId, users: onlineUsersInStream, count: onlineUsersInStream.length });
+      io.to(streamId).emit('viewers_count_updated', { streamId, count: onlineUsersInStream.length });
+      let userName = 'Usuário', userAvatar = '', userLevel = 0;
+      try {
+        const userDoc = await models.User.findOne({ id: userId }).select('name avatarUrl level').lean();
+        if (userDoc) { userName = (userDoc as any).name || 'Usuário'; userAvatar = (userDoc as any).avatarUrl || ''; userLevel = (userDoc as any).level || 0; }
+      } catch (_) {}
+      let hostId = '';
+      try { const s = await models.Streamer.findOne({ id: streamId }).select('hostId').lean(); if (s) hostId = (s as any).hostId || ''; } catch (_) {}
+      const counts = await onlineTracker.userJoin(streamId, userId, hostId, userName, userAvatar);
+      io.to(streamId).emit('user_joined_stream', { userId, userName, userAvatar, userLevel, streamId, timestamp: new Date().toISOString() });
+      io.to(streamId).emit('user:join', { userId, userName, userAvatar, userLevel, streamId, role: userId === hostId ? 'host' : counts.role, fans: counts.fans, visitors: counts.visitors, total: counts.fans + counts.visitors, timestamp: new Date().toISOString() });
+      io.to(streamId).emit('online_counts_updated', { streamId, fans: counts.fans, visitors: counts.visitors, total: counts.fans + counts.visitors });
+      try {
+        const { Streamer } = await import('./models/Streamer');
+        await Streamer.findOneAndUpdate({ id: streamId }, { $set: { viewers: onlineUsersInStream.length } });
+      } catch (_) {}
+      console.log(`✅ Usuário ${userId} conectado à stream ${streamId} (sockets: ${userEntry.socketIds.size})`);
+    }
+
+    socket.on('join_room_direct', async (data: { roomId: string }) => {
+      if (!data?.roomId) return;
+      await handleJoinStream(data.roomId);
+    });
+
+    socket.on('binary_data', async (data: ArrayBuffer) => {
+      try {
+        const decoded = BackendProtobufService.decodeEvent(new Uint8Array(data));
+        if (decoded?.join_stream) {
+          const streamId = decoded.join_stream.base?.stream_id || decoded.join_stream.stream_id;
+          if (streamId) await handleJoinStream(streamId);
+        }
+      } catch (_) {}
+    });
+
+    socket.on('join_stream', async (data: { streamId: string }) => {
+      await handleJoinStream(data?.streamId);
     });
 
     // REMOVIDO: leave_stream - lógica movida para disconnect para evitar duplicação
