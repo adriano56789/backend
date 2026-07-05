@@ -710,13 +710,7 @@ router.get('/rtc/ice-servers', (req, res) => {
 
   res.json({
     success: true,
-    iceServers: [
-      {
-        urls: `turn:${turnHost}:${turnPort}?transport=tcp`,
-        username: turnUsername,
-        credential: turnCredential
-      }
-    ]
+    iceServers: []
   });
 });
 
