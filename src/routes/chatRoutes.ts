@@ -331,7 +331,7 @@ router.post('/send', async (req, res) => {
 
         const io = req.app.get('io');
 
-        io.to(`user_${to}`).emit('newMessage', frontendMessage);
+        io.to(`user_${to}`).emit('newChatMessage', frontendMessage);
 
         io.to(`user_${to}`).emit('chat_notification', {
             type: 'new_message',
