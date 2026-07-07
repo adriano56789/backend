@@ -229,6 +229,14 @@ router.post('/:id/like', async (req: Request, res: Response) => {
         const io = req.app.get('io');
         io.emit('photo_updated', { photoId, userId, likes: updatedPhoto?.likes });
 
+        // === NOTIFICAR DONO DA FOTO via serviço centralizado ===
+        try {
+            const { NotificationService } = await import('../services/NotificationService');
+            await NotificationService.notifyPhotoLiked(io, photo.userId, userId, photoId);
+        } catch (notifErr) {
+            console.warn('[PHOTO-LIKE-NOTIFICATION] Erro:', notifErr);
+        }
+
         res.json({ 
             success: true, 
             likes: updatedPhoto?.likes || 1,

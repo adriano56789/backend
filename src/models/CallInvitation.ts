@@ -9,6 +9,9 @@ export interface ICallInvitation {
   streamKey: string;
   status: 'pending' | 'accepted' | 'declined' | 'ended';
   signalingUrl?: string;
+  livekitRoom?: string;
+  hostLiveKitToken?: string;
+  guestLiveKitToken?: string;
   createdAt: Date;
   updatedAt: Date;
 }

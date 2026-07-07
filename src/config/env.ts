@@ -55,6 +55,11 @@ export const ENV = {
   LIVEKIT_URL: process.env.LIVEKIT_URL || 'wss://api.livego.store/livekit',
   LIVEKIT_SERVER_URL: process.env.LIVEKIT_SERVER_URL || `http://172.16.4.1:7880`,
 
+  // Firebase Cloud Messaging
+  FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID || '',
+  FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL || '',
+  FIREBASE_PRIVATE_KEY: process.env.FIREBASE_PRIVATE_KEY || '',
+
   // TURN/Coturn
   TURN_SECRET: process.env.TURN_SECRET || 'dev_turn_secret_key_change_me',
   TURN_HOST: process.env.TURN_HOST || '2.25.192.154',

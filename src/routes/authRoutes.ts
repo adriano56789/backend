@@ -241,98 +241,112 @@ router.post('/register', async (req, res) => {
 
 // @route POST /api/auth/login
 router.post('/login', async (req, res) => {
+    const startTime = Date.now();
+    const clientIp = String(req.ip || req.headers['x-forwarded-for'] || 'unknown');
+    const userAgent = String(req.headers['user-agent'] || 'unknown');
+    const origin = String(req.headers['origin'] || 'none');
+
+    console.log(`[LOGIN] === INÍCIO DA TENTATIVA DE LOGIN ===`);
+    console.log(`[LOGIN] IP: ${clientIp}`);
+    console.log(`[LOGIN] User-Agent: ${userAgent}`);
+    console.log(`[LOGIN] Origin: ${origin}`);
+    console.log(`[LOGIN] Timestamp: ${new Date().toISOString()}`);
+
     try {
-        // Garantir conexão com MongoDB
         await connectDB();
+        console.log(`[LOGIN] MongoDB conectado com sucesso`);
 
         const { email, password } = req.body;
         const authHeader = req.headers.authorization;
 
-        // Se tiver token Bearer, valida e retorna usuário
+        // Se tiver token Bearer, tenta validar — se falhar, continua para email+senha
         if (authHeader && authHeader.startsWith('Bearer ')) {
             const token = authHeader.substring(7);
+            console.log(`[LOGIN] Token Bearer presente — validando...`);
             try {
                 const decoded = jwt.verify(token, JWT_SECRET) as any;
                 const user = await User.findOne({ id: decoded.id });
 
-                if (!user) {
-                    return res.status(401).json({ error: 'Usuário não encontrado' });
+                if (user) {
+                    console.log(`[LOGIN] Token válido para usuário ${user.id} — reautenticando via token`);
+
+                    user.isOnline = true;
+                    user.lastSeen = new Date();
+                    user.loginCount = (user.loginCount || 0) + 1;
+                    user.lastLogin = new Date();
+                    if (!user.recentActivities) user.recentActivities = [];
+                    user.recentActivities.push({
+                        action: 'login',
+                        resource: 'user_authentication',
+                        timestamp: new Date(),
+                        endpoint: '/api/auth/login'
+                    });
+                    await user.save();
+
+                    activityLogger.logManualActivity({
+                        userId: user.id,
+                        activityType: ActivityType.LOGIN,
+                        targetType: 'system',
+                        metadata: { loginMethod: 'bearer_token' },
+                        ipAddress: clientIp,
+                        userAgent
+                    }).catch(() => {});
+
+                    console.log(`[LOGIN] ✅ Login via token bem-sucedido para ${user.id} (${Date.now() - startTime}ms)`);
+                    return res.json({
+                        success: true,
+                        token,
+                        user: standardizeUserResponse(user)
+                    });
                 }
-
-                // Update online status, login count, last login
-                user.isOnline = true;
-                user.lastSeen = new Date();
-                user.loginCount = (user.loginCount || 0) + 1;
-                user.lastLogin = new Date();
-                if (!user.recentActivities) user.recentActivities = [];
-                user.recentActivities.push({
-                    action: 'login',
-                    resource: 'user_authentication',
-                    timestamp: new Date(),
-                    endpoint: '/api/auth/login'
-                });
-                await user.save();
-
-                activityLogger.logManualActivity({
-                    userId: user.id,
-                    activityType: ActivityType.LOGIN,
-                    targetType: 'system',
-                    metadata: { loginMethod: 'bearer_token' },
-                    ipAddress: req.ip,
-                    userAgent: req.headers['user-agent']
-                }).catch(() => {});
-
-                return res.json({
-                    success: true,
-                    token,
-                    user: standardizeUserResponse(user)
-                });
-            } catch (tokenError) {
-                return res.status(401).json({ error: 'Token inválido' });
+                console.log(`[LOGIN] Token válido mas usuário não encontrado — caindo para email+senha`);
+            } catch (tokenError: any) {
+                // Token inválido/expirado → NÃO BLOQUEAR, cair para email+senha
+                console.log(`[LOGIN] Token inválido/expirado: ${tokenError.message} — continuando para email+senha`);
             }
         }
 
-        
         // Login tradicional com email e senha
-        console.log('[LOGIN-DEBUG] Tentativa de login:', { 
-            passwordProvided: !!password,
-            timestamp: new Date().toISOString()
-        });
+        console.log(`[LOGIN] Tentativa de login email+senha:`);
+        console.log(`[LOGIN]   Email fornecido: ${email ? email.replace(/(?<=.{3}).(?=.*@)/g, '*') : 'NÃO'}`);
+        console.log(`[LOGIN]   Senha fornecida: ${password ? 'SIM' : 'NÃO'}`);
+        console.log(`[LOGIN]   IP: ${clientIp}`);
+        console.log(`[LOGIN]   User-Agent: ${userAgent}`);
 
         if (!email || !password) {
-            console.log('[LOGIN-DEBUG] Falha: campos ausentes');
+            console.log(`[LOGIN] ❌ Falha: campos email/senha ausentes`);
             return res.status(400).json({ error: 'Email e senha são obrigatórios' });
         }
 
         const user = await User.findOne({ email });
-        console.log('[LOGIN-DEBUG] Usuário encontrado:', { 
-            found: !!user, 
-            hasPassword: !!(user && user.password),
-            userId: user?.id 
-        });
+        console.log(`[LOGIN]   Usuário encontrado no banco: ${user ? 'SIM' : 'NÃO'}`);
+        console.log(`[LOGIN]   ID do usuário: ${user?.id || 'N/A'}`);
+        console.log(`[LOGIN]   Tem senha armazenada: ${(user && user.password) ? 'SIM' : 'NÃO'}`);
 
         if (!user || !user.password) {
-            console.log('[LOGIN-DEBUG] Falha: usuário não encontrado ou sem senha');
+            console.log(`[LOGIN] ❌ Falha: usuário não encontrado ou sem senha`);
             return res.status(401).json({ error: 'Email ou senha inválidos' });
         }
 
         const isMatch = await bcrypt.compare(password, user.password);
-        console.log('[LOGIN-DEBUG] Senha corresponde:', { isMatch });
-        
+        console.log(`[LOGIN]   Senha corresponde: ${isMatch ? 'SIM' : 'NÃO'}`);
+
         if (!isMatch) {
-            console.log('[LOGIN-DEBUG] Falha: senha incorreta');
+            console.log(`[LOGIN] ❌ Falha: senha incorreta`);
             return res.status(401).json({ error: 'Email ou senha inválidos' });
         }
 
         const token = jwt.sign({ id: user.id, _id: user.id }, JWT_SECRET, { expiresIn: '30d' });
+
+        console.log(`[LOGIN] ✅ Senha OK — gerando token e salvando...`);
 
         activityLogger.logManualActivity({
             userId: user.id,
             activityType: ActivityType.LOGIN,
             targetType: 'system',
             metadata: { loginMethod: 'email_password' },
-            ipAddress: req.ip,
-            userAgent: req.headers['user-agent']
+            ipAddress: clientIp,
+            userAgent
         }).catch(() => {});
 
         // Update status online and token + persistir atividade
@@ -363,11 +377,11 @@ router.post('/login', async (req, res) => {
                     token: token,
                     timestamp: new Date()
                 });
-                console.log(`🔄 [WEBSOCKET] Token atualizado em tempo real para usuário ${user.id} (login)`);
+                console.log(`[LOGIN] 🔄 Token atualizado via WebSocket para usuário ${user.id}`);
             }
         } catch (saveError: any) {
             if (saveError.name === 'VersionError') {
-                // Se houver erro de versão, buscar o documento mais recente e tentar novamente
+                console.log(`[LOGIN] ⚠️ VersionError — tentando re-salvar com documento fresco...`);
                 const freshUser = await User.findById(user._id);
                 if (freshUser) {
                     freshUser.isOnline = true;
@@ -387,11 +401,16 @@ router.post('/login', async (req, res) => {
                     }
                     await freshUser.save();
                     Object.assign(user, freshUser.toObject());
+                    console.log(`[LOGIN] ✅ Re-salvo com sucesso após VersionError`);
                 }
             } else {
                 throw saveError;
             }
         }
+
+        const elapsed = Date.now() - startTime;
+        console.log(`[LOGIN] ✅ Login completo com sucesso para ${user.id} (${elapsed}ms)`);
+        console.log(`[LOGIN]   IP: ${clientIp}, User-Agent: ${userAgent}`);
 
         res.json({
             success: true,
@@ -399,12 +418,14 @@ router.post('/login', async (req, res) => {
             user: standardizeUserResponse(user)
         });
     } catch (error: any) {
-        console.error('[LOGIN-ERROR] Erro detalhado:', {
+        console.error(`[LOGIN-ERROR] ❌ Erro não tratado no login:`, {
             message: error.message,
-            stack: error.stack,
+            stack: error.stack?.split('\n').slice(0, 5).join('\n'),
             name: error.name,
-            body: req.body,
-            headers: req.headers,
+            email: req.body?.email?.replace(/(?<=.{3}).(?=.*@)/g, '*'),
+            ip: clientIp,
+            userAgent,
+            elapsed: Date.now() - startTime,
             timestamp: new Date().toISOString()
         });
         res.status(500).json({ error: error.message });

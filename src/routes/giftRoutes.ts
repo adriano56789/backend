@@ -459,6 +459,25 @@ async function processGiftSend(fromUserId: string, toUserId: string, giftId: str
             });
         }
         
+        // === NOTIFICAR DESTINATÁRIO via serviço centralizado ===
+        try {
+            const { NotificationService } = await import('../services/NotificationService');
+            await NotificationService.notifyGiftReceived(
+                io,
+                toUserId,
+                fromUserId,
+                fromUser.name || 'Alguém',
+                gift.id,
+                gift.name || 'Presente',
+                gift.icon || '',
+                quantity,
+                totalCost,
+                streamId
+            );
+        } catch (notifErr) {
+            console.warn('[GIFT-NOTIFICATION] Erro ao notificar:', notifErr);
+        }
+
         console.log(`🎁 Presente enviado: ${fromUser.name} -> ${toUser.name} (${quantity}x ${gift.name} = ${totalCost} diamantes)`);
         
         return {

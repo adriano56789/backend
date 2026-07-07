@@ -176,7 +176,34 @@ export const initSocket = (server: any) => {
                 socket.join(data.streamId);
             }
             
-            // Codificar usando Protobuf e enviar como binário
+            // 1. Persistir mensagem no LiveMessage
+            try {
+                const { LiveMessage } = await import('./models/index');
+                await LiveMessage.create({
+                    streamId: data.streamId,
+                    userId: data.userId,
+                    userName: data.userName || 'Usuário',
+                    avatarUrl: data.userAvatar || '',
+                    level: data.userLevel || 1,
+                    text: data.message || '',
+                    timestamp: new Date()
+                }).catch(err => console.warn('[CHAT] Erro ao persistir live_message:', err));
+            } catch (err) {
+                console.warn('[CHAT] Erro ao importar LiveMessage:', err);
+            }
+            
+            // 2. Emitir evento JSON live_message para todos na stream (incluindo remetente)
+            const messagePayload = {
+                userId: data.userId,
+                userName: data.userName || 'Usuário',
+                avatarUrl: data.userAvatar || '',
+                level: data.userLevel || 1,
+                text: data.message || '',
+                timestamp: new Date().toISOString()
+            };
+            io.to(data.streamId).emit('live_message', messagePayload);
+            
+            // 3. Codificar usando Protobuf e enviar como binário (para compatibilidade)
             const buffer = BackendProtobufService.encodeChatEvent(
                 data.streamId,
                 data.userId,
@@ -192,6 +219,8 @@ export const initSocket = (server: any) => {
                 
                 console.log(` [PROTOBUF] Chat message encoded and broadcasted:`, buffer.length, 'bytes');
             }
+            
+            console.log(` [CHAT] live_message JSON broadcasted to stream ${data.streamId}`);
         });
         
         socket.on('send_gift', async (data) => {
@@ -502,6 +531,26 @@ export const initSocket = (server: any) => {
                     request,
                     timestamp: Date.now()
                 });
+
+                // === NOTIFICAR DESTINATÁRIO via serviço centralizado (sininho + FCM) ===
+                try {
+                    const { NotificationService } = await import('./services/NotificationService');
+                    const { User } = await import('./models/index');
+                    const fromUser = await User.findOne({ id: data.fromUserId }).select('name avatarUrl').lean();
+                    if (fromUser) {
+                        await NotificationService.notifyFriendInvite(
+                            io,
+                            data.toUserId,
+                            data.fromUserId,
+                            (fromUser as any).name || 'Alguém',
+                            (fromUser as any).avatarUrl || '',
+                            (request as any)._id || (request as any).id || '',
+                            data.message
+                        );
+                    }
+                } catch (notifErr) {
+                    console.warn('[SOCKET-FRIEND-INVITE-NOTIFICATION] Erro:', notifErr);
+                }
                 
                 console.log(` [FRIENDSHIP] Friendship request: ${data.fromUserId} -> ${data.toUserId}`);
             } catch (error) {

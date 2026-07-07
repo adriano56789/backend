@@ -1,6 +1,7 @@
 // @ts-nocheck
 import express from 'express';
 import { ChatMessage, User, Block } from '../models/index';
+import { canSendMessage } from '../utils/chatPermission';
 
 const router = express.Router();
 
@@ -164,6 +165,11 @@ router.post('/', async (req, res) => {
             });
         }
 
+        const permCheck = await canSendMessage(senderId, receiverId);
+        if (!permCheck.allowed) {
+            return res.status(403).json({ error: permCheck.reason, code: 'CHAT_PERMISSION_DENIED' });
+        }
+
         const message = await ChatMessage.create({
             id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             conversationId,
@@ -231,6 +237,23 @@ router.post('/', async (req, res) => {
                 timestamp: new Date().toISOString(),
                 conversationId
             });
+
+            // Notificação centralizada via NotificationService
+            try {
+                const { NotificationService } = await import('../services/NotificationService');
+                const senderName = sender?.name || 'Alguém';
+                const bodyPreview = messageType === 'image' ? '[Imagem]' : (content?.substring(0, 100) || '');
+                await NotificationService.notifyNewMessage(
+                    io,
+                    receiverId,
+                    senderId,
+                    senderName,
+                    bodyPreview,
+                    conversationId,
+                );
+            } catch (notifErr) {
+                console.error('[MESSAGES] Erro NotificationService:', notifErr);
+            }
         }
 
         res.json({

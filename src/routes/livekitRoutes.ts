@@ -1,7 +1,7 @@
 import express from 'express';
-import { IngressClient, WebhookReceiver } from 'livekit-server-sdk';
+import { WebhookReceiver } from 'livekit-server-sdk';
 import { ENV } from '../config/env';
-import { roomService, livekitServerUrl, generateLiveKitToken, roomExists } from '../services/LiveKitTokenService';
+import { roomService, generateLiveKitToken, roomExists } from '../services/LiveKitTokenService';
 import { getUserIdFromToken } from '../middleware/auth';
 import { Battle, CallInvitation, StreamParticipant, LiveKitWebhookLog } from '../models';
 
@@ -236,108 +236,6 @@ router.post('/rooms/:roomName/participants/:identity/tracks/:trackSid/mute', asy
   }
 });
 
-// ========================================
-// LiveKit Ingress API
-// ========================================
-
-const ingressClient = new IngressClient(
-  livekitServerUrl,
-  ENV.LIVEKIT_API_KEY,
-  ENV.LIVEKIT_API_SECRET
-);
-
-// POST /api/livekit/ingresses - Criar um ingress (ponto de entrada RTMP)
-router.post('/ingresses', async (req, res) => {
-  try {
-    const {
-      inputType: rawInputType,
-      name,
-      roomName,
-      participantIdentity,
-      participantName,
-      participantMetadata,
-      enableTranscoding = true,
-      url,
-    } = req.body;
-
-    if (!roomName || !participantIdentity) {
-      return res.status(400).json({ error: 'roomName and participantIdentity are required' });
-    }
-
-    const IngressInput = require('@livekit/protocol').IngressInput;
-    const inputType = typeof rawInputType === 'number' ? rawInputType : (IngressInput[rawInputType] ?? 0);
-
-    const ingress = await ingressClient.createIngress(inputType, {
-      name: name || `ingress_${roomName}_${Date.now()}`,
-      roomName,
-      participantIdentity,
-      participantName: participantName || participantIdentity,
-      participantMetadata,
-      enableTranscoding,
-      url,
-    });
-
-    console.log(`[LIVEKIT] Ingress criado: ${ingress.ingressId} -> ${roomName}`);
-    res.json({ success: true, ingress });
-  } catch (error: any) {
-    console.error('[LIVEKIT] Erro ao criar ingress:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// GET /api/livekit/ingresses - Listar ingresses
-router.get('/ingresses', async (req, res) => {
-  try {
-    const roomName = req.query.roomName as string;
-    const ingresses = await ingressClient.listIngress(roomName);
-    res.json({ success: true, ingresses });
-  } catch (error: any) {
-    console.error('[LIVEKIT] Erro ao listar ingresses:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// PUT /api/livekit/ingresses/:ingressId - Atualizar um ingress
-router.put('/ingresses/:ingressId', async (req, res) => {
-  try {
-    const { ingressId } = req.params;
-    const {
-      name,
-      roomName,
-      participantIdentity,
-      participantName,
-      participantMetadata,
-      enableTranscoding,
-    } = req.body;
-
-    const ingress = await ingressClient.updateIngress(ingressId, {
-      name,
-      roomName,
-      participantIdentity,
-      participantName,
-      participantMetadata,
-      enableTranscoding,
-    });
-
-    res.json({ success: true, ingress });
-  } catch (error: any) {
-    console.error('[LIVEKIT] Erro ao atualizar ingress:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// DELETE /api/livekit/ingresses/:ingressId - Deletar um ingress
-router.delete('/ingresses/:ingressId', async (req, res) => {
-  try {
-    const { ingressId } = req.params;
-    await ingressClient.deleteIngress(ingressId);
-    console.log(`[LIVEKIT] Ingress ${ingressId} deletado`);
-    res.json({ success: true });
-  } catch (error: any) {
-    console.error('[LIVEKIT] Erro ao deletar ingress:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
 
 // ========================================
 // LiveKit PK — Salas para Batalhas PK

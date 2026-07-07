@@ -48,6 +48,7 @@ export { Like } from './Like';
 export { Withdrawal } from './Withdrawal';
 export { UserActivity } from './UserActivity';
 export { Battle } from './Battle';
+export { DeviceToken } from './DeviceToken';
 export { CallInvitation } from './CallInvitation';
 export { LiveMessage } from './LiveMessage';
 export { LiveUser, LiveInvite } from './LiveInvite';

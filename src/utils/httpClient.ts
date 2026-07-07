@@ -89,6 +89,114 @@ class HttpClient {
   async delete<T>(path: string, options?: RequestOptions): Promise<T> {
     return this.request<T>('DELETE', path, undefined, options);
   }
+
+  /**
+   * requestRaw() — retorna a resposta HTTP bruta sem parsear JSON.
+   * Necessário para proxies SDP (WHIP/WHEP), ICE trickle, etc.
+   * Retorna status, headers, e body como string.
+   */
+  async requestRaw(
+    method: string,
+    path: string,
+    body?: any,
+    options?: RequestOptions
+  ): Promise<{
+    status: number;
+    statusText: string;
+    ok: boolean;
+    headers: Headers;
+    bodyText: string;
+  }> {
+    const url = path.startsWith('http') ? path : `${this.baseUrl}${path}`;
+    const timeout = options?.timeout ?? this.defaultTimeout;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    try {
+      const headers: Record<string, string> = {
+        ...this.defaultHeaders,
+        ...options?.headers,
+      };
+
+      const fetchOptions: RequestInit = {
+        method,
+        headers,
+        signal: controller.signal,
+      };
+
+      if (body !== undefined && method !== 'GET') {
+        fetchOptions.body = typeof body === 'string' ? body : JSON.stringify(body);
+      }
+
+      const response = await fetch(url, fetchOptions);
+      const bodyText = await response.text();
+
+      return {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+        headers: response.headers,
+        bodyText,
+      };
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  /**
+   * requestBuffer() — retorna resposta binária como ArrayBuffer,
+   * com status/ok/headers para verificação.
+   * Necessário para proxy HLS/TS/flv.
+   */
+  async requestBuffer(
+    method: string,
+    path: string,
+    body?: any,
+    options?: RequestOptions
+  ): Promise<{
+    status: number;
+    statusText: string;
+    ok: boolean;
+    headers: Headers;
+    buffer: ArrayBuffer;
+  }> {
+    const url = path.startsWith('http') ? path : `${this.baseUrl}${path}`;
+    const timeout = options?.timeout ?? this.defaultTimeout;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    try {
+      const headers: Record<string, string> = {
+        ...this.defaultHeaders,
+        ...options?.headers,
+      };
+
+      const fetchOptions: RequestInit = {
+        method,
+        headers,
+        signal: controller.signal,
+      };
+
+      if (body !== undefined && method !== 'GET') {
+        fetchOptions.body = typeof body === 'string' ? body : JSON.stringify(body);
+      }
+
+      const response = await fetch(url, fetchOptions);
+      const buffer = await response.arrayBuffer();
+
+      return {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+        headers: response.headers,
+        buffer,
+      };
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
 }
 
 export class HttpError extends Error {

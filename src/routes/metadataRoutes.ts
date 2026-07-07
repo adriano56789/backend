@@ -126,33 +126,69 @@ router.get('/gifts/received/:userId', async (req, res) => {
 
 router.get('/regions', async (req, res) => {
     try {
-        // Regiões disponíveis
+        // Lista completa de países com bandeiras, códigos e URL das bandeiras
         const regions = [
-            { name: 'Global', code: 'ICON_GLOBE' },
-            { name: '🇧🇷 Brasil', code: 'br' },
-            { name: '🇺🇸 Estados Unidos', code: 'us' },
-            { name: '🇦🇷 Argentina', code: 'ar' },
-            { name: '🇲🇽 México', code: 'mx' },
-            { name: '🇨🇴 Colômbia', code: 'co' },
-            { name: '🇪🇸 Espanha', code: 'es' },
-            { name: '🇮🇹 Itália', code: 'it' },
-            { name: '🇫🇷 França', code: 'fr' },
-            { name: '🇩🇪 Alemanha', code: 'de' },
-            { name: '🇬🇧 Reino Unido', code: 'gb' },
-            { name: '🇨🇦 Canadá', code: 'ca' },
-            { name: '🇵🇹 Portugal', code: 'pt' }
+            { name: 'Global', code: 'all', flagUrl: '' },
+            { name: 'Brasil', code: 'br', flagUrl: 'https://flagcdn.com/w40/br.png', emoji: '🇧🇷' },
+            { name: 'Estados Unidos', code: 'us', flagUrl: 'https://flagcdn.com/w40/us.png', emoji: '🇺🇸' },
+            { name: 'Portugal', code: 'pt', flagUrl: 'https://flagcdn.com/w40/pt.png', emoji: '🇵🇹' },
+            { name: 'Argentina', code: 'ar', flagUrl: 'https://flagcdn.com/w40/ar.png', emoji: '🇦🇷' },
+            { name: 'México', code: 'mx', flagUrl: 'https://flagcdn.com/w40/mx.png', emoji: '🇲🇽' },
+            { name: 'Colômbia', code: 'co', flagUrl: 'https://flagcdn.com/w40/co.png', emoji: '🇨🇴' },
+            { name: 'Chile', code: 'cl', flagUrl: 'https://flagcdn.com/w40/cl.png', emoji: '🇨🇱' },
+            { name: 'Peru', code: 'pe', flagUrl: 'https://flagcdn.com/w40/pe.png', emoji: '🇵🇪' },
+            { name: 'Venezuela', code: 've', flagUrl: 'https://flagcdn.com/w40/ve.png', emoji: '🇻🇪' },
+            { name: 'Espanha', code: 'es', flagUrl: 'https://flagcdn.com/w40/es.png', emoji: '🇪🇸' },
+            { name: 'Itália', code: 'it', flagUrl: 'https://flagcdn.com/w40/it.png', emoji: '🇮🇹' },
+            { name: 'França', code: 'fr', flagUrl: 'https://flagcdn.com/w40/fr.png', emoji: '🇫🇷' },
+            { name: 'Alemanha', code: 'de', flagUrl: 'https://flagcdn.com/w40/de.png', emoji: '🇩🇪' },
+            { name: 'Reino Unido', code: 'gb', flagUrl: 'https://flagcdn.com/w40/gb.png', emoji: '🇬🇧' },
+            { name: 'Canadá', code: 'ca', flagUrl: 'https://flagcdn.com/w40/ca.png', emoji: '🇨🇦' },
+            { name: 'Japão', code: 'jp', flagUrl: 'https://flagcdn.com/w40/jp.png', emoji: '🇯🇵' },
+            { name: 'Coreia do Sul', code: 'kr', flagUrl: 'https://flagcdn.com/w40/kr.png', emoji: '🇰🇷' },
+            { name: 'Índia', code: 'in', flagUrl: 'https://flagcdn.com/w40/in.png', emoji: '🇮🇳' },
+            { name: 'Angola', code: 'ao', flagUrl: 'https://flagcdn.com/w40/ao.png', emoji: '🇦🇴' },
+            { name: 'Moçambique', code: 'mz', flagUrl: 'https://flagcdn.com/w40/mz.png', emoji: '🇲🇿' },
+            { name: 'Cabo Verde', code: 'cv', flagUrl: 'https://flagcdn.com/w40/cv.png', emoji: '🇨🇻' },
         ];
         
         // Adicionar contagem de lives ao vivo por região
+        const { LiveCard } = await import('../models/index');
+        
         const regionsWithCount = await Promise.all(
             regions.map(async (region) => {
-                const count = await Streamer.countDocuments({ country: region.code, isLive: true });
-                
+                if (region.code === 'all') {
+                    const count = await LiveCard.countDocuments({ 
+                        isLive: true,
+                        streamStatus: { $in: ['active', 'live'] }
+                    }).catch(() => 0);
+                    return { ...region, liveCount: count };
+                }
+                const count = await LiveCard.countDocuments({ 
+                    country: region.code, 
+                    isLive: true,
+                    streamStatus: { $in: ['active', 'live'] }
+                }).catch(() => Streamer.countDocuments({ 
+                    country: region.code, 
+                    isLive: true 
+                }).catch(() => 0));
                 return { ...region, liveCount: count };
             })
         );
         
-        res.json(regionsWithCount);
+        // Ordenar: primeiro países com mais lives ativas, depois Global no início
+        const sorted = regionsWithCount.sort((a, b) => {
+            if (a.code === 'all') return -1;
+            if (b.code === 'all') return 1;
+            return (b.liveCount || 0) - (a.liveCount || 0);
+        });
+        
+        res.json({
+            success: true,
+            data: sorted,
+            total: sorted.length,
+            totalLives: sorted.find(r => r.code === 'all')?.liveCount || 0
+        });
     } catch (error: any) {
         res.status(500).json({ error: error.message });
     }
@@ -470,9 +506,31 @@ router.get('/notifications', async (req, res) => {
             }
         ).catch(console.error);
 
-        // Buscar notificações do usuário
-        const notifications = await LiveNotification.find({ userId }).sort({ createdAt: -1 }).limit(50);
-        res.json(notifications);
+        // Parâmetros de paginação (query string)
+        const page = Math.max(1, parseInt(req.query.page as string) || 1);
+        const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 20));
+        const skip = (page - 1) * limit;
+
+        // Buscar total + notificações paginadas
+        const [notifications, total] = await Promise.all([
+            LiveNotification.find({ userId })
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+            LiveNotification.countDocuments({ userId })
+        ]);
+
+        res.json({
+            success: true,
+            data: notifications,
+            pagination: {
+                page,
+                limit,
+                total,
+                hasMore: skip + notifications.length < total
+            }
+        });
     } catch (error: any) {
         console.error('Error getting notifications:', error);
         res.status(500).json({ error: error.message });
@@ -485,7 +543,7 @@ router.patch('/notifications/:id/read', async (req, res) => {
         
         const notification = await LiveNotification.findOneAndUpdate(
             { _id: id as any },
-            { isRead: true },
+            { read: true },
             { new: true }
         );
         
@@ -515,41 +573,207 @@ router.patch('/notifications/:id/read', async (req, res) => {
     }
 });
 
+// POST /api/metadata/notifications/mark-all-read - Marcar todas como lidas
+router.post('/notifications/mark-all-read', async (req, res) => {
+    try {
+        const token = req.headers.authorization?.replace('Bearer ', '');
+        if (!token) {
+            return res.status(401).json({ error: 'Token não fornecido' });
+        }
+
+        const jwt = require('jsonwebtoken');
+        const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_key_change_me_in_prod';
+        const decoded = jwt.verify(token, JWT_SECRET);
+        const userId = decoded.id;
+
+        if (!userId) {
+            return res.json({ success: true, modifiedCount: 0 });
+        }
+
+        const result = await LiveNotification.updateMany(
+            { userId, read: false },
+            { $set: { read: true } }
+        );
+
+        res.json({ success: true, modifiedCount: result.modifiedCount });
+    } catch (error: any) {
+        console.error('Error marking all notifications as read:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// GET /api/metadata/notifications/unread-count - Contagem de não lidas
+router.get('/notifications/unread-count', async (req, res) => {
+    try {
+        const token = req.headers.authorization?.replace('Bearer ', '');
+        if (!token) {
+            return res.json({ count: 0 });
+        }
+
+        const jwt = require('jsonwebtoken');
+        const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_key_change_me_in_prod';
+        const decoded = jwt.verify(token, JWT_SECRET);
+        const userId = decoded.id;
+
+        if (!userId) {
+            return res.json({ count: 0 });
+        }
+
+        const count = await LiveNotification.countDocuments({ userId, read: false });
+        res.json({ count });
+    } catch (error: any) {
+        console.error('Error getting unread count:', error);
+        res.json({ count: 0 });
+    }
+});
+
+// DELETE /api/metadata/notifications/:id - Remover uma notificação individual
+router.delete('/notifications/:id', async (req, res) => {
+    try {
+        const token = req.headers.authorization?.replace('Bearer ', '');
+        if (!token) {
+            return res.status(401).json({ error: 'Token não fornecido' });
+        }
+
+        const jwt = require('jsonwebtoken');
+        const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_key_change_me_in_prod';
+        const decoded = jwt.verify(token, JWT_SECRET);
+        const userId = decoded.id;
+
+        if (!userId) {
+            return res.status(401).json({ error: 'Usuário não autenticado' });
+        }
+
+        const { id } = req.params;
+
+        // Buscar a notificação para verificar se pertence ao usuário
+        const notification = await LiveNotification.findById(id);
+        if (!notification) {
+            return res.status(404).json({ error: 'Notificação não encontrada' });
+        }
+
+        if (notification.userId !== userId) {
+            return res.status(403).json({ error: 'Acesso negado. Esta notificação não pertence a este usuário' });
+        }
+
+        await LiveNotification.findByIdAndDelete(id);
+
+        console.log(`[NOTIFICATIONS] Notificação ${id} removida pelo usuário ${userId}`);
+        res.json({ success: true });
+    } catch (error: any) {
+        console.error('Error deleting notification:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// PATCH /api/metadata/notifications/:id - Atualizar campos de uma notificação individual
+router.patch('/notifications/:id', async (req, res) => {
+    try {
+        const token = req.headers.authorization?.replace('Bearer ', '');
+        if (!token) {
+            return res.status(401).json({ error: 'Token não fornecido' });
+        }
+
+        const jwt = require('jsonwebtoken');
+        const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_key_change_me_in_prod';
+        const decoded = jwt.verify(token, JWT_SECRET);
+        const userId = decoded.id;
+
+        if (!userId) {
+            return res.status(401).json({ error: 'Usuário não autenticado' });
+        }
+
+        const { id } = req.params;
+        const updates = req.body;
+
+        // Campos permitidos para atualização
+        const allowedFields = ['read', 'message'];
+        const sanitizedUpdates: Record<string, any> = {};
+
+        for (const field of allowedFields) {
+            if (updates[field] !== undefined) {
+                sanitizedUpdates[field] = updates[field];
+            }
+        }
+
+        if (Object.keys(sanitizedUpdates).length === 0) {
+            return res.status(400).json({ error: 'Nenhum campo válido para atualização. Campos permitidos: read, message' });
+        }
+
+        // Buscar a notificação para verificar se pertence ao usuário
+        const notification = await LiveNotification.findById(id);
+        if (!notification) {
+            return res.status(404).json({ error: 'Notificação não encontrada' });
+        }
+
+        if (notification.userId !== userId) {
+            return res.status(403).json({ error: 'Acesso negado. Esta notificação não pertence a este usuário' });
+        }
+
+        const updated = await LiveNotification.findByIdAndUpdate(
+            id,
+            { $set: sanitizedUpdates },
+            { new: true }
+        );
+
+        console.log(`[NOTIFICATIONS] Notificação ${id} atualizada pelo usuário ${userId}:`, sanitizedUpdates);
+        res.json({ success: true, notification: updated });
+    } catch (error: any) {
+        console.error('Error updating notification:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 router.post('/notifications/start-live', async (req, res) => {
     try {
-        const { streamId } = req.body;
+        const { streamId, streamKey, hostId, hostName, hostAvatar } = req.body;
         
-        if (!streamId) {
-            return res.status(400).json({ error: 'Stream ID is required' });
+        const actualStreamId = streamId || streamKey;
+        if (!actualStreamId) {
+            return res.status(400).json({ error: 'streamId ou streamKey é obrigatório' });
         }
-        
-        // Buscar informações do stream
-        const stream = await Streamer.findOne({ id: streamId });
-        if (!stream) {
-            return res.status(404).json({ error: 'Stream not found' });
+
+        // Buscar followers do streamer
+        const { Followers } = await import('../models/index');
+        const followers = await Followers.find({
+            followingId: hostId,
+            isActive: true
+        }).select('followerId').lean();
+
+        if (followers.length === 0) {
+            return res.json({ success: true, notificationsCreated: 0, message: 'Nenhum seguidor encontrado' });
         }
-        
-        // Notificar seguidores do streamer
-        const streamer = await User.findOne({ id: stream.hostId });
-        if (streamer && streamer.followingList && streamer.followingList.length > 0) {
-            const notifications = streamer.followingList.map((followerId: string) => ({
-                userId: followerId,
-                type: 'live_started',
-                message: `${streamer.name} iniciou uma live: ${stream.name || 'Ao Vivo'}`,
-                streamId: stream.id,
-                isRead: false,
-                createdAt: new Date()
-            }));
-            
-            await LiveNotification.insertMany(notifications);
-            
-            return res.json({ 
-                success: true, 
-                notificationsCreated: notifications.length 
+
+        const notifications = followers.map((f: any) => ({
+            userId: f.followerId,
+            streamerId: hostId,
+            streamId: actualStreamId,
+            message: `${hostName || 'Alguém'} está ao vivo!`,
+            read: false,
+            createdAt: new Date()
+        }));
+
+        await LiveNotification.insertMany(notifications);
+
+        // Emitir socket event para cada seguidor
+        const io = req.app.get('io');
+        if (io) {
+            followers.forEach((f: any) => {
+                io.to(`user_${f.followerId}`).emit('unread_notification', {
+                    type: 'live_started',
+                    streamerId: hostId,
+                    streamId: actualStreamId,
+                    message: `${hostName || 'Alguém'} está ao vivo!`,
+                    avatar: hostAvatar || '',
+                    timestamp: new Date().toISOString()
+                });
             });
         }
-        
-        res.json({ success: true, notificationsCreated: 0 });
+
+        return res.json({
+            success: true,
+            notificationsCreated: notifications.length
+        });
     } catch (error: any) {
         console.error('Error creating live notifications:', error);
         res.status(500).json({ error: error.message });

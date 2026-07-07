@@ -71,7 +71,7 @@ router.post('/', async (req, res) => {
             }
         });
         
-        // Notificar via WebSocket
+        // Notificar via WebSocket + serviço centralizado (LiveNotification + socket + FCM)
         const io = req.app.get('io');
         if (io) {
             io.to(`user_${followingId}`).emit('new_follower', {
@@ -81,7 +81,21 @@ router.post('/', async (req, res) => {
                 timestamp: new Date()
             });
         }
-        
+
+        // === NOTIFICAR DESTINATÁRIO via serviço centralizado ===
+        try {
+            const { NotificationService } = await import('../services/NotificationService');
+            await NotificationService.notifyNewFollower(
+                io,
+                followingId,
+                followerId,
+                follower.name || 'Alguém',
+                follower.avatarUrl || ''
+            );
+        } catch (notifErr) {
+            console.warn('[FOLLOW-NOTIFICATION] Erro ao notificar:', notifErr);
+        }
+
         console.log(`✅ ${followerId} começou a seguir ${followingId}`);
         
         res.json({

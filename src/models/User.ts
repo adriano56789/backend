@@ -73,6 +73,14 @@ export interface IUser extends Document {
   showActivityStatus?: boolean;
   showLocation?: boolean;
   privateStreamSettings?: { privateInvite: boolean; followersOnly: boolean; fansOnly: boolean; friendsOnly: boolean };
+  cameraAccessEnabled: boolean;
+  cameraAccessPermanent: boolean;
+  cameraAccessGrantedAt?: Date;
+  cameraAccessDeniedAt?: Date;
+  audioRecordingEnabled: boolean;
+  audioRecordingPermanent: boolean;
+  audioRecordingGrantedAt?: Date;
+  audioRecordingDeniedAt?: Date;
   platformEarnings?: number;
   adminWithdrawalMethod?: { email: string };
   withdrawal_requests?: any[];
@@ -159,6 +167,14 @@ const UserSchema: Schema = new Schema({
   locationPermission: { type: String, enum: ['granted', 'denied', 'prompt'], default: 'prompt' },
   cameraPermissionStatus: { type: String, enum: ['granted', 'denied', 'prompt'], default: 'prompt' },
   microphonePermissionStatus: { type: String, enum: ['granted', 'denied', 'prompt'], default: 'prompt' },
+  cameraAccessEnabled: { type: Boolean, default: false },
+  cameraAccessPermanent: { type: Boolean, default: false },
+  cameraAccessGrantedAt: { type: Date },
+  cameraAccessDeniedAt: { type: Date },
+  audioRecordingEnabled: { type: Boolean, default: false },
+  audioRecordingPermanent: { type: Boolean, default: false },
+  audioRecordingGrantedAt: { type: Date },
+  audioRecordingDeniedAt: { type: Date },
   showActivityStatus: { type: Boolean, default: true },
   showLocation: { type: Boolean, default: true },
   privateStreamSettings: {

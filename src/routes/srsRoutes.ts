@@ -1,5 +1,5 @@
 import express from 'express';
-import { Streamer, User } from '../models';
+import { Streamer, User, Followers } from '../models';
 import { startStreamTranscode, stopStreamTranscode } from '../services/FfmpegService';
 
 const router = express.Router();
@@ -48,12 +48,19 @@ router.post('/publish', async (req, res) => {
         console.log(`[SRS-PUBLISH] 🔴 Webhook on_publish recebido do SRS! stream=${stream}, client=${client_id}, ip=${ip}, app=${app}`);
         console.log(`[SRS-PUBLISH] ➡️ Etapa 1/4: SRS confirmou que a stream foi publicada. Iniciando processamento...`);
 
+        const realStreamKey = stream?.split('?')[0] || stream;
+
+        // Ignorar streams internas de transcodificação logo no início
+        if (realStreamKey && realStreamKey.endsWith('_transcoded')) {
+            console.log(`[SRS-PUBLISH] ⏭️ Stream transcodificada ignorada: ${realStreamKey}`);
+            return res.status(200).json({ code: 0 });
+        }
+
         if (client_id && isDuplicate(client_id, 'on_publish')) {
             console.log(`[SRS-PUBLISH] ⏭️ Callback duplicado ignorado (client_id=${client_id})`);
             return res.status(200).json({ code: 0 });
         }
 
-        const realStreamKey = stream?.split('?')[0] || stream;
         // Normalizar: remover prefixo 'stream_' para compatibilidade com IDs salvos
         const normalizedId = realStreamKey?.startsWith('stream_') ? realStreamKey.replace('stream_', '') : realStreamKey;
 
@@ -231,6 +238,28 @@ router.post('/publish', async (req, res) => {
             });
         }
 
+        // Notificar seguidores via serviço centralizado
+        try {
+            const followers = await Followers.find({
+                followingId: userId,
+                isActive: true
+            }).select('followerId').lean();
+            if (followers.length > 0) {
+                const followerIds = followers.map(f => f.followerId);
+                const { NotificationService } = await import('../services/NotificationService');
+                await NotificationService.notifyLiveStarted(
+                    io,
+                    userId,
+                    user.name || 'LiveGO',
+                    user.avatarUrl || '',
+                    realStreamKey,
+                    followerIds
+                );
+            }
+        } catch (notifErr: any) {
+            console.warn('[SRS-PUBLISH] Erro ao notificar seguidores:', notifErr.message);
+        }
+
         // Iniciar FFmpeg para transcodificação da stream
         console.log(`[SRS-PUBLISH] ➡️ Etapa 4/4: Solicitando início do FFmpeg transcoding para stream=${realStreamKey}...`);
         try {
@@ -268,12 +297,18 @@ router.post('/unpublish', async (req, res) => {
         console.log(`[SRS-UNPUBLISH] 🔴 Webhook on_unpublish recebido! stream=${stream}, client=${client_id}`);
         console.log(`[SRS-UNPUBLISH] ➡️ Etapa 1/2: Stream ${stream} encerrada. Iniciando cleanup...`);
 
+        const realStreamKey = stream?.split('?')[0] || stream;
+
+        // Ignorar streams internas de transcodificação
+        if (realStreamKey && realStreamKey.endsWith('_transcoded')) {
+            console.log(`[SRS-UNPUBLISH] ⏭️ Stream transcodificada ignorada: ${realStreamKey}`);
+            return res.status(200).json({ code: 0 });
+        }
+
         if (client_id && isDuplicate(client_id, 'on_unpublish')) {
             console.log(`[SRS-UNPUBLISH] ⏭️ Callback duplicado ignorado`);
             return res.status(200).json({ code: 0 });
         }
-
-        const realStreamKey = stream?.split('?')[0] || stream;
         // Normalizar: remover prefixo 'stream_' para compatibilidade
         const normalizedId = realStreamKey?.startsWith('stream_') ? realStreamKey.replace('stream_', '') : realStreamKey;
         const storedId = normalizedId || realStreamKey;
@@ -370,6 +405,11 @@ router.post('/play', async (req, res) => {
             stream_id
         } = req.body;
 
+        const playStreamKey = stream?.split('?')[0] || stream;
+        if (playStreamKey && playStreamKey.endsWith('_transcoded')) {
+            return res.status(200).json({ code: 0 });
+        }
+
         console.log(`[SRS-PLAY] stream=${stream} client=${client_id} server=${server_id} action=${action} ip=${ip} vhost=${vhost} app=${app} pageUrl=${pageUrl} stream_url=${stream_url} stream_id=${stream_id}`);
 
         res.status(200).json({ code: 0 });
@@ -394,6 +434,11 @@ router.post('/stop', async (req, res) => {
             stream_url,
             stream_id
         } = req.body;
+
+        const stopStreamKey = stream?.split('?')[0] || stream;
+        if (stopStreamKey && stopStreamKey.endsWith('_transcoded')) {
+            return res.status(200).json({ code: 0 });
+        }
 
         console.log(`[SRS-STOP] stream=${stream} client=${client_id} server=${server_id} action=${action} ip=${ip} vhost=${vhost} app=${app} param=${param} stream_url=${stream_url} stream_id=${stream_id}`);
 
@@ -426,6 +471,11 @@ router.post('/hls', async (req, res) => {
             stream_url,
             stream_id
         } = req.body;
+
+        const hlsStreamKey = stream?.split('?')[0] || stream;
+        if (hlsStreamKey && hlsStreamKey.endsWith('_transcoded')) {
+            return res.status(200).json({ code: 0 });
+        }
 
         console.log(`[SRS-HLS] stream=${stream} seq=${seq_no} server=${server_id} action=${action} client=${client_id} ip=${ip} vhost=${vhost} app=${app} param=${param} duration=${duration} cwd=${cwd} file=${file} url=${url} m3u8=${m3u8} m3u8_url=${m3u8_url} stream_url=${stream_url} stream_id=${stream_id}`);
 

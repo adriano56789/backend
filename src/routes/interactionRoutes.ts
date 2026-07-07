@@ -181,6 +181,22 @@ router.post('/streams/:id/private-invite', async (req, res) => {
             
             console.log(`🎫 [PRIVATE INVITE] Notificações WebSocket enviadas.`);
         }
+
+        // Notificação centralizada via NotificationService
+        try {
+            const { NotificationService } = await import('../services/NotificationService');
+            await NotificationService.notifyPrivateStreamInvite(
+                io,
+                userId,
+                stream.hostId,
+                stream.name || 'Alguém',
+                stream.avatar || '',
+                streamId,
+                stream.name || 'Transmissão',
+            );
+        } catch (notifErr) {
+            console.error('[PRIVATE INVITE] Erro NotificationService:', notifErr);
+        }
         
         res.json({ 
             success: true, 
@@ -399,6 +415,22 @@ router.post('/friends/invite', async (req, res) => {
                 message,
                 timestamp: new Date()
             });
+        }
+
+        // === NOTIFICAR DESTINATÁRIO via serviço centralizado (sininho + FCM) ===
+        try {
+            const { NotificationService } = await import('../services/NotificationService');
+            await NotificationService.notifyFriendInvite(
+                io,
+                toUserId,
+                fromUserId,
+                fromUser.name || 'Alguém',
+                fromUser.avatarUrl || '',
+                invite.id,
+                message
+            );
+        } catch (notifErr) {
+            console.warn('[FRIEND-INVITE-NOTIFICATION] Erro:', notifErr);
         }
         
         console.log(`📨 Convite de amizade enviado: ${fromUserId} → ${toUserId}`);
@@ -746,6 +778,192 @@ router.get('/feed/photos', async (req, res) => {
         res.json(contentWithUsers);
     } catch (error: any) {
         console.error('❌ [CONTENT FEED] Erro:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// POST /api/interactions/comments - Comentar em foto, vídeo ou perfil (com notificação)
+router.post('/comments', async (req, res) => {
+    try {
+        const { userId, targetId, targetType, content } = req.body;
+
+        if (!userId || !targetId || !targetType || !content) {
+            return res.status(400).json({ error: 'userId, targetId, targetType e content são obrigatórios' });
+        }
+
+        const validTypes = ['photo', 'video', 'profile'];
+        if (!validTypes.includes(targetType)) {
+            return res.status(400).json({ error: 'targetType deve ser photo, video ou profile' });
+        }
+
+        // Buscar dados do comentarista
+        const commenter = await User.findOne({ id: userId });
+        if (!commenter) {
+            return res.status(404).json({ error: 'Usuário não encontrado' });
+        }
+
+        // Determinar o dono do conteúdo
+        let contentOwnerId = '';
+
+        if (targetType === 'photo') {
+            const photo = await UserPhoto.findOne({ id: targetId });
+            if (!photo) {
+                return res.status(404).json({ error: 'Foto não encontrada' });
+            }
+            contentOwnerId = (photo as any).userId;
+        } else if (targetType === 'video') {
+            const video = await UserVideo.findOne({ id: targetId });
+            if (!video) {
+                return res.status(404).json({ error: 'Vídeo não encontrado' });
+            }
+            contentOwnerId = (video as any).userId;
+        } else if (targetType === 'profile') {
+            contentOwnerId = targetId;
+        }
+
+        // Criar comentário usando o Comment model com defaults
+        const { Comment } = await import('../models/Comment');
+        const comment = await Comment.create({
+            userId,
+            targetId,
+            targetType,
+            content,
+            likes: 0,
+            isActive: true,
+            isEdited: false,
+            createdAt: new Date(),
+            updatedAt: new Date()
+        });
+
+        // Incrementar contador de comentários no conteúdo
+        if (targetType === 'photo') {
+            await UserPhoto.updateOne({ id: targetId }, { $inc: { comments: 1 } }).catch(() => {});
+        } else if (targetType === 'video') {
+            await UserVideo.updateOne({ id: targetId }, { $inc: { comments: 1 } }).catch(() => {});
+        }
+
+        const io = req.app.get('io');
+
+        // === NOTIFICAR DONO DO CONTEÚDO via serviço centralizado ===
+        try {
+            const { NotificationService } = await import('../services/NotificationService');
+            await NotificationService.notifyCommentReceived(
+                io,
+                contentOwnerId,
+                userId,
+                (commenter as any).name || (commenter as any).displayName || 'Alguém',
+                targetId,
+                targetType as 'photo' | 'video' | 'post'
+            );
+        } catch (notifErr) {
+            console.warn('[COMMENT-NOTIFICATION] Erro:', notifErr);
+        }
+
+        res.json({
+            success: true,
+            comment: {
+                id: (comment as any)._id,
+                userId,
+                targetId,
+                targetType,
+                content,
+                likes: 0,
+                isActive: true,
+                createdAt: new Date()
+            }
+        });
+
+    } catch (error: any) {
+        console.error('❌ [COMMENT] Erro:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// POST /api/interactions/videos/:id/like - Curtir vídeo do feed (com notificação)
+router.post('/videos/:id/like', async (req, res) => {
+    try {
+        const userId = req.body.userId || getUserIdFromToken(req);
+        const videoId = req.params.id;
+
+        if (!userId) {
+            return res.status(400).json({ error: 'userId é obrigatório' });
+        }
+
+        // Buscar o vídeo
+        const video = await UserVideo.findOne({ id: videoId });
+        if (!video) {
+            return res.status(404).json({ error: 'Vídeo não encontrado' });
+        }
+
+        // Incrementar curtidas usando o BD nativo (UserVideo usa BaseModel)
+        const db = (await import('../config/db')).getDb();
+        const collection = db.collection('uservideos');
+        const { addVideoLike } = await import('../models/UserVideo');
+        const updated = await addVideoLike(collection, videoId);
+
+        const io = req.app.get('io');
+
+        // Emitir WebSocket para atualização em tempo real
+        if (io) {
+            io.emit('video_updated', { videoId, userId, likes: updated?.likes || 0 });
+        }
+
+        // === NOTIFICAR DONO DO VÍDEO via serviço centralizado ===
+        try {
+            const { NotificationService } = await import('../services/NotificationService');
+            await NotificationService.notifyVideoLiked(io, (video as any).userId, userId, videoId);
+        } catch (notifErr) {
+            console.warn('[VIDEO-LIKE-NOTIFICATION] Erro:', notifErr);
+        }
+
+        res.json({
+            success: true,
+            likes: updated?.likes || 0
+        });
+
+    } catch (error: any) {
+        console.error('❌ [VIDEO-LIKE] Erro:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// DELETE /api/interactions/videos/:id/like - Remover like de vídeo
+router.delete('/videos/:id/like', async (req, res) => {
+    try {
+        const userId = req.body.userId || getUserIdFromToken(req);
+        const videoId = req.params.id;
+
+        if (!userId) {
+            return res.status(400).json({ error: 'userId é obrigatório' });
+        }
+
+        // Verificar se o vídeo existe
+        const video = await UserVideo.findOne({ id: videoId });
+        if (!video) {
+            return res.status(404).json({ error: 'Vídeo não encontrado' });
+        }
+
+        // Decrementar curtidas usando o BD nativo
+        const db = (await import('../config/db')).getDb();
+        const collection = db.collection('uservideos');
+        const { removeVideoLike } = await import('../models/UserVideo');
+        const updated = await removeVideoLike(collection, videoId);
+
+        const io = req.app.get('io');
+
+        // Emitir WebSocket para atualização em tempo real
+        if (io) {
+            io.emit('video_updated', { videoId, userId, likes: updated?.likes || 0 });
+        }
+
+        res.json({
+            success: true,
+            liked: false,
+            likes: updated?.likes || 0
+        });
+
+    } catch (error: any) {
+        console.error('❌ [VIDEO-UNLIKE] Erro:', error);
         res.status(500).json({ error: error.message });
     }
 });

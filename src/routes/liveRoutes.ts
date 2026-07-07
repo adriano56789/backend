@@ -6,7 +6,6 @@ import { v4 as uuidv4 } from 'uuid';
 import { Streamer, User, Message, Followers, Friendship, Block, UserLevel, StreamKeyAssociation, GiftTransaction, StreamLike, Battle, LiveCard } from '../models/index';
 import { getUserIdFromToken, generateJWT } from '../middleware/auth';
 import { ResponseHelper } from '../middleware/responseHelper';
-import { AccessToken } from 'livekit-server-sdk';
 import { ENV } from '../config/env';
 
 import { 
@@ -106,43 +105,6 @@ router.param('streamId', (req, res, next, val) => {
     }
     next();
 });
-
-// GET /api/lives/:id/livekit-token - Gerar token de acesso LiveKit para o StreamRoom
-router.get('/lives/:id/livekit-token', async (req, res) => {
-  const room = req.params.id; // Isso já estará normalizado sem o prefixo 'stream_'
-  const identity = req.query.identity as string || `user_${Date.now()}`;
-  const isPublisher = req.query.publisher === 'true';
-
-  try {
-    const at = new AccessToken(ENV.LIVEKIT_API_KEY, ENV.LIVEKIT_API_SECRET, {
-      identity,
-      ttl: '6h',
-    });
-    // Configurar permissões
-    at.addGrant({
-      roomJoin: true,
-      room: `stream_${room}`, // O LiveKit espera a sala com o prefixo 'stream_' para consistência
-      canPublish: isPublisher,
-      canPublishData: true,
-      canSubscribe: true,
-    });
-    
-    const token = await at.toJwt();
-    res.json({
-      success: true,
-      token,
-      identity,
-      room: `stream_${room}`,
-      serverUrl: ENV.LIVEKIT_URL || 'wss://sfu.livego.store',
-      livekitUrl: ENV.LIVEKIT_URL || 'wss://sfu.livego.store',
-    });
-  } catch (error: any) {
-    console.error('[LIVEKIT-TOKEN] Erro:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-
 
 const isValidObjectId = (value: string) => { try { new ObjectId(value); return true; } catch { return false; } };
 
@@ -744,7 +706,7 @@ router.get('/live/source-data', async (req, res) => {
 
             srs: {
 
-                host: process.env.SRS_HOST || '127.0.0.1',
+                host: process.env.SRS_HOST || 'srs',
 
                 ports: {
 
@@ -1452,6 +1414,37 @@ function formatDuration(seconds: number): string {
 
 }
 
+// Mapa de países com bandeiras para enriquecer resposta das streams
+// Usado pelo /api/streams para adicionar countryName e flagUrl em cada live
+const COUNTRY_FLAGS: Record<string, { name: string; flagUrl: string }> = {
+    br: { name: 'Brasil', flagUrl: 'https://flagcdn.com/w40/br.png' },
+    us: { name: 'Estados Unidos', flagUrl: 'https://flagcdn.com/w40/us.png' },
+    pt: { name: 'Portugal', flagUrl: 'https://flagcdn.com/w40/pt.png' },
+    ar: { name: 'Argentina', flagUrl: 'https://flagcdn.com/w40/ar.png' },
+    mx: { name: 'México', flagUrl: 'https://flagcdn.com/w40/mx.png' },
+    co: { name: 'Colômbia', flagUrl: 'https://flagcdn.com/w40/co.png' },
+    cl: { name: 'Chile', flagUrl: 'https://flagcdn.com/w40/cl.png' },
+    pe: { name: 'Peru', flagUrl: 'https://flagcdn.com/w40/pe.png' },
+    ve: { name: 'Venezuela', flagUrl: 'https://flagcdn.com/w40/ve.png' },
+    es: { name: 'Espanha', flagUrl: 'https://flagcdn.com/w40/es.png' },
+    it: { name: 'Itália', flagUrl: 'https://flagcdn.com/w40/it.png' },
+    fr: { name: 'França', flagUrl: 'https://flagcdn.com/w40/fr.png' },
+    de: { name: 'Alemanha', flagUrl: 'https://flagcdn.com/w40/de.png' },
+    gb: { name: 'Reino Unido', flagUrl: 'https://flagcdn.com/w40/gb.png' },
+    ca: { name: 'Canadá', flagUrl: 'https://flagcdn.com/w40/ca.png' },
+    jp: { name: 'Japão', flagUrl: 'https://flagcdn.com/w40/jp.png' },
+    kr: { name: 'Coreia do Sul', flagUrl: 'https://flagcdn.com/w40/kr.png' },
+    in: { name: 'Índia', flagUrl: 'https://flagcdn.com/w40/in.png' },
+    ao: { name: 'Angola', flagUrl: 'https://flagcdn.com/w40/ao.png' },
+    mz: { name: 'Moçambique', flagUrl: 'https://flagcdn.com/w40/mz.png' },
+    cv: { name: 'Cabo Verde', flagUrl: 'https://flagcdn.com/w40/cv.png' },
+};
+
+function getCountryInfo(countryCode: string): { name: string; flagUrl: string } {
+    const code = (countryCode || 'br').toLowerCase();
+    return COUNTRY_FLAGS[code] || { name: code.toUpperCase(), flagUrl: `https://flagcdn.com/w40/${code}.png` };
+}
+
 
 
 // Endpoint START (Pré-live/Preparação) - Primeira API chamada conforme padrão SRS
@@ -1528,7 +1521,7 @@ router.post('/srs/start', async (req, res) => {
 
         // Configurações SRS
 
-        const srsHost = process.env.SRS_HOST || '127.0.0.1';
+        const srsHost = process.env.SRS_HOST || process.env.DOMAIN || 'srs';
 
         const srsVhost = process.env.SRS_VHOST || '__defaultVhost__';
 
@@ -1834,7 +1827,7 @@ router.post('/srs/publish', async (req, res) => {
 
         // Configurações SRS conforme documentação
 
-        const srsHost = process.env.SRS_HOST || '127.0.0.1';
+        const srsHost = process.env.SRS_HOST || process.env.DOMAIN || 'srs';
 
         const srsPort = process.env.SRS_RTMP_PORT || '1935';
 
@@ -2612,7 +2605,7 @@ router.post('/live/start', async (req, res) => {
         const streamKey = 'stream_' + uuidv4();
 
         // Configurações SRS
-        const srsHost = process.env.SRS_HOST || '127.0.0.1';
+        const srsHost = process.env.SRS_HOST || process.env.DOMAIN || 'srs';
         const srsPort = process.env.SRS_PORT || '1935';
         const srsApp = process.env.SRS_APP || 'live';
         const vhost = process.env.SRS_VHOST || '__defaultVhost__';
@@ -3392,6 +3385,35 @@ router.post('/streams/:id/publish', async (req, res) => {
             console.warn('[STREAMS-PUBLISH] Erro ao criar/atualizar LiveCard:', cardErr);
         }
 
+        // === NOTIFICAR SEGUIDORES ===
+        try {
+            const followers = await Followers.find({
+                followingId: hostId,
+                isActive: true
+            }).select('followerId').lean();
+
+            if (followers.length > 0) {
+                const followerIds = followers.map((f: any) => f.followerId);
+
+                // Notificar seguidores via serviço centralizado
+                try {
+                    const { NotificationService } = await import('../services/NotificationService');
+                    await NotificationService.notifyLiveStarted(
+                        io,
+                        hostId,
+                        user.name || 'LiveGO',
+                        user.avatarUrl || '',
+                        id,
+                        followerIds
+                    );
+                } catch (notifErr) {
+                    console.warn('[STREAMS-PUBLISH] Erro ao notificar seguidores:', notifErr);
+                }
+            }
+        } catch (followErr) {
+            console.warn('[STREAMS-PUBLISH] Erro ao notificar seguidores:', followErr);
+        }
+
         res.json({ success: true, stream });
     } catch (error: any) {
         console.error('[STREAMS-PUBLISH] Erro:', error);
@@ -3417,14 +3439,16 @@ router.get('/streams', async (req, res) => {
         try {
             const srsApiUrl = ENV.SRS_API_URL;
             const srsUrl = `${srsApiUrl}/api/v1/streams/`;
-            const srsRes = await fetch(srsUrl, { signal: AbortSignal.timeout(5000) });
-            if (srsRes.ok) {
-                const srsData = await srsRes.json();
+            const { httpClient } = await import('../utils/httpClient');
+            const srsRes = await httpClient.get<any>(srsUrl, { timeout: 5000 });
+            if (srsRes) {
+                const srsData = srsRes;
                 const srsStreams = srsData?.streams || [];
                 for (const srs of srsStreams) {
                     if (!srs.publish?.active) continue;
                     const streamKey = srs.name;
                     if (!streamKey) continue;
+                    if (streamKey.endsWith('_transcoded')) continue;
                     const hostId = streamKey.replace('stream_', '');
                     const roomId = srs.id || streamKey;
                     const app = srs.app || 'live';
@@ -3469,6 +3493,7 @@ router.get('/streams', async (req, res) => {
 
         // Construir filtro base
         const baseFilter: any = {};
+        baseFilter.streamKey = { $not: /_transcoded$/ };
         if (isLive === 'true') {
             baseFilter.isLive = true;
             baseFilter.streamStatus = { $in: ['active', 'live'] };
@@ -3577,11 +3602,15 @@ router.get('/streams', async (req, res) => {
         const enrichedStreams = await Promise.all(
             streams.map(async (stream) => {
                 const host: any = await User.findOne({ id: stream.hostId }).lean();
+                const countryInfo = getCountryInfo(stream.country || host?.country || 'br');
                 return {
                     ...stream,
                     name: stream.name || host?.name || stream.hostId,
                     avatar: stream.avatar || resolveAvatar(host),
                     message: stream.title || '',
+                    country: stream.country || host?.country || 'br',
+                    countryName: countryInfo.name,
+                    flagUrl: countryInfo.flagUrl,
                     host: host ? {
                         id: host.id,
                         name: host.name,
@@ -4909,7 +4938,9 @@ router.get('/streams/live', async (req, res) => {
 
             name: { $exists: true, $nin: ['', null] },
 
-            hostId: { $exists: true, $nin: ['', null] }
+            hostId: { $exists: true, $nin: ['', null] },
+
+            streamKey: { $not: /_transcoded$/ }
 
         })
 
@@ -6922,7 +6953,7 @@ router.post('/stark/live/start', async (req, res) => {
         const streamId = userId;
         const streamKey = 'stream_' + uuidv4();
         const liveId = String(Date.now());
-        const srsHost = process.env.SRS_HOST || '127.0.0.1';
+        const srsHost = process.env.SRS_HOST || process.env.DOMAIN || 'srs';
         const pushUrl = 'webrtc://' + srsHost + ':1935/live/' + streamKey + '?txSecret=xxx&txTime=xxx';
 
         const finalCountry = (country || user.country || 'BR').toLowerCase();
@@ -8711,7 +8742,7 @@ router.post('/streams/prepare', async (req, res) => {
 
         // Configura++es SRS
 
-        const srsHost = process.env.SRS_HOST || '127.0.0.1';
+        const srsHost = process.env.SRS_HOST || process.env.DOMAIN || 'srs';
 
         const srsRtmpUrl = process.env.SRS_RTMP_URL || `rtmp://${srsHost}:1935/live`;
 
@@ -9144,7 +9175,7 @@ router.post('/stark/live/publish', async (req, res) => {
         }
 
         // Gerar URLs de publicacao
-        const srsHost = process.env.SRS_HOST || '127.0.0.1';
+        const srsHost = process.env.SRS_HOST || process.env.DOMAIN || 'srs';
         const whipUrl = 'https://' + srsHost + ':8000/whip/' + streamId;
         const whepUrl = 'https://' + srsHost + ':8000/whep/' + streamId;
         const rtmpUrl = 'rtmp://' + srsHost + ':1935/live/' + streamId;

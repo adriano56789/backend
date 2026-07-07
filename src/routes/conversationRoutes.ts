@@ -1,6 +1,7 @@
 // @ts-nocheck
 import express from 'express';
 import { Chat, ChatMessage, User } from '../models/index';
+import { canSendMessage } from '../utils/chatPermission';
 
 const router = express.Router();
 
@@ -299,6 +300,13 @@ router.post('/', async (req, res) => {
                     data: existingChat,
                     message: 'Conversa já existe'
                 });
+            }
+
+            // Validar permissão de mensagem do destinatário
+            const receiverId = participantIds[0];
+            const permCheck = await canSendMessage(userId, receiverId);
+            if (!permCheck.allowed) {
+                return res.status(403).json({ success: false, error: permCheck.reason, code: 'CHAT_PERMISSION_DENIED' });
             }
         }
 

@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import { httpClient } from '../utils/httpClient';
 
 const router = express.Router();
 
@@ -384,22 +385,24 @@ async function testAPI(api: any) {
     const startTime = Date.now();
     
     try {
-        const response = await fetch(`http://localhost:3000${api.url}`, {
-            method: api.method,
-            headers: {
+        const rawResp = await httpClient.requestRaw(
+            api.method as any,
+            `http://localhost:3000${api.url}`,
+            undefined,
+            { headers: {
                 'Content-Type': 'application/json',
                 'Authorization': 'Bearer test-token'
-            }
-        });
+            }}
+        );
         
         const responseTime = Date.now() - startTime;
-        const status = response.status;
+        const status = rawResp.status;
         
         let responseData;
         try {
-            responseData = await response.json();
+            responseData = JSON.parse(rawResp.bodyText);
         } catch {
-            responseData = await response.text();
+            responseData = rawResp.bodyText;
         }
         
         return {

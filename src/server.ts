@@ -60,12 +60,13 @@ import levelRoutes from './routes/levelRoutes'; // NOVO - Sistema de Nível
 import virtualIPRoutes from './routes/virtualIPRoutes'; // NOVO - Sistema de IP Virtual
 import base64ConversionRoutes from './routes/base64ConversionRoutes'; // NOVO - Sistema de Conversão Base64
 import likesRoutes from './routes/likesRoutes'; // NOVO - Sistema de Likes
-// livekitRoutes removido - usando apenas SRS WebRTC
+// livekitRoutes — APENAS para chamadas de vídeo e batalhas PK (NÃO para transmissão pública)
+// Transmissão pública usa SRS + FFmpeg (WHIP/WHEP/RTMP/HLS)
 import callInvitationRoutes from './routes/callInvitationRoutes'; // NOVO - Sistema de convites de chamada na live
 import activityRoutes from './routes/activityRoutes'; // NOVO - Sistema de Atividades
 import videoStreamRoutes from './routes/videoStreamRoutes'; // NOVO - API de Streaming de Vídeo
 import srsRoutes from './routes/srsRoutes';
-import livekitRoutes from './routes/livekitRoutes'; // Callbacks SRS
+import livekitRoutes from './routes/livekitRoutes'; // LiveKit: PK + Chamadas de vídeo
 import appVersionRoutes from './routes/appVersionRoutes'; // NOVO - Sistema de controle de versão
 import debugRoutes from './routes/debugRoutes';
 import crudRoutes from './routes/crudRoutes';
@@ -77,8 +78,11 @@ import stunRoutes from './routes/stunRoutes';
 import streamAccessRoutes from './routes/streamAccessRoutes';
 import protobufRoutes from './routes/protobufRoutes';
 import UserStatusManager from './middleware/UserStatusManager';
+import notificationRoutes from './routes/notificationRoutes';
+import { initFirebase } from './services/firebaseService';
 import { blockBase64Middleware } from './middleware/blockBase64';
 import { mqttBridge } from './services/MqttBridge';
+
 
 // REMOVIDO: Módulos inexistentes
 // import { initializeDatabase } from './scripts/initDatabase'; // NOVO - Inicialização automática
@@ -242,6 +246,7 @@ connectDB().then(async () => {
 
     server.listen(port, '0.0.0.0', () => {
         console.log(`🌍 API Server started on http://127.0.0.1:${port}`);
+        initFirebase();
     });
 }).catch(error => {
     console.error('❌ [DB] Falha na conexão com MongoDB:', error.message);
@@ -444,6 +449,7 @@ app.use('/api/video', videoStreamRoutes); // NOVO - API de Streaming de Vídeo
 app.use('/api', videoStreamRoutes); // RTC routes (/api/rtc/v1/publish, /api/rtc/v1/stop)
 app.use('/api/stats', statsRoutes); // NOVO - Estatísticas em tempo real
 app.use('/api/streams', streamAccessRoutes); // Validação de acesso a transmissões
+app.use('/api', notificationRoutes); // NOVO - Notificações Push Firebase
 app.use('/api', debugRoutes); // Debug/monitoramento
 
 
@@ -571,7 +577,22 @@ io.on('connection', (socket) => {
         if (userDoc) { userName = (userDoc as any).name || 'Usuário'; userAvatar = (userDoc as any).avatarUrl || ''; userLevel = (userDoc as any).level || 0; }
       } catch (_) {}
       let hostId = '';
-      try { const s = await models.Streamer.findOne({ id: streamId }).select('hostId').lean(); if (s) hostId = (s as any).hostId || ''; } catch (_) {}
+      try {
+        let s = await models.Streamer.findOne({ id: streamId }).select('hostId').lean();
+        if (!s) {
+          // Fallback: tentar buscar pelo streamKey ou normalizedId
+          const normalizedId = streamId.startsWith('stream_') ? streamId.replace('stream_', '') : streamId;
+          s = await models.Streamer.findOne({
+            $or: [
+              { streamKey: streamId },
+              { streamKey: 'stream_' + normalizedId },
+              { id: normalizedId }
+            ]
+          }).select('hostId').lean();
+        }
+        if (s) hostId = (s as any).hostId || '';
+        else console.log('[FCM] Streamer não encontrado para streamId=' + streamId);
+      } catch (_) {}
       const counts = await onlineTracker.userJoin(streamId, userId, hostId, userName, userAvatar);
       io.to(streamId).emit('user_joined_stream', { userId, userName, userAvatar, userLevel, streamId, timestamp: new Date().toISOString() });
       io.to(streamId).emit('user:join', { userId, userName, userAvatar, userLevel, streamId, role: userId === hostId ? 'host' : counts.role, fans: counts.fans, visitors: counts.visitors, total: counts.fans + counts.visitors, timestamp: new Date().toISOString() });
@@ -580,6 +601,15 @@ io.on('connection', (socket) => {
         const { Streamer } = await import('./models/Streamer');
         await Streamer.findOneAndUpdate({ id: streamId }, { $set: { viewers: onlineUsersInStream.length } });
       } catch (_) {}
+      // Notificar o host via NotificationService centralizado
+      if (hostId && hostId !== userId) {
+        try {
+          const { NotificationService } = await import('./services/NotificationService');
+          await NotificationService.notifyViewerJoinedStream(io, hostId, userId, userName, streamId);
+        } catch (notifErr: any) {
+          console.error('[NOTIFICATION] Erro ao notificar join stream:', notifErr?.message || notifErr);
+        }
+      }
       console.log(`✅ Usuário ${userId} conectado à stream ${streamId} (sockets: ${userEntry.socketIds.size})`);
     }
 
@@ -862,6 +892,26 @@ io.on('connection', (socket) => {
                     });
                 }
             });
+
+            // === NOTIFICAR DESTINATÁRIO via serviço centralizado (sininho + FCM) ===
+            try {
+                const { NotificationService } = await import('./services/NotificationService');
+                const receiverIds = chat.participants.filter((p: string) => p !== senderId);
+                const isImage = messageType === 'image';
+                const preview = isImage ? '[Imagem]' : content;
+                for (const receiverId of receiverIds) {
+                    await NotificationService.notifyNewMessage(
+                        io,
+                        receiverId,
+                        senderId,
+                        sender.name || 'Alguém',
+                        preview,
+                        chatId
+                    );
+                }
+            } catch (notifErr) {
+                console.warn('[SOCKET-CHAT-NOTIFICATION] Erro:', notifErr);
+            }
 
             console.log(`💬 Mensagem enviada via WebSocket: ${senderId} -> chat ${chatId}`);
         } catch (error) {
@@ -1337,7 +1387,7 @@ io.on('connection', (socket) => {
                 timestamp: new Date()
             };
 
-            socket.to(streamId).emit('live_message', messagePayload);
+            // Broadcast para TODOS na stream (io.to inclui o remetente)
             io.to(streamId).emit('live_message', messagePayload);
 
             // Persistir no MongoDB (TTL de 24h via índice expireAfterSeconds)
@@ -1507,36 +1557,37 @@ wsIo.on('connection', (socket) => {
         console.log(`💬 [CHAT] Message from ${socket.id}:`, data);
 
         try {
-            // Importar helpers de ID
-            const { getRealUserId, validateRealId } = require('../utils/idHelper');
+            const { streamId, userId, userName, userAvatar, message, userLevel } = data;
+            if (!streamId || !userId || !message) {
+                console.warn(`⚠️ [CHAT] Dados inválidos:`, { streamId, userId, message });
+                return;
+            }
 
-            // Validar e converter para ID real
-            const realUserId = validateRealId(data.userId);
-
-            // Salvar no banco de dados
-            const Chat = require('../models/Chat');
-            const chatMessage = new Chat({
-                streamId: data.streamId,
-                userId: realUserId, // Usar ID real da API
-                userName: data.userName,
-                userAvatar: data.userAvatar,
-                message: data.message,
+            // Salvar no LiveMessage (coleção correta para mensagens de live)
+            const liveMessage = await LiveMessage.create({
+                streamId,
+                userId,
+                userName: userName || 'Usuário',
+                avatarUrl: userAvatar || '',
+                level: userLevel || 1,
+                text: message,
                 timestamp: new Date()
             });
-            await chatMessage.save();
 
             const chatData = {
-                id: chatMessage._id,
-                userId: realUserId, // ID real da API no evento
-                userName: data.userName,
-                userAvatar: data.userAvatar,
-                message: data.message,
-                timestamp: chatMessage.timestamp.getTime()
+                id: liveMessage.id,
+                userId,
+                userName: userName || 'Usuário',
+                avatarUrl: userAvatar || '',
+                level: userLevel || 1,
+                text: message,
+                timestamp: liveMessage.timestamp?.getTime() || Date.now()
             };
 
             // Broadcast para todos na sala do stream
-            wsIo.to(data.streamId).emit('new_chat_message', chatData);
-            console.log(`💬 [CHAT] Real message saved and broadcasted: ${data.message}`);
+            wsIo.to(streamId).emit('live_message', chatData);
+            wsIo.to(streamId).emit('new_chat_message', chatData);
+            console.log(`💬 [CHAT] Real message saved and broadcasted: ${message}`);
         } catch (error) {
             console.error(`❌ [CHAT] Error saving message:`, error);
         }

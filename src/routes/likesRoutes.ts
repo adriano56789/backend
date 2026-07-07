@@ -61,6 +61,14 @@ router.post('/streams/:id/like', async (req, res) => {
             });
         }
 
+        // === NOTIFICAR DONO DA STREAM via serviço centralizado ===
+        try {
+            const { NotificationService } = await import('../services/NotificationService');
+            await NotificationService.notifyStreamLiked(io, streamer.hostId, userId, streamId);
+        } catch (notifErr) {
+            console.warn('[STREAM-LIKE-NOTIFICATION] Erro:', notifErr);
+        }
+
         res.json({
             success: true,
             totalLikes: newLikes,

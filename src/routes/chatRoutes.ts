@@ -1,6 +1,7 @@
 // @ts-nocheck
 import express from 'express';
 import { Chat, ChatMessage, User } from '../models/index';
+import { canSendMessage } from '../utils/chatPermission';
 
 const router = express.Router();
 
@@ -272,6 +273,12 @@ router.post('/send', async (req, res) => {
             }
         }
 
+        // Validar permissão de mensagem do destinatário
+        const permCheck = await canSendMessage(from, to);
+        if (!permCheck.allowed) {
+            return res.status(403).json({ error: permCheck.reason, code: 'CHAT_PERMISSION_DENIED' });
+        }
+
         const conversationId = `chat_private_${[from, to].sort().join('_')}`;
         const messageType = imageUrl ? 'image' : 'text';
         const content = imageUrl || text;
@@ -339,6 +346,17 @@ router.post('/send', async (req, res) => {
             messageId: newMessage.id,
             success: true
         });
+
+        // === NOTIFICAR DESTINATÁRIO via serviço centralizado (sininho + socket + FCM) ===
+        try {
+            const { NotificationService } = await import('../services/NotificationService');
+            const sender = await User.findOne({ id: from }).select('name');
+            const senderName = sender?.name || 'Alguém';
+            const preview = messageType === 'image' ? '[Imagem]' : (text || '');
+            await NotificationService.notifyNewMessage(io, to, from, senderName, preview, conversationId);
+        } catch (notifErr) {
+            console.error('[NOTIFICATION] Erro ao notificar mensagem:', notifErr);
+        }
 
         res.json({
             success: true,
@@ -412,6 +430,25 @@ router.post('/:id/messages', async (req, res) => {
                 }
             }
         );
+
+        // === NOTIFICAR DESTINATÁRIO via serviço centralizado (sininho + FCM) ===
+        try {
+            const { NotificationService } = await import('../services/NotificationService');
+            const io = req.app.get('io');
+            const receiverIds = chat.participants.filter((p: string) => p !== senderId);
+            if (receiverIds.length > 0) {
+                const sender = await User.findOne({ id: senderId }).select('name');
+                const senderName = sender?.name || 'Alguém';
+                const preview = messageType === 'image' ? '[Imagem]' : content;
+                for (const receiverId of receiverIds) {
+                    await NotificationService.notifyNewMessage(
+                        io, receiverId, senderId, senderName, preview, id
+                    );
+                }
+            }
+        } catch (notifErr) {
+            console.warn('[CHAT-MESSAGES-NOTIFICATION] Erro:', notifErr);
+        }
 
         console.log(`✅ Mensagem enviada no chat ${id}: ${content.substring(0, 50)}...`);
 

@@ -1,7 +1,7 @@
 // @ts-nocheck
 import express from 'express';
 import { LiveUser, LiveInvite } from '../models/LiveInvite';
-import { Streamer, Battle, User } from '../models';
+import { Streamer, Battle, User, LiveCard } from '../models';
 import { getUserIdFromToken } from '../middleware/auth';
 
 const router = express.Router();
@@ -59,56 +59,116 @@ router.post('/join', async (req, res) => {
 });
 
 const buscarStreamersDisponiveis = async (currentHostId: string, apenasLive: boolean) => {
-    let docs: any[] = [];
-
-    // Se apenasLive=true, busca SÓ streamers ao vivo (modo battle)
-    if (apenasLive) {
-        docs = await Streamer.find({
+    // Buscar ao vivo de TODAS as fontes em paralelo
+    const [liveCards, streamers, liveUsers] = await Promise.all([
+        // 1º: LiveCard — fonte principal para WHIP/WebRTC
+        LiveCard.find({
             isLive: true,
-            streamStatus: 'active',
+            streamStatus: { $in: ['active', 'live'] },
             hostId: { $ne: currentHostId }
-        }).sort({ startTime: -1 }).lean();
-        return docs.map(s => ({
-            userId: s.hostId,
-            username: s.name || s.hostId,
-            name: s.name || s.hostId,
-            avatarUrl: s.avatar || '',
-            status: 'broadcasting'
-        }));
+        }).sort({ updatedAt: -1 }).limit(20).lean(),
+        // 2º: Streamer — fonte legada para RTMP/SRS
+        Streamer.find({
+            isLive: true,
+            hostId: { $ne: currentHostId }
+        }).sort({ startTime: -1 }).lean(),
+        // 3º: User — flag isLive como fallback
+        User.find({
+            isLive: true,
+            id: { $ne: currentHostId }
+        }).sort({ updatedAt: -1 }).limit(20).lean()
+    ]);
+
+    // Mapa para deduplicar por hostId/userId
+    const seen = new Set<string>();
+    seen.add(currentHostId);
+    const docs: any[] = [];
+
+    const addIfNotSeen = (id: string, obj: any) => {
+        if (seen.has(id)) return;
+        seen.add(id);
+        docs.push(obj);
+    };
+
+    // Adicionar LiveCards
+    for (const c of liveCards) {
+        addIfNotSeen(c.hostId, {
+            hostId: c.hostId,
+            name: c.name || c.hostId,
+            avatar: c.avatar || '',
+            isLive: true,
+            streamStatus: c.streamStatus || 'active'
+        });
     }
 
-    // 1º: streamers ao vivo agora
-    docs = await Streamer.find({
-        isLive: true,
-        streamStatus: 'active',
-        hostId: { $ne: currentHostId }
-    }).sort({ startTime: -1 }).lean();
+    // Adicionar Streamers (não duplicados)
+    for (const s of streamers) {
+        addIfNotSeen(s.hostId, {
+            hostId: s.hostId,
+            name: s.name || s.hostId,
+            avatar: s.avatar || '',
+            isLive: true,
+            streamStatus: s.streamStatus || 'active'
+        });
+    }
 
-    // 2º: streamers ativos nas últimas 24h
-    if (docs.length === 0) {
+    // Adicionar Users (não duplicados)
+    for (const u of liveUsers) {
+        addIfNotSeen(u.id, {
+            hostId: u.id,
+            name: u.name || (u as any).username || u.id,
+            avatar: u.avatarUrl || '',
+            isLive: true,
+            streamStatus: 'active'
+        });
+    }
+
+    // Se não for modo battle, incluir também streamers recentes (últimas 24h)
+    if (!apenasLive && docs.length === 0) {
         const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-        docs = await Streamer.find({
-            hostId: { $ne: currentHostId },
+        const recentStreamers = await Streamer.find({
+            hostId: { $ne: currentHostId, $nin: [...seen] },
             $or: [
-                { isLive: true },
                 { startTime: { $gte: dayAgo } },
                 { updatedAt: { $gte: dayAgo } }
             ]
         }).sort({ startTime: -1 }).limit(20).lean();
+
+        for (const s of recentStreamers) {
+            addIfNotSeen(s.hostId, {
+                hostId: s.hostId,
+                name: s.name || s.hostId,
+                avatar: s.avatar || '',
+                isLive: s.isLive || false,
+                streamStatus: s.streamStatus || 'ended'
+            });
+        }
     }
 
-    // 3º: qualquer streamer do banco (exceto o atual)
-    if (docs.length === 0) {
-        docs = await Streamer.find({ hostId: { $ne: currentHostId } })
+    // Último fallback: qualquer streamer
+    if (!apenasLive && docs.length === 0) {
+        const anyStreamers = await Streamer.find({ hostId: { $ne: currentHostId, $nin: [...seen] } })
             .sort({ updatedAt: -1 }).limit(20).lean();
+
+        for (const s of anyStreamers) {
+            addIfNotSeen(s.hostId, {
+                hostId: s.hostId,
+                name: s.name || s.hostId,
+                avatar: s.avatar || '',
+                isLive: s.isLive || false,
+                streamStatus: s.streamStatus || 'ended'
+            });
+        }
     }
 
-    return docs.map(s => ({
+    console.log(`[LiveInvite] buscarStreamersDisponiveis(currentHostId=${currentHostId}, apenasLive=${apenasLive}) → ${docs.length} resultados (${liveCards.length} LiveCards, ${streamers.length} Streamers, ${liveUsers.length} Users)`);
+
+    return docs.map((s: any) => ({
         userId: s.hostId,
-        username: s.hostId,
+        username: s.name || s.hostId,
         name: s.name || s.hostId,
         avatarUrl: s.avatar || '',
-        status: (s.isLive && s.streamStatus === 'active') ? 'broadcasting' : 'offline'
+        status: 'broadcasting'
     }));
 };
 
@@ -121,6 +181,7 @@ router.get('/online-users', async (req, res) => {
 
         // Extrair hostId do JWT para excluir o próprio usuário da lista
         const tokenUserId = getUserIdFromToken(req);
+        console.log(`[LiveInvite] GET /online-users streamId=${streamId} mode=${mode} tokenUserId=${tokenUserId}`);
 
         // Busca espectadores na sala (sempre) + streamers disponíveis
         const [viewers, streamerUsers] = await Promise.all([
@@ -131,6 +192,8 @@ router.get('/online-users', async (req, res) => {
             buscarStreamersDisponiveis(tokenUserId || (streamId as string), mode === 'battle')
         ]);
 
+        console.log(`[LiveInvite] viewers=${viewers.length} streamerUsers=${streamerUsers.length}`);
+
         // Combina viewers + streamers, sem duplicar IDs, excluindo o próprio usuário
         const seen = new Set<string>();
         if (tokenUserId) seen.add(tokenUserId);
@@ -140,6 +203,11 @@ router.get('/online-users', async (req, res) => {
             seen.add(id);
             return true;
         });
+
+        console.log(`[LiveInvite] combined final=${combined.length} usuários`);
+        if (combined.length > 0) {
+            console.log(`[LiveInvite] usuários:`, combined.map((u: any) => ({ userId: u.userId, name: u.name, status: u.status })));
+        }
 
         res.status(200).json({ success: true, users: combined });
     } catch (error: any) {
@@ -211,6 +279,22 @@ router.post('/invite', async (req, res) => {
             });
         }
 
+        // Notificação centralizada via NotificationService
+        try {
+            const { NotificationService } = await import('../services/NotificationService');
+            await NotificationService.notifyLiveInvite(
+                io,
+                inviteeUsername,
+                inviterUsername,
+                inviterName || inviterUsername,
+                inviteType,
+                invite._id.toString(),
+                streamId,
+            );
+        } catch (notifErr) {
+            console.error('[LiveInvite] Erro NotificationService:', notifErr);
+        }
+
         res.status(200).json({ success: true, invite });
     } catch (error: any) {
         console.error('[LiveInvite] Erro ao criar convite:', error);
@@ -265,6 +349,23 @@ router.post('/invite/respond', async (req, res) => {
                 status: action,
                 from: invite.inviteeUsername
             });
+        }
+
+        // Notificação centralizada via NotificationService
+        try {
+            const { NotificationService } = await import('../services/NotificationService');
+            await NotificationService.notifyLiveInviteResponded(
+                io,
+                invite.inviterUsername,
+                invite.inviteeUsername,
+                invite.inviteeName || invite.inviteeUsername,
+                invite.inviteType,
+                action as 'accepted' | 'declined',
+                inviteId,
+                invite.streamId,
+            );
+        } catch (notifErr) {
+            console.error('[LiveInvite] Erro NotificationService respond:', notifErr);
         }
 
         res.status(200).json({ success: true, invite });

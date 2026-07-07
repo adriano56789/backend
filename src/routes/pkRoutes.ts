@@ -1,6 +1,8 @@
 import express from 'express';
 import { ChildProcess } from 'child_process';
 import { User, Streamer, Battle } from '../models';
+import { ENV } from '../config/env';
+import { roomService, generateLiveKitToken } from '../services/LiveKitTokenService';
 import { startBattleMixer, stopMixer } from '../services/FfmpegService';
 
 const router = express.Router();
@@ -182,6 +184,42 @@ router.post('/start', async (req, res) => {
     }, pkDuration);
     battleTimers.set(battle._id.toString(), autoEndTimer);
 
+    // ─── LiveKit: criar sala PK e gerar tokens para ambos ───
+    let livekitRoom: string | null = null;
+    let challengerToken: string | null = null;
+    let opponentToken: string | null = null;
+
+    try {
+      livekitRoom = `pk_${battle._id}`;
+
+      // Verificar se sala já existe (via listRooms)
+      let roomExistsFlag = false;
+      try {
+        const existingRooms = await roomService.listRooms();
+        roomExistsFlag = existingRooms.some(r => r.name === livekitRoom);
+      } catch (_) {}
+
+      if (!roomExistsFlag) {
+        await roomService.createRoom({
+          name: livekitRoom,
+          emptyTimeout: 600,
+          maxParticipants: 10,
+        });
+        console.log(`[PK-LIVEKIT] Sala criada: ${livekitRoom}`);
+      }
+
+      // Gerar tokens para ambos os streamers (ambos podem publicar)
+      [challengerToken, opponentToken] = await Promise.all([
+        generateLiveKitToken(challengerId, livekitRoom, JSON.stringify({ type: 'pk', role: 'broadcaster' }), { canPublish: true }),
+        generateLiveKitToken(opponentId, livekitRoom, JSON.stringify({ type: 'pk', role: 'broadcaster' }), { canPublish: true }),
+      ]);
+
+      console.log(`[PK-LIVEKIT] Tokens gerados para ${challengerId} e ${opponentId}`);
+    } catch (lkErr: any) {
+      console.error('[PK-LIVEKIT] Erro ao configurar sala LiveKit:', lkErr.message);
+      // Não falha a PK se o LiveKit falhar — segue com SRS/FFmpeg
+    }
+
     const io = req.app.get('io');
     if (io) {
       [challengerId, opponentId].forEach(uid => {
@@ -190,7 +228,13 @@ router.post('/start', async (req, res) => {
           streamerA: challengerId,
           streamerB: opponentId,
           durationSeconds: durationSeconds || 300,
-          startedAt: battle.startedAt
+          startedAt: battle.startedAt,
+          livekit: livekitRoom ? {
+            room: livekitRoom,
+            livekitUrl: ENV.LIVEKIT_URL,
+            serverUrl: ENV.LIVEKIT_SERVER_URL,
+            tokens: { challenger: challengerToken, opponent: opponentToken }
+          } : null
         });
       });
     }
@@ -200,7 +244,20 @@ router.post('/start', async (req, res) => {
       { $push: { recentActivities: { action: 'pk_battle_started', resource: 'pk_battle', timestamp: new Date(), endpoint: '/api/pk/start' } } }
     ).catch(console.error);
 
-    res.json({ success: true, battleId: battle._id.toString(), battle: populated });
+    res.json({
+      success: true,
+      battleId: battle._id.toString(),
+      battle: populated,
+      livekit: livekitRoom ? {
+        room: livekitRoom,
+        livekitUrl: ENV.LIVEKIT_URL,
+        serverUrl: ENV.LIVEKIT_SERVER_URL,
+        tokens: {
+          challenger: challengerToken,
+          opponent: opponentToken,
+        }
+      } : null
+    });
   } catch (error: any) {
     console.error('[PK] Erro ao iniciar batalha:', error);
     res.status(500).json({ error: 'Erro ao iniciar batalha' });

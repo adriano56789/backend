@@ -39,13 +39,11 @@ export class Security {
     try {
       const clientIP = await this.getClientIP();
 
-      const response = await fetch('/api/security/block', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, reason, timestamp: new Date().toISOString(), clientIP, permanent: false, duration })
+      const resp = await httpClient.requestRaw('POST', '/api/security/block', {
+        userId, reason, timestamp: new Date().toISOString(), clientIP, permanent: false, duration
       });
 
-      if (response.ok) {
+      if (resp.ok) {
         console.log('🚫 Usuário bloqueado com sucesso:', { userId, reason, duration });
       } else {
         throw new Error('Falha ao bloquear usuário');
@@ -62,13 +60,9 @@ export class Security {
 
       const auditData = { userId, action, timestamp: new Date().toISOString(), clientIP, metadata };
 
-      const response = await fetch('/api/security/audit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(auditData)
-      });
+      const resp = await httpClient.requestRaw('POST', '/api/security/audit', auditData);
 
-      if (!response.ok) {
+      if (!resp.ok) {
         console.warn('⚠️ Falha ao registrar auditoria:', auditData);
       }
     } catch (error) {

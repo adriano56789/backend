@@ -441,6 +441,16 @@ router.get('/chat-permission/status/:id', async (req, res) => {
     const user = await findUserByAnyId(User, req.params.id);
     res.json({ permission: user?.chatPermission || 'all' });
 });
+router.get('/can-send-message/:fromId/:toId', async (req, res) => {
+    try {
+        const { fromId, toId } = req.params;
+        const { canSendMessage } = await import('../utils/chatPermission');
+        const result = await canSendMessage(fromId, toId);
+        res.json({ allowed: result.allowed, reason: result.reason || null });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
 router.post('/chat-permission/update/:id', async (req, res) => {
     try {
         const user = await updateUserByRealId(

@@ -46,6 +46,7 @@
     "dotenv": "^16.6.1",
     "express": "^4.19.2",
     "express-validator": "^7.3.2",
+    "firebase-admin": "^14.1.0",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
     "livekit-client": "^2.20.0",

@@ -3,6 +3,7 @@ import { User } from '../models/User';
 import { Streamer } from '../models/Streamer';
 import { srsService } from '../services/srsService';
 import { ENV } from '../config/env';
+import { httpClient } from '../utils/httpClient';
 
 const router = express.Router();
 
@@ -488,48 +489,66 @@ router.get('/http/live/:filename', async (req, res) => {
 
         console.log(`[VIDEO-STREAM] Proxying HLS request: ${filename} -> ${srsUrl}`);
 
-        let response = await fetch(srsUrl);
-
-        // Fallback: Se falhar com o prefixo 'stream_', tentar sem o prefixo
-        if (!response.status.toString().startsWith('2') && filename.startsWith('stream_')) {
-            const alternativeFilename = filename.replace('stream_', '');
-            const alternativeUrl = `http://${srsHost}:${srsHttpPort}/live/${alternativeFilename}`;
-            console.log(`[VIDEO-STREAM] ${response.status} detected. Trying alternative URL: ${alternativeUrl}`);
-            const altRes = await fetch(alternativeUrl);
-            if (altRes.ok) {
-                response = altRes;
-                srsUrl = alternativeUrl;
-            }
-        }
-
-        if (!response.ok) {
-            console.error(`[VIDEO-STREAM] SRS returned error ${response.status} for ${srsUrl}`);
-            return res.status(response.status).send(`SRS error: ${response.status}`);
-        }
-
-        const contentType = filename.endsWith('.m3u8')
-            ? 'application/vnd.apple.mpegurl'
-            : filename.endsWith('.ts')
-                ? 'video/MP2T'
-                : filename.endsWith('.flv')
-                    ? 'video/x-flv'
-                    : response.headers.get('content-type') || 'application/octet-stream';
-
-        res.set('Content-Type', contentType);
-        res.set('Cache-Control', 'no-cache');
-
         if (filename.endsWith('.m3u8')) {
-            const body = await response.text();
-            // Proxying absolute and relative URLs inside the manifest
-            const proxied = body.replace(/^(.*\.(ts|m3u8))/gm, (match) => {
+            // Para m3u8: usa requestRaw (texto) para fazer URL rewriting
+            let rawResp = await httpClient.requestRaw('GET', srsUrl);
+
+            // Fallback: Se falhar com o prefixo 'stream_', tentar sem
+            if (!rawResp.ok && filename.startsWith('stream_')) {
+                const altFilename = filename.replace('stream_', '');
+                const altUrl = `http://${srsHost}:${srsHttpPort}/live/${altFilename}`;
+                console.log(`[VIDEO-STREAM] ${rawResp.status} detected. Trying alternative URL: ${altUrl}`);
+                const altResp = await httpClient.requestRaw('GET', altUrl);
+                if (altResp.ok) {
+                    rawResp = altResp;
+                    srsUrl = altUrl;
+                }
+            }
+
+            if (!rawResp.ok) {
+                console.error(`[VIDEO-STREAM] SRS returned error ${rawResp.status} for ${srsUrl}`);
+                return res.status(rawResp.status).send(`SRS error: ${rawResp.status}`);
+            }
+
+            res.set('Content-Type', 'application/vnd.apple.mpegurl');
+            res.set('Cache-Control', 'no-cache');
+
+            // Rewrite URLs inside the manifest to go through proxy
+            const proxied = rawResp.bodyText.replace(/^(.*\.(ts|m3u8))/gm, (match) => {
                 if (match.startsWith('http')) return match;
                 return `${req.protocol}://${req.get('host')}/api/video/http/live/${match}`;
             });
             res.send(proxied);
         } else {
-            const buffer = await response.arrayBuffer();
-            res.send(Buffer.from(buffer));
+            // Para .ts/.flv: usa requestBuffer (binário) — única chamada HTTP
+            let bufResp = await httpClient.requestBuffer('GET', srsUrl);
+
+            // Fallback: Se falhar com o prefixo 'stream_', tentar sem
+            if (!bufResp.ok && filename.startsWith('stream_')) {
+                const altFilename = filename.replace('stream_', '');
+                const altUrl = `http://${srsHost}:${srsHttpPort}/live/${altFilename}`;
+                console.log(`[VIDEO-STREAM] ${bufResp.status} detected. Trying alternative URL: ${altUrl}`);
+                const altResp = await httpClient.requestBuffer('GET', altUrl);
+                if (altResp.ok) {
+                    bufResp = altResp;
+                    srsUrl = altUrl;
+                }
+            }
+
+            if (!bufResp.ok) {
+                console.error(`[VIDEO-STREAM] SRS returned error ${bufResp.status} for ${srsUrl}`);
+                return res.status(bufResp.status).send(`SRS error: ${bufResp.status}`);
+            }
+
+            const contentType = filename.endsWith('.flv')
+                ? 'video/x-flv'
+                : 'video/MP2T';
+
+            res.set('Content-Type', contentType);
+            res.set('Cache-Control', 'no-cache');
+            res.send(Buffer.from(bufResp.buffer));
         }
+
     } catch (error) {
         console.error('[VIDEO-STREAM] Erro no proxy HLS:', error);
         res.status(502).send('Proxy error');
@@ -700,15 +719,91 @@ router.post('/rtc/v1/play', async (req, res) => {
 });
 
 // @route GET /api/rtc/ice-servers
-// WHIP/WHEP não precisa de STUN/TURN — SRS faz conexão direta
-router.get('/rtc/ice-servers', (_req, res) => {
-  res.json({ success: true, iceServers: [] });
+// Retorna servidores ICE com STUN público (Google) + endpoint para obter credenciais TURN dinâmicas
+// NOTA: Credenciais TURN estáticas não funcionam com coturn (usa HMAC time-based auth).
+// O frontend DEVE chamar POST /api/turn/credentials para obter credenciais TURN válidas.
+router.get('/rtc/ice-servers', (req, res) => {
+  const { TURN_HOST, TURN_PORT } = ENV;
+  const BACKEND_URL = process.env.BACKEND_URL || `https://${req.hostname}`;
+  res.json({
+    success: true,
+    iceServers: [
+      // STUN público do Google (sempre funciona fora da rede)
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      // STUN customizado (se disponível)
+      { urls: `stun:${TURN_HOST}:${TURN_PORT}` },
+      // TURN - usar credenciais DINÂMICAS do endpoint /api/turn/credentials
+      // O frontend deve chamar o endpoint abaixo para obter username/credential válidos
+      {
+        urls: [
+          `turn:${TURN_HOST}:${TURN_PORT}`,
+          `turn:${TURN_HOST}:${TURN_PORT}?transport=tcp`,
+        ],
+        username: '_fetch_from_turn_credentials_endpoint',
+        credential: '_fetch_from_turn_credentials_endpoint',
+      },
+    ],
+    // Endpoint para o frontend obter credenciais TURN dinâmicas
+    turnCredentialsEndpoint: `${BACKEND_URL}/api/turn/credentials`,
+  });
 });
 
 // Helper para construir URL base do SRS — usa ENV.SRS_API_URL centralizado
 const getSrsApiBaseUrl = (): string => {
   return ENV.SRS_API_URL;
 };
+
+/**
+ * Remove candidatos ICE com IPs privados (Docker/internalos) do SDP,
+ * mantendo apenas candidatos com IP público ou relay (TURN).
+ * Isso evita que o cliente tente conectar em IPs 172.x.x.x ou 10.x.x.x
+ * que só funcionam dentro da rede Docker.
+ */
+function rewritePrivateIpsInSdp(sdp: string, publicIp?: string): string {
+  const privateRanges = [
+    /^172\.(1[6-9]|2[0-9]|3[0-1])\..*/,
+    /^10\..*/,
+    /^192\.168\..*/,
+    /^127\..*/,
+    /^0\..*/,
+  ];
+
+  // Se não tem IP público configurado, manter apenas candidatos relay (TURN)
+  if (!publicIp) {
+    // Remove candidatos host com IP privado, mantém relay e srflx
+    return sdp.split('\r\n').filter(line => {
+      if (!line.startsWith('a=candidate:')) return true;
+      const parts = line.split(' ');
+      // Formato: a=candidate:fundation 1 udp 2130706431 192.168.1.1 3478 typ host
+      // O IP é o 4º campo (index 4) em candidatos típicos
+      // Procurar IP na linha
+      const ipMatch = line.match(/a=candidate:[^ ]+ [^ ]+ [^ ]+ [^ ]+ ([^ ]+)/);
+      if (!ipMatch) return true;
+      const ip = ipMatch[1];
+      // Verificar se é IP privado
+      for (const range of privateRanges) {
+        if (range.test(ip)) return false; // Remove candidato com IP privado
+      }
+      return true;
+    }).join('\r\n');
+  }
+
+  // Se tem IP público, substituir IPs privados nos candidatos
+  return sdp.split('\r\n').map(line => {
+    if (!line.startsWith('a=candidate:')) return line;
+    const ipMatch = line.match(/a=candidate:[^ ]+ [^ ]+ [^ ]+ [^ ]+ ([^ ]+)/);
+    if (!ipMatch) return line;
+    const ip = ipMatch[1];
+    for (const range of privateRanges) {
+      if (range.test(ip)) {
+        // Substituir IP privado pelo IP público
+        return line.replace(ip, publicIp);
+      }
+    }
+    return line;
+  }).join('\r\n');
+}
 
 const rawSdpParser = express.text({ type: '*/*' });
 
@@ -727,10 +822,8 @@ router.post('/rtc/v1/whip/', rawSdpParser, async (req, res) => {
     const srsUrl = `${getSrsApiBaseUrl()}/rtc/v1/whip/?app=${encodeURIComponent(String(app || 'live'))}&stream=${encodeURIComponent(String(stream))}`;
     console.log('[RTC] WHIP proxy:', { stream, srsUrl });
 
-    const srsRes = await fetch(srsUrl, {
-      method: 'POST',
+    const srsRes = await httpClient.requestRaw('POST', srsUrl, sanitizedSdp, {
       headers: { 'Content-Type': 'application/sdp' },
-      body: sanitizedSdp,
     });
 
     // Rewrite location header for ICE trickle to go through backend proxy
@@ -742,9 +835,8 @@ router.post('/rtc/v1/whip/', rawSdpParser, async (req, res) => {
       res.set('ETag', srsRes.headers.get('ETag')!);
     }
 
-    const body = await srsRes.text();
-    console.log('[RTC] WHIP response:', { status: srsRes.status, length: body.length });
-    res.status(srsRes.status).send(body);
+    console.log('[RTC] WHIP response:', { status: srsRes.status, length: srsRes.bodyText.length });
+    res.status(srsRes.status).send(srsRes.bodyText);
   } catch (err: any) {
     console.error('[RTC] WHIP proxy error:', err);
     res.status(502).send(`WHIP proxy error: ${err.message}`);
@@ -759,20 +851,18 @@ router.patch('/rtc/v1/whip/:sessionId', rawSdpParser, async (req, res) => {
     const eTag = req.headers['etag'] as string;
 
     const srsUrl = `${getSrsApiBaseUrl()}/rtc/v1/whip/${sessionId}`;
-    const srsRes = await fetch(srsUrl, {
-      method: 'PATCH',
+    const srsRes = await httpClient.requestRaw('PATCH', srsUrl, req.body, {
       headers: {
         'Content-Type': 'application/trickle-ice-sdpfrag',
         'ETag': eTag || '',
       },
-      body: req.body,
     });
 
     if (srsRes.headers.get('ETag')) {
       res.set('ETag', srsRes.headers.get('ETag')!);
     }
 
-    res.status(srsRes.status).send(await srsRes.text());
+    res.status(srsRes.status).send(srsRes.bodyText);
   } catch (err: any) {
     console.error('[RTC] WHIP PATCH error:', err);
     res.status(502).send(`WHIP PATCH error: ${err.message}`);
@@ -785,9 +875,9 @@ router.delete('/rtc/v1/whip/:sessionId', async (req, res) => {
   try {
     const { sessionId } = req.params;
     const srsUrl = `${getSrsApiBaseUrl()}/rtc/v1/whip/${sessionId}`;
-    const srsRes = await fetch(srsUrl, { method: 'DELETE' });
+    const srsRes = await httpClient.requestRaw('DELETE', srsUrl);
     console.log('[RTC] WHIP DELETE:', { sessionId, status: srsRes.status });
-    res.status(srsRes.status).send(await srsRes.text());
+    res.status(srsRes.status).send(srsRes.bodyText);
   } catch (err: any) {
     console.error('[RTC] WHIP DELETE error:', err);
     res.status(502).send(`WHIP DELETE error: ${err.message}`);
@@ -804,29 +894,60 @@ router.post('/rtc/v1/whep/', rawSdpParser, async (req, res) => {
       return res.status(400).send('Missing SDP body or stream query param');
     }
 
+    console.log('[RTC-WHEP] 📥 Request recebido:', { app, stream, sdpLength: sdp?.length });
+
     const sanitizedSdp = srsService.sanitizeSDP(sdp);
 
     const srsUrl = `${getSrsApiBaseUrl()}/rtc/v1/whep/?app=${encodeURIComponent(String(app || 'live'))}&stream=${encodeURIComponent(String(stream))}`;
-    console.log('[RTC] WHEP proxy:', { stream, srsUrl });
+    console.log('[RTC-WHEP] 🔄 Proxy para SRS:', { stream, srsUrl });
 
-    const srsRes = await fetch(srsUrl, {
-      method: 'POST',
+    if (sanitizedSdp.length !== sdp.length) {
+      console.log('[RTC-WHEP] SDP sanitizado:', { originalLen: sdp.length, sanitizedLen: sanitizedSdp.length });
+    }
+
+    const srsRes = await httpClient.requestRaw('POST', srsUrl, sanitizedSdp, {
       headers: { 'Content-Type': 'application/sdp' },
-      body: sanitizedSdp,
     });
+
+    console.log('[RTC-WHEP] 📤 Resposta do SRS:', {
+      stream,
+      status: srsRes.status,
+      statusText: srsRes.statusText,
+      ok: srsRes.ok,
+      location: srsRes.headers.get('location'),
+      etag: srsRes.headers.get('ETag'),
+    });
+
+    if (!srsRes.ok) {
+      console.error('[RTC-WHEP] ❌ SRS retornou erro:', {
+        stream,
+        status: srsRes.status,
+        body: srsRes.bodyText.substring(0, 500),
+      });
+      return res.status(srsRes.status).send(srsRes.bodyText);
+    }
 
     // Rewrite location header for ICE trickle to go through backend proxy
     if (srsRes.headers.get('location')) {
       const loc = srsRes.headers.get('location')!;
       res.set('location', loc.replace('/rtc/v1/whep/', '/api/rtc/v1/whep/'));
+      console.log('[RTC-WHEP] Location reescrito:', { original: loc, rewritten: `/api/rtc/v1/whep/${loc.split('/').pop()}` });
     }
     if (srsRes.headers.get('ETag')) {
       res.set('ETag', srsRes.headers.get('ETag')!);
     }
 
-    const body = await srsRes.text();
-    console.log('[RTC] WHEP response:', { status: srsRes.status, length: body.length });
-    res.status(srsRes.status).send(body);
+    // Remover candidatos ICE com IPs internos (Docker) do SDP answer
+    // para que clientes externos não tentem conectar em IPs inacessíveis
+    const publicIp = process.env.PUBLIC_IP || process.env.SRS_PUBLIC_IP || '';
+    const cleanedSdp = rewritePrivateIpsInSdp(srsRes.bodyText, publicIp);
+
+    if (cleanedSdp !== srsRes.bodyText) {
+      console.log('[RTC-WHEP] 🧹 IPs privados removidos do SDP answer');
+    }
+
+    console.log('[RTC-WHEP] ✅ Sucesso:', { status: 201, sdpLength: cleanedSdp.length, sessionStart: cleanedSdp.substring(0, 80) });
+    res.status(201).send(cleanedSdp);
   } catch (err: any) {
     console.error('[RTC] WHEP proxy error:', err);
     res.status(502).send(`WHEP proxy error: ${err.message}`);
@@ -841,20 +962,18 @@ router.patch('/rtc/v1/whep/:sessionId', rawSdpParser, async (req, res) => {
     const eTag = req.headers['etag'] as string;
 
     const srsUrl = `${getSrsApiBaseUrl()}/rtc/v1/whep/${sessionId}`;
-    const srsRes = await fetch(srsUrl, {
-      method: 'PATCH',
+    const srsRes = await httpClient.requestRaw('PATCH', srsUrl, req.body, {
       headers: {
         'Content-Type': 'application/trickle-ice-sdpfrag',
         'ETag': eTag || '',
       },
-      body: req.body,
     });
 
     if (srsRes.headers.get('ETag')) {
       res.set('ETag', srsRes.headers.get('ETag')!);
     }
 
-    res.status(srsRes.status).send(await srsRes.text());
+    res.status(srsRes.status).send(srsRes.bodyText);
   } catch (err: any) {
     console.error('[RTC] WHEP PATCH error:', err);
     res.status(502).send(`WHEP PATCH error: ${err.message}`);
@@ -867,9 +986,9 @@ router.delete('/rtc/v1/whep/:sessionId', async (req, res) => {
   try {
     const { sessionId } = req.params;
     const srsUrl = `${getSrsApiBaseUrl()}/rtc/v1/whep/${sessionId}`;
-    const srsRes = await fetch(srsUrl, { method: 'DELETE' });
+    const srsRes = await httpClient.requestRaw('DELETE', srsUrl);
     console.log('[RTC] WHEP DELETE:', { sessionId, status: srsRes.status });
-    res.status(srsRes.status).send(await srsRes.text());
+    res.status(srsRes.status).send(srsRes.bodyText);
   } catch (err: any) {
     console.error('[RTC] WHEP DELETE error:', err);
     res.status(502).send(`WHEP DELETE error: ${err.message}`);
