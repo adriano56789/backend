@@ -102,6 +102,55 @@ UserRoutes.get('/', async (req, res) => {
 
 });
 
+// GET /api/users/available - Usuários disponíveis para conversar (online + novos)
+UserRoutes.get('/available', async (req, res) => {
+    try {
+        const { userId, limit = 50 } = req.query;
+
+        // Buscar usuários online OU novos (isNewUser)
+        const filter: any = {
+            isOnline: true
+        };
+
+        // Se userId for fornecido, excluir o próprio usuário e bloqueados
+        if (userId) {
+            const currentUser: any = await User.findOne({ id: userId as string }).select('blockedUsers').lean();
+            const blockedByMe = currentUser?.blockedUsers || [];
+
+            // Também buscar quem bloqueou o usuário
+            const blockers = await User.find({
+                blockedUsers: userId as string
+            }).select('id').lean();
+            const blockedMe = blockers.map((b: any) => b.id);
+
+            const excludeIds = [userId as string, ...blockedByMe, ...blockedMe];
+            filter.id = { $nin: excludeIds };
+        }
+
+        const users = await User.find(filter as any)
+            .sort({ lastSeen: -1, createdAt: -1 })
+            .limit(Number(limit))
+            .select('id name avatarUrl level country isOnline lastSeen isNewUser')
+            .lean();
+
+        const result = users.map((u: any) => ({
+            id: u.id,
+            name: u.name,
+            avatarUrl: u.avatarUrl || '',
+            level: u.level || 1,
+            country: u.country || 'br',
+            isOnline: u.isOnline,
+            isNewUser: u.isNewUser || false,
+            lastSeen: u.lastSeen
+        }));
+
+        res.json(result);
+    } catch (error: any) {
+        console.error('[AVAILABLE-USERS] Erro:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 UserRoutes.get('/:id', async (req, res) => {
 
     try {
