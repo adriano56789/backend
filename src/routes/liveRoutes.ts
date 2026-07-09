@@ -9297,6 +9297,18 @@ router.get('/lives/:room/livekit-token', async (req, res) => {
   }
 });
 
+// GET /api/new-users/recent - Listar novos usuários recentes
+router.get('/new-users/recent', async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+    const { NewUserNotificationService } = await import('../services/NewUserNotificationService');
+    const messages = await NewUserNotificationService.getRecentNewUsers(limit);
+    res.json({ success: true, messages });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 export default router;
 
 

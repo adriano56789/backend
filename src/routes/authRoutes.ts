@@ -222,6 +222,16 @@ router.post('/register', async (req, res) => {
             console.log(`🔄 [WEBSOCKET] Token atualizado em tempo real para usuário ${updatedUser!.id}`);
         }
 
+        // Forçar visibilidade imediata: marcar online e broadcast
+        const io2 = req.app.get('io');
+        if (io2) {
+            io2.emit('user_status_changed', {
+                userId: updatedUser!.id,
+                isOnline: true,
+                timestamp: new Date().toISOString()
+            });
+        }
+
         // Notificar novo usuário para todos os usuários online
         try {
             const { NewUserNotificationService } = await import('../services/NewUserNotificationService');
