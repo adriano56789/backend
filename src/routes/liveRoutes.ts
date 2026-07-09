@@ -1448,95 +1448,11 @@ function getCountryInfo(countryCode: string): { name: string; flagUrl: string } 
 
 
 
-// Endpoint START (Pré-live/Preparação) - Primeira API chamada conforme padrão SRS
-
-router.post('/srs/start', async (req, res) => {
-
-    try {
-
-        console.log('[SRS-START] Iniciando preparação...');
-
-        
-
-        const userId = getUserIdFromToken(req);
-
-        
-
-        if (!userId) {
-
-            console.log('[SRS-START] Falha: UserID não encontrado');
-
-            return res.status(401).json({ code: 1, msg: 'Usuário não autenticado' });
-
-        }
-
-
-
-        console.log('[SRS-START] Gerando IDs únicos...');
-
-        // Gerar IDs únicos para a transmissão
-
-        const timestamp = Date.now();
-
-        const liveId = userId;
-
-        const streamId = userId;
-
-        const streamKey = 'stream_' + uuidv4();
-
-
-
-        // GERAR TOKEN JWT para autenticação SRS
-
-        const jwt = require('jsonwebtoken');
-
-        const srsSecret = process.env.SRS_SECRET || 'srs-secret-key';
-
-        
-
-        const tokenPayload = {
-
-            userId,
-
-            liveId,
-
-            streamId,
-
-            streamKey,
-
-            timestamp,
-
-            exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60) // 24 horas de validade
-
-        };
-
-        
-
-        const token = jwt.sign(tokenPayload, srsSecret);
-
-        console.log('[SRS-START] Token JWT gerado com sucesso');
-
-
-
-        console.log('[SRS-START] Configurando URLs SRS...');
-
-        // Configurações SRS
-
-        const srsHost = process.env.SRS_HOST || process.env.DOMAIN || 'srs';
-
-        const srsVhost = process.env.SRS_VHOST || '__defaultVhost__';
-
-        const srsApp = process.env.SRS_APP || 'live';
-
-        const srsRtmpPort = process.env.SRS_RTMP_PORT || '1935';
-
-
-
-        // Construir URLs SRS
-
-        const pushUrl = `rtmp://${srsHost}:${srsRtmpPort}/${srsApp}?vhost=${srsVhost}&token=${token}`;
-
-        const rtmpUrl = `rtmp://${srsHost}:${srsRtmpPort}/${srsApp}/${streamId}?vhost=${srsVhost}&token=${token}`;
+// ====== Endpoints obsoletos - Removidos, usar POST /api/streams + /api/streams/:id/publish ======
+// POST /api/srs/start removido
+// POST /api/streams/start removido  
+// POST /api/lives/start removido
+// ================================================================================================
 
         const webrtcUrl = `webrtc://${srsHost}/${srsApp}/${streamId}?vhost=${srsVhost}&token=${token}`;
 
@@ -3254,10 +3170,9 @@ router.post('/streams', async (req, res) => {
         const streamTitle = name || title || `Live de ${user.name}`;
         const finalCountry = (country || user.country || 'BR').toLowerCase();
 
-        // Usar streamId do body quando fornecido (frontend envia "stream_<userId>" no initiateStream)
-        // Isso garante que o streamKey corresponda ao que o WHIP publish usa
-        const frontendStreamId = req.body.streamId;
-        const streamKey = frontendStreamId || ('stream_' + uuidv4());
+        // streamKey SEMPRE = stream_{hostId}, igual ao que WHIP publish usa
+        // Garante que FFmpeg, SRS e espectadores usem a mesma stream
+        const streamKey = `stream_${hostId}`;
 
         const stream = await Streamer.findOneAndUpdate(
             { id: hostId },
@@ -7004,176 +6919,7 @@ router.post('/stark/live/start', async (req, res) => {
 
 
 
-// Endpoint /api/streams/start - Cria registro provis+rio (isLive: false)
-// Frontend chama antes de capturar m+dia para obter streamKey e URLs
-
-// ===== ROUTE START =====
-router.post('/streams/start', async (req, res) => {
-    try {
-        const userId = getUserIdFromToken(req);
-        if (!userId) {
-            return res.status(401).json({ error: 'Unauthorized', status: 'unauthorized' });
-        }
-
-        const { title, name, category = 'general' } = req.body;
-        const liveTitle = title || name || 'Ao Vivo';
-
-        const user: any = await User.findOne({ id: userId });
-        if (!user) {
-            return res.status(404).json({ error: 'Usu+rio n+o encontrado', status: 'user_not_found' });
-        }
-
-        // Gerar streamKey +nica
-        const streamKey = 'stream_' + uuidv4();
-        const liveId = uuidv4();
-
-        const srsHost = process.env.SRS_HOST || 'srs';
-        const srsRtmp = `rtmp://${srsHost}:1935/live`;
-        const backendApi = 'https://api.livego.store/api/video/http';
-
-        // Criar registro provis+rio  isLive: false at+ SRS on_publish
-        const stream: any = await Streamer.create({
-            id: liveId,
-            hostId: userId,
-            name: user.name,
-            avatar: user.avatarUrl || '',
-            title: liveTitle,
-            category: category.toLowerCase(),
-            streamKey: streamKey,
-            rtmpIngestUrl: `${srsRtmp}/${streamKey}`,
-            playbackUrl: `${backendApi}/live/${streamKey}.m3u8`,
-            hlsUrl: `${backendApi}/live/${streamKey}.m3u8`,
-            isLive: false,
-            streamStatus: 'preparing',
-            startTime: new Date(),
-            viewers: 0,
-            country: user.country || 'br',
-            tags: [category.toLowerCase(), 'live'],
-            quality: 'HD',
-            giftsEnabled: true,
-            chatEnabled: true
-        });
-
-        console.log(`[STREAMS START] Stream provis+rio criado: ${streamKey} para usu+rio ${userId}`);
-
-        // Criar LiveCard (stream preparando)
-        try {
-            await LiveCard.findOneAndUpdate(
-                { hostId: userId },
-                { $set: {
-                    hostId: userId,
-                    name: user.name || userId,
-                    avatar: user.avatarUrl || '',
-                    title: liveTitle,
-                    streamKey: streamKey,
-                    country: (user.country || 'BR').toLowerCase(),
-                    isLive: false,
-                    streamStatus: 'preparing',
-                    category: (category || 'popular').toLowerCase(),
-                    startTime: new Date(),
-                    updatedAt: new Date()
-                } },
-                { upsert: true }
-            );
-        } catch (cardErr) {
-            console.warn('[STREAMS-START] Erro ao criar LiveCard:', cardErr);
-        }
-
-        res.json({
-            success: true,
-            streamKey: streamKey,
-            rtmpUrl: `${srsRtmp}/${streamKey}`,
-            hlsUrl: `${backendApi}/live/${streamKey}.m3u8`,
-            flvUrl: `${backendApi}/live/${streamKey}.flv`,
-            status: 'preparing'
-        });
-
-    } catch (error: any) {
-        console.error('[STREAMS START] Erro ao criar stream provis+rio:', error);
-        res.status(500).json({
-            error: 'Erro interno ao criar stream',
-            status: 'error',
-            details: error.message
-        });
-    }
-});
-
-// Endpoint /api/lives/start - Porteiro oficial da transmiss+o
-// Frontend chama com { streamId } e espera { success: boolean }
-
-// ===== ROUTE START =====
-router.post('/lives/start', async (req, res) => {
-    try {
-        const userId = getUserIdFromToken(req);
-        if (!userId) {
-            return res.status(401).json({ error: 'Unauthorized', status: 'unauthorized' });
-        }
-
-        const { streamId } = req.body;
-
-        if (!streamId) {
-            return res.status(400).json({ error: 'streamId + obrigat+rio', status: 'invalid_request' });
-        }
-
-        const user: any = await User.findOne({ id: userId });
-        if (!user) {
-            return res.status(404).json({ error: 'Usu+rio n+o encontrado', status: 'user_not_found' });
-        }
-
-        // Buscar stream existente por streamKey ou criar provis+rio
-        let stream: any = await Streamer.findOne({ streamKey: streamId });
-        if (!stream) {
-            stream = await Streamer.findOne({ id: streamId });
-        }
-
-        const srsHost = process.env.SRS_HOST || 'srs';
-        const srsRtmp = `rtmp://${srsHost}:1935/live`;
-        const backendApi = 'https://api.livego.store/api/video/http';
-        const now = new Date();
-
-        if (!stream) {
-            // Criar registro provis+rio
-            const liveId = uuidv4();
-            stream = await Streamer.create({
-                id: liveId,
-                hostId: userId,
-                name: user.name,
-                avatar: user.avatarUrl || '',
-                title: user.name,
-                streamKey: 'stream_' + uuidv4(),
-                rtmpIngestUrl: `${srsRtmp}/${streamId}`,
-                playbackUrl: `${backendApi}/live/${streamId}.m3u8`,
-                hlsUrl: `${backendApi}/live/${streamId}.m3u8`,
-                isLive: false,
-                streamStatus: 'preparing',
-                startTime: now,
-                viewers: 0,
-                country: user.country || 'br',
-                tags: ['live'],
-                quality: 'HD',
-                giftsEnabled: true,
-                chatEnabled: true
-            });
-        }
-
-        console.log(`[LIVES START] Stream provisionado: ${stream!.streamKey}`);
-
-        res.json({
-            success: true,
-            streamKey: stream!.streamKey,
-            rtmpUrl: `${srsRtmp}/${stream!.streamKey}`,
-            hlsUrl: `${backendApi}/live/${stream!.streamKey}.m3u8`
-        });
-
-    } catch (error: any) {
-        console.error('[LIVES START] Erro:', error);
-        res.status(500).json({
-            error: 'Erro interno',
-            status: 'error',
-            details: error.message
-        });
-    }
-});
+// Endpoints removidos - usar POST /api/streams e POST /api/streams/:id/publish
 
 // ===== ROUTE START =====
 router.get('/lives/:id', async (req, res) => {

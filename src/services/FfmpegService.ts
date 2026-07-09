@@ -184,7 +184,7 @@ export async function startStreamTranscode(
 
   // Fallback local
   const inputUrl = `${SRS_RTMP_URL}/${streamKey}`;
-  const outputKey = `${streamKey}_transcoded`;
+  const outputKey = streamKey;
   const outputUrl = `${SRS_RTMP_URL}/${outputKey}`;
 
   const res = options?.resolution || '1280:720';
