@@ -38,7 +38,7 @@ export class UserSearchService {
             await UserIndex.findOneAndUpdate(
                 { userId: user.id },
                 { $set: indexData },
-                { upsert: true, new: true }
+                { upsert: true, returnDocument: 'after' }
             );
 
             console.log(`✅ Usuário ${user.name} adicionado/atualizado no índice de busca`);

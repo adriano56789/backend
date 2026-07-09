@@ -217,7 +217,15 @@ router.post('/', async (req, res) => {
 
         const io = req.app.get('io');
         if (io) {
-            io.to(`user_${receiverId}`).emit('new_message', messageData);
+            // Notificar o destinatário com o mesmo evento que o frontend escuta
+            io.to(`user_${receiverId}`).emit('newChatMessage', messageData);
+
+            // Confirmar ao remetente que a mensagem foi enviada
+            io.to(`user_${senderId}`).emit('message_sent', {
+                tempId: req.body.tempId || messageData.id,
+                messageId: messageData.id,
+                success: true
+            });
 
             io.to(`conversation_${conversationId}`).emit('conversation_update', {
                 conversationId,

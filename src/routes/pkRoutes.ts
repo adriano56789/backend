@@ -281,7 +281,7 @@ router.post('/vote', async (req, res) => {
     const updated = await Battle.findByIdAndUpdate(
       battleId,
       { $inc: { [field]: 1 } },
-      { new: true }
+      { returnDocument: 'after' }
     );
 
     const io = req.app.get('io');
@@ -340,7 +340,7 @@ router.post('/end/:battleId', async (req, res) => {
       else if (battle.scoreB > battle.scoreA) update.winner = battle.streamerB;
     }
 
-    const updated = await Battle.findByIdAndUpdate(battleId, update, { new: true })
+    const updated = await Battle.findByIdAndUpdate(battleId, update, { returnDocument: 'after' })
       .populate('streamerA', 'id name displayName avatarUrl')
       .populate('streamerB', 'id name displayName avatarUrl')
       .populate('winner', 'id name displayName avatarUrl');
@@ -436,7 +436,7 @@ router.post('/invites/:inviteId/respond', async (req, res) => {
     const invite = await PKInvite.findByIdAndUpdate(
       inviteId,
       { $set: { status, respondedAt: new Date() } },
-      { new: true }
+      { returnDocument: 'after' }
     ).populate('inviterId', 'id name displayName avatarUrl');
 
     if (!invite) {

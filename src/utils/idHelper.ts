@@ -94,7 +94,7 @@ export const findUserByAnyId = async (User: any, userId: string) => {
  * ATUALIZAR USUÁRIO - OBRIGATORIAMENTE por ID Real
  * MongoDB ID é bloqueado - convertido automaticamente
  */
-export const updateUserByRealId = async (User: any, userId: string, updateData: any, options: any = { new: true }) => {
+export const updateUserByRealId = async (User: any, userId: string, updateData: any, options: any = { returnDocument: 'after' }) => {
     if (!userId) {
         throw new Error('🚫 Não foi fornecido um argumento para userId');
     }

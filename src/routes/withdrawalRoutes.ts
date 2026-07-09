@@ -146,7 +146,7 @@ router.post('/pix', protect, paymentRateLimit, async (req: AuthRequest, res) => 
                     }
                 }
             },
-            { new: true }
+            { returnDocument: 'after' }
         );
 
         // AUDIT: saque realizado

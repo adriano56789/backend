@@ -275,7 +275,7 @@ export const initSocket = (server: any) => {
                     const senderUpdate = await User.findOneAndUpdate(
                         { id: data.fromUserId },
                         { $inc: { diamonds: -totalValue, enviados: totalValue } },
-                        { new: true }
+                        { returnDocument: 'after' }
                     );
 
                     if (!senderUpdate) {
@@ -312,7 +312,7 @@ export const initSocket = (server: any) => {
                             const receiverUpdate = await User.findOneAndUpdate(
                                 { id: stream.hostId },
                                 { $inc: { receptores: totalValue, diamonds: totalValue, earnings: totalValue } },
-                                { new: true }
+                                { returnDocument: 'after' }
                             );
 
                             if (!receiverUpdate) {

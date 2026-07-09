@@ -468,7 +468,7 @@ class CrudService {
         result = await modelOrCollection.findOneAndUpdate(
           { _id: id },
           { $set: data },
-          { new: true }
+          { returnDocument: 'after' }
         );
         
         if (!result) {
@@ -571,7 +571,7 @@ class CrudService {
             $set: updateData,
             $setOnInsert: { createdAt: new Date() }
           },
-          { upsert: true, new: true, runValidators: true }
+          { upsert: true, returnDocument: 'after', runValidators: true }
         );
         
         document = result;

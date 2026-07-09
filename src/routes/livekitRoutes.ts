@@ -614,7 +614,7 @@ router.post('/webhook', async (req, res) => {
           const updated = await Battle.findOneAndUpdate(
             { _id: battleId as any, status: { $ne: 'finished' } },
             { $set: { status: 'finished', endedAt: new Date() } },
-            { new: true }
+            { returnDocument: 'after' }
           );
 
           if (updated) {

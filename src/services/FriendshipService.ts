@@ -163,7 +163,7 @@ export class FriendshipService {
             endedAt: new Date()
           }
         },
-        { new: true }
+        { returnDocument: 'after' }
       );
 
       if (!friendship) {

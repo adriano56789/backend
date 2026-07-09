@@ -99,7 +99,7 @@ router.put('/user/:userId', async (req: Request, res: Response) => {
                     updatedAt: new Date()
                 }
             },
-            { upsert: true, new: true }
+            { upsert: true, returnDocument: 'after' }
         );
 
         // Persistir atividade de atualização de configurações de zoom
@@ -164,7 +164,7 @@ router.post('/user/:userId/reset', async (req: Request, res: Response) => {
                     updatedAt: new Date()
                 }
             },
-            { upsert: true, new: true }
+            { upsert: true, returnDocument: 'after' }
         );
 
         // Persistir atividade de reset de configurações de zoom

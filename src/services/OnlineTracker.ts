@@ -22,7 +22,7 @@ class OnlineTracker {
             {
                 $set: { streamId, userId, role, userName, userAvatar, joinedAt: new Date() }
             },
-            { upsert: true, new: true }
+            { upsert: true, returnDocument: 'after' }
         );
 
         const [fans, visitors] = await Promise.all([

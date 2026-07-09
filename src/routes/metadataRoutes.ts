@@ -544,7 +544,7 @@ router.patch('/notifications/:id/read', async (req, res) => {
         const notification = await LiveNotification.findOneAndUpdate(
             { _id: id as any },
             { read: true },
-            { new: true }
+            { returnDocument: 'after' }
         );
         
         if (!notification) {
@@ -713,7 +713,7 @@ router.patch('/notifications/:id', async (req, res) => {
         const updated = await LiveNotification.findByIdAndUpdate(
             id,
             { $set: sanitizedUpdates },
-            { new: true }
+            { returnDocument: 'after' }
         );
 
         console.log(`[NOTIFICATIONS] Notificação ${id} atualizada pelo usuário ${userId}:`, sanitizedUpdates);

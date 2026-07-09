@@ -34,7 +34,7 @@ router.get('/users/:id/status', async (req: Request, res: Response) => {
             userStatus = await UserStatus.findOneAndUpdate(
                 { userId: id },
                 { $setOnInsert: { userId: id, isOnline: false, lastSeen: new Date() } },
-                { upsert: true, new: true }
+                { upsert: true, returnDocument: 'after' }
             );
         }
 
@@ -62,7 +62,7 @@ router.post('/users/:id/online', async (req: Request, res: Response) => {
         await UserStatus.findOneAndUpdate(
             { userId: id },
             { $set: { isOnline: true, lastSeen: now } },
-            { upsert: true, new: true }
+            { upsert: true, returnDocument: 'after' }
         );
 
         await User.findOneAndUpdate(
@@ -117,7 +117,7 @@ router.post('/users/:id/offline', async (req: Request, res: Response) => {
         await UserStatus.findOneAndUpdate(
             { userId: id },
             { $set: { isOnline: false, lastSeen: now } },
-            { upsert: true, new: true }
+            { upsert: true, returnDocument: 'after' }
         );
 
         await User.findOneAndUpdate(
@@ -191,7 +191,7 @@ router.put('/users/:id/status', async (req: Request, res: Response) => {
         const userStatus = await UserStatus.findOneAndUpdate(
             { userId: id },
             { $set: updateData },
-            { upsert: true, new: true }
+            { upsert: true, returnDocument: 'after' }
         );
 
         res.json({ 

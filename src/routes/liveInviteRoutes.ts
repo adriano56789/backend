@@ -38,7 +38,7 @@ router.post('/join', async (req, res) => {
                 socketId: socketId || null,
                 lastActive: new Date()
             },
-            { upsert: true, new: true }
+            { upsert: true, returnDocument: 'after' }
         );
 
         const io = (req as any).app.get('io');
@@ -317,7 +317,7 @@ router.post('/invite/respond', async (req, res) => {
         const invite = await LiveInvite.findByIdAndUpdate(
             inviteId,
             { status: action, updatedAt: new Date() },
-            { new: true }
+            { returnDocument: 'after' }
         );
 
         if (!invite) {

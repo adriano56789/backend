@@ -287,7 +287,7 @@ router.put('/:userId/photos/:obraId/set-main', async (req, res) => {
         const updatedPhoto = await ProfilePhoto.findOneAndUpdate(
             { obraId: obraId },
             { isMain: true, updatedAt: new Date() },
-            { new: true }
+            { returnDocument: 'after' }
         );
 
         if (updatedPhoto) {
@@ -351,7 +351,7 @@ router.put('/:userId/photos/:obraId/order', async (req, res) => {
         const photo = await ProfilePhoto.findOneAndUpdate(
             { obraId: obraId, userId, photoType: 'gallery' },
             { $set: { order, updatedAt: new Date() } },
-            { new: true }
+            { returnDocument: 'after' }
         );
 
         if (!photo) {
@@ -541,7 +541,7 @@ router.put('/me/photos/:obraId/set-main', protect, async (req: AuthRequest, res)
         const updatedPhoto = await ProfilePhoto.findOneAndUpdate(
             { obraId: obraId },
             { $set: { isMain: true, updatedAt: new Date() } },
-            { new: true }
+            { returnDocument: 'after' }
         );
 
         if (updatedPhoto) {

@@ -175,7 +175,7 @@ router.post('/publish', async (req, res) => {
         await Streamer.findOneAndUpdate(
             { id: storedId },
             { $set: streamerData },
-            { upsert: true, new: true }
+            { upsert: true, returnDocument: 'after' }
         );
 
         // Atualizar status do usuário

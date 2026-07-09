@@ -200,7 +200,7 @@ router.post('/', async (req, res) => {
             },
             { 
                 upsert: true, // Criar se não existir
-                new: true
+                returnDocument: 'after'
             }
         ))!;
 
@@ -300,7 +300,7 @@ router.post('/send', async (req, res) => {
             },
             { 
                 upsert: true,
-                new: true
+                returnDocument: 'after'
             }
         ))!;
 
@@ -411,7 +411,7 @@ router.post('/:id/messages', async (req, res) => {
             },
             { 
                 upsert: true, // Criar se não existir
-                new: true
+                returnDocument: 'after'
             }
         ))!;
 

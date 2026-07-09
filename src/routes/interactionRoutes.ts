@@ -136,7 +136,7 @@ router.post('/streams/:id/private-invite', async (req, res) => {
                         }
                     }
                 },
-                { new: true }
+                { returnDocument: 'after' }
             ),
             User.findOneAndUpdate(
                 { id: userId },
@@ -150,7 +150,7 @@ router.post('/streams/:id/private-invite', async (req, res) => {
                         }
                     }
                 },
-                { new: true }
+                { returnDocument: 'after' }
             )
         ]);
 
@@ -504,7 +504,7 @@ router.post('/streams/:id/interactions', async (req, res) => {
                     }
                 }
             },
-            { new: true }
+            { returnDocument: 'after' }
         );
 
         console.log(`✅ [INTERACTION] Resposta MongoDB recebida. Atividades persistidas. Total: ${updateResult?.recentActivities?.length}`);
@@ -1168,7 +1168,7 @@ router.post('/visitors/record', async (req, res) => {
         await Visitor.findOneAndUpdate(
             { visitorId, visitedId },
             { $set: { visitedAt: new Date() } },
-            { upsert: true, new: true }
+            { upsert: true, returnDocument: 'after' }
         );
 
         res.json({ success: true });
@@ -1228,9 +1228,146 @@ router.get('/chats/:id/messages', async (req, res) => {
     }
 });
 
-router.put('/streams/:id/quality', async (req, res) => res.json({ success: true, stream: {} }));
-router.post('/streams/:id/toggle-mic', async (req, res) => res.json({}));
-router.post('/streams/:id/toggle-sound', async (req, res) => res.json({}));
+// PUT /api/interactions/streams/:id/quality - Atualizar qualidade da transmissão
+router.put('/streams/:id/quality', async (req, res) => {
+    try {
+        const { id: streamId } = req.params;
+        const { quality, userId } = req.body;
+        
+        const { Streamer } = await import('../models');
+        const stream = await Streamer.findOneAndUpdate(
+            { id: streamId, hostId: userId },
+            { $set: { quality: quality || 'HD' } },
+            { returnDocument: 'after' }
+        );
+        
+        if (!stream) {
+            return res.status(404).json({ success: false, error: 'Stream not found' });
+        }
+        
+        res.json({ success: true, stream });
+    } catch (error: any) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// POST /api/interactions/streams/:id/toggle-mic - Alternar microfone (mute/unmute)
+router.post('/streams/:id/toggle-mic', async (req, res) => {
+    try {
+        const { id: streamId } = req.params;
+        const { userId } = req.body;
+        
+        if (!userId) {
+            return res.status(400).json({ success: false, error: 'userId é obrigatório' });
+        }
+        
+        const { Streamer } = await import('../models');
+        const stream = await Streamer.findOne({ id: streamId });
+        if (!stream) {
+            return res.status(404).json({ success: false, error: 'Stream not found' });
+        }
+        
+        // Verificar se o usuário é host ou co-host
+        const isHost = stream.hostId === userId;
+        
+        // Alternar estado do microfone
+        const newMicState = !stream.microphoneEnabled;
+        
+        await Streamer.findOneAndUpdate(
+            { id: streamId },
+            { $set: { microphoneEnabled: newMicState } }
+        );
+        
+        // Notificar todos na stream sobre mudança no microfone
+        const io = req.app.get('io');
+        if (io) {
+            io.to(streamId).emit('mic_toggled', {
+                streamId,
+                userId,
+                microphoneEnabled: newMicState,
+                timestamp: new Date().toISOString()
+            });
+            console.log(`[MIC] Microfone ${newMicState ? 'ativado' : 'mutado'} por ${userId} na stream ${streamId}`);
+        }
+        
+        res.json({
+            success: true,
+            microphoneEnabled: newMicState,
+            message: `Microfone ${newMicState ? 'ativado' : 'mutado'} com sucesso`
+        });
+    } catch (error: any) {
+        console.error('[TOGGLE-MIC] Erro:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// POST /api/interactions/streams/:id/toggle-sound - Alternar som (áudio do stream)
+router.post('/streams/:id/toggle-sound', async (req, res) => {
+    try {
+        const { id: streamId } = req.params;
+        const { userId } = req.body;
+        
+        if (!userId) {
+            return res.status(400).json({ success: false, error: 'userId é obrigatório' });
+        }
+        
+        const { Streamer } = await import('../models');
+        const stream = await Streamer.findOne({ id: streamId });
+        if (!stream) {
+            return res.status(404).json({ success: false, error: 'Stream not found' });
+        }
+        
+        // Alternar estado do som
+        const newSoundState = !stream.soundEnabled;
+        
+        await Streamer.findOneAndUpdate(
+            { id: streamId },
+            { $set: { soundEnabled: newSoundState } }
+        );
+        
+        // Notificar todos na stream sobre mudança no som
+        const io = req.app.get('io');
+        if (io) {
+            io.to(streamId).emit('sound_toggled', {
+                streamId,
+                userId,
+                soundEnabled: newSoundState,
+                timestamp: new Date().toISOString()
+            });
+            console.log(`[SOUND] Som ${newSoundState ? 'ativado' : 'silenciado'} por ${userId} na stream ${streamId}`);
+        }
+        
+        res.json({
+            success: true,
+            soundEnabled: newSoundState,
+            message: `Som ${newSoundState ? 'ativado' : 'silenciado'} com sucesso`
+        });
+    } catch (error: any) {
+        console.error('[TOGGLE-SOUND] Erro:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// GET /api/interactions/streams/:id/audio-status - Obter status de áudio atual
+router.get('/streams/:id/audio-status', async (req, res) => {
+    try {
+        const { id: streamId } = req.params;
+        const { Streamer } = await import('../models');
+        const stream = await Streamer.findOne({ id: streamId }).select('microphoneEnabled soundEnabled').lean();
+        
+        if (!stream) {
+            return res.status(404).json({ success: false, error: 'Stream not found' });
+        }
+        
+        res.json({
+            success: true,
+            microphoneEnabled: (stream as any).microphoneEnabled !== false,
+            soundEnabled: (stream as any).soundEnabled !== false
+        });
+    } catch (error: any) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 router.post('/streams/:id/auto-follow', async (req, res) => res.json({}));
 router.post('/streams/:id/toggle-auto-invite', async (req, res) => {
     try {

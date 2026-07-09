@@ -330,7 +330,7 @@ router.put('/user/:userId/avatar', protect, async (req, res) => {
         const updatedUser = await User.findOneAndUpdate(
             { id: userId },
             { $set: { avatarUrl, updatedAt: new Date() } },
-            { new: true }
+            { returnDocument: 'after' }
         );
 
         // Emitir evento WebSocket para atualização em tempo real

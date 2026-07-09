@@ -45,7 +45,7 @@ export class FollowersService {
               followedAt: new Date()
             }
           },
-          { new: true }
+          { returnDocument: 'after' }
         );
       } else {
         // Criar novo follow
@@ -142,7 +142,7 @@ export class FollowersService {
             unfollowedAt: new Date()
           }
         },
-        { new: true }
+        { returnDocument: 'after' }
       );
 
       if (!follow) {

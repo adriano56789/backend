@@ -84,7 +84,7 @@ router.post('/webhook/purchase', webhookRateLimit, async (req, res) => {
               }
             }
           },
-          { new: true }
+          { returnDocument: 'after' }
         );
 
         if (!user) {
@@ -302,7 +302,7 @@ router.post('/notification', webhookRateLimit, async (req, res) => {
           const user = await User.findOneAndUpdate(
             { id: order.userId },
             { $inc: { diamonds: order.diamonds } },
-            { new: true }
+            { returnDocument: 'after' }
           );
 
           if (user) {

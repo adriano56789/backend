@@ -1,6 +1,7 @@
 import express from 'express';
 import { Order, Streamer, User, LiveCard, StreamParticipant, StreamLike, GiftTransaction, ChatMessage, Gift } from '../models';
-import { WebhookSignatureValidator } from 'mercadopago';
+// @ts-ignore - local mercadopago SDK
+const { WebhookSignatureValidator } = require('mercadopago');
 
 const router = express.Router();
 
@@ -43,6 +44,12 @@ router.post('/', async (req, res) => {
 
         // ─── on_publish / stream started ───────────────────────────────────
         if (action === 'on_publish' || action === 'publish' || event.includes('stream started') || event.includes('on publish')) {
+            // Ignorar streams internas de transcodificação
+            if (streamKey && streamKey.endsWith('_transcoded')) {
+                console.log(`[WEBHOOK-SRS] ⏭️ Stream transcodificada ignorada: ${streamKey}`);
+                return res.status(200).json({ code: 0 });
+            }
+
             if (client_id && isDuplicate(client_id, 'on_publish')) {
                 return res.status(200).json({ code: 0 });
             }
@@ -116,7 +123,7 @@ router.post('/', async (req, res) => {
             await Streamer.findOneAndUpdate(
                 { id: streamKey },
                 { $set: streamerData },
-                { upsert: true, new: true }
+                { upsert: true, returnDocument: 'after' }
             );
 
             await User.findOneAndUpdate(
@@ -174,6 +181,11 @@ router.post('/', async (req, res) => {
 
         // ─── on_unpublish / stream ended ──────────────────────────────────
         if (action === 'on_unpublish' || action === 'unpublish' || event.includes('stream ended') || event.includes('stream stopped') || event.includes('live stream ended') || event.includes('on unpublish')) {
+            if (streamKey && streamKey.endsWith('_transcoded')) {
+                console.log(`[WEBHOOK-SRS] ⏭️ Stream transcodificada ignorada: ${streamKey}`);
+                return res.status(200).json({ code: 0 });
+            }
+
             if (client_id && isDuplicate(client_id, 'on_unpublish')) {
                 return res.status(200).json({ code: 0 });
             }
@@ -206,7 +218,8 @@ router.post('/', async (req, res) => {
                             io.emit('stream_ended', { streamId: streamKey, hostId: updated.hostId, timestamp: new Date().toISOString() });
                             io.emit('stream_stopped', { streamId: streamKey, hostId: updated.hostId, timestamp: new Date().toISOString() });
                             io.emit('live_stream_ended', { streamId: streamKey, message: 'Transmissão encerrada', timestamp: new Date().toISOString() });
-                            io.emit('viewers_count_updated', { count: 0, streamId: streamKey });
+                            io.emit('online_users_updated', { streamId: streamKey, count: 0 });
+                            // viewers_count_updated substituído por online_users_updated
                         }
                     }
                     reconnectionTimers.delete(streamKey);
@@ -582,7 +595,7 @@ router.post('/mercadopago', async (req, res) => {
                             }
                         }
                     },
-                    { new: true }
+                    { returnDocument: 'after' }
                 );
 
                 if (!user) {

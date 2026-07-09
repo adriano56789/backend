@@ -251,12 +251,12 @@ UserRoutes.patch("/:id", async (req, res) => {
             }
         }
 
-        let user = await User.findOneAndUpdate({ id: paramId }, updateData, { new: true });
+        let user = await User.findOneAndUpdate({ id: paramId }, updateData, { returnDocument: 'after' });
         if (!user) {
             user = await User.findOneAndUpdate(
                 { id: { $regex: new RegExp('^' + paramId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i') } },
                 updateData,
-                { new: true }
+                { returnDocument: 'after' }
             );
         }
         if (!user) {
@@ -312,7 +312,7 @@ UserRoutes.delete('/:userId/photos/:photoId', async (req, res) => {
         const updated = await User.findOneAndUpdate(
             { id: userId },
             { $set: { obras: newObras, avatarUrl: newAvatarUrl } },
-            { new: true }
+            { returnDocument: 'after' }
         );
 
         await ProfilePhoto.updateOne(
@@ -1827,7 +1827,7 @@ UserRoutes.post('/:id/visit', async (req, res) => {
 
                 upsert: true, // Criar se não existir
 
-                new: true
+                returnDocument: 'after'
 
             }
 
@@ -1883,7 +1883,7 @@ UserRoutes.post('/:id/buy-diamonds', async (req, res) => {
 
             { $inc: { diamonds: amount } },
 
-            { new: true }
+            { returnDocument: 'after' }
 
         );
 
@@ -1907,7 +1907,7 @@ UserRoutes.get('/:id/location-permission', async (req, res) => {
 
 UserRoutes.post('/:id/location-permission', async (req, res) => {
 
-    const user = await User.findOneAndUpdate({ id: req.params.id }, { $set: { locationPermission: req.body.status } }, { new: true });
+    const user = await User.findOneAndUpdate({ id: req.params.id }, { $set: { locationPermission: req.body.status } }, { returnDocument: 'after' });
 
     res.json({ success: !!user, user: standardizeUserResponse(user) || {} as any });
 
@@ -1915,7 +1915,7 @@ UserRoutes.post('/:id/location-permission', async (req, res) => {
 
 UserRoutes.post('/:id/privacy/activity', async (req, res) => {
 
-    const user = await User.findOneAndUpdate({ id: req.params.id }, { $set: { showActivityStatus: req.body.show } }, { new: true });
+    const user = await User.findOneAndUpdate({ id: req.params.id }, { $set: { showActivityStatus: req.body.show } }, { returnDocument: 'after' });
 
     res.json({ success: !!user, user: standardizeUserResponse(user) || {} as any });
 
@@ -1923,7 +1923,7 @@ UserRoutes.post('/:id/privacy/activity', async (req, res) => {
 
 UserRoutes.post('/:id/privacy/location', async (req, res) => {
 
-    const user = await User.findOneAndUpdate({ id: req.params.id }, { $set: { showLocation: req.body.show } }, { new: true });
+    const user = await User.findOneAndUpdate({ id: req.params.id }, { $set: { showLocation: req.body.show } }, { returnDocument: 'after' });
 
     res.json({ success: !!user, user: standardizeUserResponse(user) || {} as any });
 
@@ -1941,7 +1941,7 @@ UserRoutes.get('/:id/received-gifts', async (req, res) => {
 
 UserRoutes.post('/:id/set-active-frame', async (req, res) => {
 
-    const user = await User.findOneAndUpdate({ id: req.params.id }, { $set: { activeFrameId: req.body.frameId } }, { new: true });
+    const user = await User.findOneAndUpdate({ id: req.params.id }, { $set: { activeFrameId: req.body.frameId } }, { returnDocument: 'after' });
 
     res.json({ success: !!user, user: standardizeUserResponse(user) });
 
@@ -1957,7 +1957,7 @@ UserRoutes.get('/:id/avatar-protection', async (req, res) => {
 
 UserRoutes.post('/:id/avatar-protection', async (req, res) => {
 
-    const user = await User.findOneAndUpdate({ id: req.params.id }, { $set: { isAvatarProtected: req.body.isEnabled } }, { new: true });
+    const user = await User.findOneAndUpdate({ id: req.params.id }, { $set: { isAvatarProtected: req.body.isEnabled } }, { returnDocument: 'after' });
 
 
 
@@ -2257,7 +2257,7 @@ UserRoutes.post('/:userId/frames/equip', async (req, res) => {
 
             { $set: { activeFrameId: frameId } },
 
-            { new: true }
+            { returnDocument: 'after' }
 
         );
 
@@ -2317,7 +2317,7 @@ UserRoutes.post('/:userId/frames/unequip', async (req, res) => {
 
             { $set: { activeFrameId: null } },
 
-            { new: true }
+            { returnDocument: 'after' }
 
         );
 

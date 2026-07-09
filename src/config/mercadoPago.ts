@@ -1,5 +1,7 @@
-import MercadoPagoConfig from 'mercadopago';
-import { Payment } from 'mercadopago';
+// @ts-ignore - local mercadopago SDK
+const MercadoPagoConfig: any = require('mercadopago').default || require('mercadopago');
+// @ts-ignore
+const { Payment } = require('mercadopago');
 
 const accessToken = process.env.MERCADO_PAGO_ACCESS_TOKEN || '';
 

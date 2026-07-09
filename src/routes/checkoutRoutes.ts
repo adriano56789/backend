@@ -502,7 +502,7 @@ router.post('/confirm',
                     confirmedAt: new Date()
                 }
             }, 
-            { new: true }
+            { returnDocument: 'after' }
         );
 
         const io = req.app.get('io');
@@ -521,7 +521,7 @@ router.post('/confirm',
                     }
                 }
             },
-            { new: true }
+            { returnDocument: 'after' }
         ));
 
         if (!user) {

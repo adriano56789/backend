@@ -157,7 +157,7 @@ export class FraudManagementRoutes {
                 const ban = await BannedEntity.findOneAndUpdate(
                     { entityType, entityId, active: true },
                     { $set: { active: false } },
-                    { new: true }
+                    { returnDocument: 'after' }
                 );
 
                 if (!ban) {

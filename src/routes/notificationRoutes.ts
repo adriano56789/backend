@@ -21,7 +21,7 @@ router.post('/notifications/register-token', async (req, res) => {
     await DeviceToken.findOneAndUpdate(
       { token },
       { $set: { userId, token, platform } },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: 'after' }
     );
 
     console.log(`[FCM] Token registrado para usuário ${userId}`);

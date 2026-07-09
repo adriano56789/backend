@@ -318,7 +318,7 @@ async function processGiftSend(fromUserId: string, toUserId: string, giftId: str
             },
             { 
                 upsert: true, // Criar se não existir
-                new: true
+                returnDocument: 'after'
             }
         );
         

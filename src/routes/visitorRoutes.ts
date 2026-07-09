@@ -31,7 +31,7 @@ router.post('/record', async (req, res) => {
                     visitorAvatar: ''
                 }
             },
-            { upsert: true, new: true }
+            { upsert: true, returnDocument: 'after' }
         );
 
         // Tenta enriquecer com dados do usuário (não bloqueante)

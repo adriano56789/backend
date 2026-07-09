@@ -596,19 +596,13 @@ io.on('connection', (socket) => {
                 }
             }
 
-            const onlineUsersInStream = Array.from(onlineUsers.values())
-                .filter((user: any) => user.streamId === streamId)
-                .map((user: any) => ({ userId: user.userId, lastSeen: user.lastSeen }));
+            const onlineCount = Array.from(onlineUsers.values()).filter((u: any) => u.streamId === streamId).length;
 
             io.to(streamId).emit('online_users_updated', {
                 streamId,
-                users: onlineUsersInStream,
-                count: onlineUsersInStream.length
+                count: onlineCount
             });
-            io.to(streamId).emit('viewer_count_update', {
-                streamId,
-                count: onlineUsersInStream.length
-            });
+            // viewer_count_update removido — redundante com online_users_updated.count
 
             // Persistir viewer count no banco (sem bloquear o socket)
             const viewerCount = onlineUsersInStream.length;
@@ -737,28 +731,21 @@ io.on('connection', (socket) => {
                         streamId: userEntry.streamId
                     });
 
-                    // Enviar lista atualizada de usuários online
-                    const onlineUsersInStream = Array.from(onlineUsers.values())
-                        .filter(user => user.streamId === userEntry.streamId)
-                        .map(user => ({ userId: user.userId, lastSeen: user.lastSeen }));
+                    // Enviar apenas contagem (NÃO a lista completa de usuários)
+                    const onlineCount = Array.from(onlineUsers.values())
+                        .filter((u: any) => u.streamId === userEntry.streamId).length;
 
                     io.to(userEntry.streamId).emit('online_users_updated', {
                         streamId: userEntry.streamId,
-                        users: onlineUsersInStream,
-                        count: onlineUsersInStream.length
-                    });
-                    io.to(userEntry.streamId).emit('viewer_count_update', {
-                        streamId: userEntry.streamId,
-                        count: onlineUsersInStream.length
+                        count: onlineCount
                     });
 
                     // Persistir viewer count no banco
-                    const count = onlineUsersInStream.length;
                     try {
                         const { Streamer } = await import('./models/Streamer');
                         await Streamer.findOneAndUpdate(
                             { id: userEntry.streamId },
-                            { $set: { viewers: count } }
+                            { $set: { viewers: onlineCount } }
                         ).catch(() => {});
                     } catch (e) {
                         // Falha silenciosa
@@ -1215,7 +1202,7 @@ io.on('connection', (socket) => {
             const user = await User.findOneAndUpdate(
                 { id: data.userId },
                 { $set: { diamonds: data.diamonds } },
-                { new: true }
+                { returnDocument: 'after' }
             );
 
             if (user) {
@@ -1410,7 +1397,7 @@ io.on('connection', (socket) => {
             const updated = await Battle.findOneAndUpdate(
                 { _id: battleId as any },
                 { $inc: { [field]: 1 } },
-                { new: true }
+                { returnDocument: 'after' }
             );
             if (updated) {
                 io.to(`battle_${battleId}`).emit('pk_heart_update', {

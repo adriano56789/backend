@@ -120,7 +120,7 @@ router.post('/avatar', protect, avatarUpload.single('avatar'), async (req, res) 
                     }
                 }
             },
-            { new: true } // Forçar retorno do documento atualizado
+            { returnDocument: 'after' } // Forçar retorno do documento atualizado
         );
 
         // Verificar se já existe avatar principal para o usuário
@@ -147,7 +147,7 @@ router.post('/avatar', protect, avatarUpload.single('avatar'), async (req, res) 
                         uploadedAt: new Date()
                     }
                 },
-                { new: true }
+                { returnDocument: 'after' }
             );
         } else {
             // Criar novo avatar
@@ -247,7 +247,7 @@ router.post('/avatar/:userId', avatarUpload.single('avatar'), async (req, res) =
         await User.findOneAndUpdate(
             { id: userId },
             { $set: { avatarUrl } },
-            { new: true }
+            { returnDocument: 'after' }
         );
 
         // Criar registro em ProfilePhoto (obras) - como gallery para aparecer na galeria
@@ -271,7 +271,7 @@ router.post('/avatar/:userId', avatarUpload.single('avatar'), async (req, res) =
                 }
                 }
             },
-            { upsert: true, new: true }
+            { upsert: true, returnDocument: 'after' }
         );
 
         // Verificar se já existem fotos na galeria e incrementar order
@@ -377,7 +377,7 @@ router.post('/cover/:id', coverUpload.single('cover'), async (req, res) => {
         const stream = await Streamer.findOneAndUpdate(
             { id: req.params.id },
             { $set: { avatar: coverUrl } },
-            { new: true }
+            { returnDocument: 'after' }
         );
 
         if (!stream) {

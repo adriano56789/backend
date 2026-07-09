@@ -217,20 +217,35 @@ export async function startStreamTranscode(
   activeTranscoders.set(streamKey, proc);
   registerFfmpegProcess(proc);
 
+  let lastDataTime = Date.now();
+  let stallCheckInterval: NodeJS.Timeout | null = null;
+
   proc.stderr?.on('data', (data: Buffer) => {
+    lastDataTime = Date.now();
     const msg = data.toString();
     if (msg.includes('Error') || msg.includes('error')) {
       console.warn(`[FFMPEG-TRANSCODE] ${streamKey}: ${msg.trim()}`);
     }
   });
 
+  stallCheckInterval = setInterval(() => {
+    const idleTime = Date.now() - lastDataTime;
+    if (idleTime > 30000) {
+      console.warn(`[FFMPEG-TRANSCODE] ${streamKey} sem dados por ${idleTime}ms, encerrando processo`);
+      try { proc.kill('SIGTERM'); } catch {}
+      if (stallCheckInterval) clearInterval(stallCheckInterval);
+    }
+  }, 10000);
+
   proc.on('close', (code) => {
     activeTranscoders.delete(streamKey);
+    if (stallCheckInterval) clearInterval(stallCheckInterval);
     console.log(`[FFMPEG-TRANSCODE] Transcodificador ${streamKey} encerrado (código ${code})`);
   });
 
   proc.on('error', (err) => {
     activeTranscoders.delete(streamKey);
+    if (stallCheckInterval) clearInterval(stallCheckInterval);
     console.error(`[FFMPEG-TRANSCODE] Erro no transcodificador ${streamKey}:`, err.message);
   });
 

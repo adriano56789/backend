@@ -119,6 +119,29 @@ router.post('/', async (req, res) => {
     }
 });
 
+// GET /api/followers/:userId/ids - Listar apenas IDs dos seguidores (formato plano, útil para convites PK)
+router.get('/:userId/ids', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        
+        const followingRelations = await Followers.find({
+            followerId: userId,
+            isActive: true
+        }).select('followingId').lean();
+        
+        const ids = followingRelations.map(r => r.followingId);
+        
+        res.json({
+            success: true,
+            userIds: ids,
+            total: ids.length
+        });
+    } catch (error: any) {
+        console.error('❌ Erro ao buscar IDs de seguidos:', error);
+        res.status(500).json({ success: false, error: 'Erro interno' });
+    }
+});
+
 // GET /api/followers/:userId - Listar seguidores de um usuário
 router.get('/:userId', async (req, res) => {
     try {
@@ -271,6 +294,30 @@ router.delete('/:id', async (req, res) => {
     } catch (error: any) {
         console.error('❌ Erro ao deixar de seguir:', error);
         res.status(500).json({ error: 'Erro interno ao deixar de seguir' });
+    }
+});
+
+// GET /api/followers/:userId/stats - Estatísticas de seguidores/seguindo
+router.get('/:userId/stats', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        
+        const [followerCount, followingCount] = await Promise.all([
+            Followers.countDocuments({ followingId: userId, isActive: true }),
+            Followers.countDocuments({ followerId: userId, isActive: true })
+        ]);
+        
+        res.json({
+            success: true,
+            data: {
+                followers: followerCount,
+                following: followingCount,
+                userId
+            }
+        });
+    } catch (error: any) {
+        console.error('❌ Erro ao buscar stats de seguidores:', error);
+        res.status(500).json({ success: false, error: 'Erro interno ao buscar estatísticas' });
     }
 });
 

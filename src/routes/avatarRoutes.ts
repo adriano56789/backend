@@ -90,7 +90,7 @@ router.post('/users/:id/frames/buy', async (req, res) => {
     const admUser = await User.findOneAndUpdate(
       { email: ADM_EMAIL },
       { $inc: { earnings: price } },
-      { new: true }
+      { returnDocument: 'after' }
     );
 
     await user.save();

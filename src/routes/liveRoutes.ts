@@ -7,6 +7,7 @@ import { Streamer, User, Message, Followers, Friendship, Block, UserLevel, Strea
 import { getUserIdFromToken, generateJWT } from '../middleware/auth';
 import { ResponseHelper } from '../middleware/responseHelper';
 import { ENV } from '../config/env';
+import { generateLiveKitToken } from '../services/LiveKitTokenService';
 
 import { 
 
@@ -1907,7 +1908,7 @@ router.post('/srs/publish', async (req, res) => {
         await Streamer.findOneAndUpdate(
             { id: streamId },
             streamerData,
-            { upsert: true, new: true }
+            { upsert: true, returnDocument: 'after' }
         );
 
 
@@ -2648,7 +2649,7 @@ router.post('/live/start', async (req, res) => {
         const newStream = await Streamer.findOneAndUpdate(
             { hostId: userId },
             { $set: streamerData },
-            { upsert: true, new: true, setDefaultsOnInsert: true }
+            { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
         );
 
         // Não marcar isLive:true aqui — stream é só rascunho (isLive:false)
@@ -2673,7 +2674,7 @@ router.post('/live/start', async (req, res) => {
                 lastSeen: new Date(),
                 updatedAt: new Date()
             } },
-            { upsert: true, new: true }
+            { upsert: true, returnDocument: 'after' }
         );
 
 
@@ -2876,7 +2877,7 @@ router.post('/streams/:id/join', async (req, res) => {
                     currentStreamId: id,
                     lastActive: new Date()
                 },
-                { upsert: true, new: true }
+                { upsert: true, returnDocument: 'after' }
             );
         } catch (liveUserErr: any) {
             console.error(`[STREAM-JOIN] Erro ao registrar LiveUser para ${userId} na live ${id}:`, liveUserErr?.message || liveUserErr);
@@ -3280,7 +3281,7 @@ router.post('/streams', async (req, res) => {
                     state: user.state
                 }
             },
-            { upsert: true, new: true, setDefaultsOnInsert: true }
+            { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
         );
 
         res.json({ success: true, stream });
@@ -3314,7 +3315,7 @@ router.post('/streams/:id/publish', async (req, res) => {
                     startTime: new Date()
                 }
             },
-            { new: true }
+            { returnDocument: 'after' }
         );
 
         if (!stream) {
@@ -4204,7 +4205,7 @@ router.post('/start', async (req, res) => {
         flvUrl: `${backendHttp}/live/${streamId}.flv`,
         hlsUrl: `${backendHttp}/live/${streamId}.m3u8`
       } },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: 'after' }
     );
 
     console.log(`🎬 [SRS] Live iniciada: streamId=${streamId}, userId=${userId}`);
@@ -5022,7 +5023,7 @@ router.put('/streams/:id', async (req, res) => {
 
             updateData, 
 
-            { new: true, runValidators: true }
+            { returnDocument: 'after', runValidators: true }
 
         );
 
@@ -5062,7 +5063,7 @@ router.patch('/streams/:id', async (req, res) => {
 
     if (req.body.country) req.body.country = req.body.country.toLowerCase();
 
-    const stream = await Streamer.findOneAndUpdate({ id: req.params.id }, req.body, { new: true });
+    const stream = await Streamer.findOneAndUpdate({ id: req.params.id }, req.body, { returnDocument: 'after' });
 
     res.json({ success: true, stream });
 
@@ -5126,7 +5127,7 @@ router.post('/streams/:id/urls', async (req: express.Request, res: express.Respo
         const updatedStream = await Streamer.findOneAndUpdate(
             { id: streamId },
             updateData,
-            { new: true }
+            { returnDocument: 'after' }
         );
 
         console.log(`���� [URLS] Configura+�+�es atualizadas para stream ${streamId} pelo usu+�rio ${userId}`);
@@ -5163,7 +5164,7 @@ router.post('/streams/:id/save', async (req, res) => {
 
             { $set: updateData },
 
-            { new: true }
+            { returnDocument: 'after' }
 
         );
 
@@ -5212,7 +5213,7 @@ router.post('/streams/:id/cover', async (req, res) => {
 
             { avatar: coverUrl },
 
-            { new: true }
+            { returnDocument: 'after' }
 
         );
 
@@ -5622,7 +5623,7 @@ router.get('/streams/:streamId/join', async (req, res) => {
                 currentStreamId: streamId,
                 lastSeen: new Date().toISOString()
             },
-            { new: true }
+            { returnDocument: 'after' }
         );
 
         if (!user) {
@@ -6117,7 +6118,7 @@ router.post('/streams/:id/end-session', async (req, res) => {
 
                 },
 
-                { new: true }
+                { returnDocument: 'after' }
 
             );
 
@@ -6146,7 +6147,7 @@ router.post('/streams/:id/end-session', async (req, res) => {
             updatedUser = await User.findOneAndUpdate(
                 { id: stream.hostId },
                 { $set: { isLive: false, isOnline: false, currentStreamId: null } },
-                { new: true }
+                { returnDocument: 'after' }
             );
             if (!updatedUser) {
                 console.warn(`⚠️ Usuário ${stream.hostId} não encontrado para atualizar`);
@@ -6500,7 +6501,7 @@ router.post('/streams/:id/gift', async (req, res) => {
 
                 { $inc: { diamonds: -totalValue, enviados: totalValue, receptores: totalValue, earnings: totalValue } },
 
-                { new: true }
+                { returnDocument: 'after' }
 
             );
 
@@ -6518,7 +6519,7 @@ router.post('/streams/:id/gift', async (req, res) => {
 
                 { $inc: { diamonds: -totalValue, enviados: totalValue } },
 
-                { new: true }
+                { returnDocument: 'after' }
 
             );
 
@@ -6532,7 +6533,7 @@ router.post('/streams/:id/gift', async (req, res) => {
 
                     { $inc: { receptores: totalValue, earnings: totalValue } },
 
-                    { new: true }
+                    { returnDocument: 'after' }
 
                 );
 
@@ -6962,7 +6963,7 @@ router.post('/stark/live/start', async (req, res) => {
         await Streamer.findOneAndUpdate(
             { id: streamId },
             { $set: { id: streamId, hostId: userId, name: user.name || userId, isLive: false, streamStatus: 'preparing', startTime: new Date(), streamKey: streamKey, liveId: liveId, pushUrl: pushUrl, title: title, category: finalCategory, country: finalCountry } },
-            { upsert: true, new: true }
+            { upsert: true, returnDocument: 'after' }
         );
 
         // isLive=false ate confirmacao via /stark/live/publish
@@ -6985,7 +6986,7 @@ router.post('/stark/live/start', async (req, res) => {
                     currentStreamId: streamId,
                     lastActive: new Date()
                 },
-                { upsert: true, new: true }
+                { upsert: true, returnDocument: 'after' }
             );
         } catch (liveUserErr: any) {
             console.error(`[STARK-START] Erro ao registrar LiveUser para ${userId}:`, liveUserErr?.message || liveUserErr);
@@ -8972,7 +8973,7 @@ router.post('/streams/:id/start', async (req, res) => {
 
             },
 
-            { upsert: true, new: true }
+            { upsert: true, returnDocument: 'after' }
 
         );
 
@@ -9479,6 +9480,31 @@ router.post('/lives/:streamId/ffmpeg-transcode/stop', async (req, res) => {
         console.error('[FFMPEG-TRANSCODE] Erro ao parar:', error.message);
         res.status(500).json({ success: false, error: error.message });
     }
+});
+
+// GET /api/lives/:room/livekit-token - Gerar token LiveKit para transmissão pública
+router.get('/lives/:room/livekit-token', async (req, res) => {
+  const { room } = req.params;
+  const identity = req.query.identity as string || `user_${Date.now()}`;
+  const isPublisher = req.query.publisher === 'true';
+
+  try {
+    const extraGrants = isPublisher
+      ? { canPublish: true, canPublishData: true, canSubscribe: true }
+      : { canPublish: false, canPublishData: true, canSubscribe: true };
+    const token = await generateLiveKitToken(identity, room, undefined, extraGrants);
+    res.json({
+      success: true,
+      token,
+      identity,
+      room,
+      serverUrl: ENV.LIVEKIT_URL,
+      livekitUrl: ENV.LIVEKIT_URL,
+    });
+  } catch (error: any) {
+    console.error('[LIVEKIT] Erro ao gerar token para live:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 export default router;

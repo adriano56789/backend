@@ -466,7 +466,7 @@ router.post('/withdraw/:userId', protect, FraudDetectionMiddleware.detectFraud, 
         const admUser = await User.findOneAndUpdate(
             { email: ADM_EMAIL },
             { $inc: { platformEarnings: platform_fee_brl } },
-            { new: true }
+            { returnDocument: 'after' }
         );
         
         if (admUser) {

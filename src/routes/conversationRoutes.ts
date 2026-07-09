@@ -327,7 +327,7 @@ router.post('/', async (req, res) => {
             },
             { 
                 upsert: true, // Criar se não existir
-                new: true
+                returnDocument: 'after'
             }
         );
 
@@ -386,7 +386,7 @@ router.delete('/:id', async (req, res) => {
         const chat = await Chat.findOneAndUpdate(
             { id, participants: userId },
             { $set: { isActive: false, updatedAt: new Date() } },
-            { new: true }
+            { returnDocument: 'after' }
         );
 
         if (!chat) {

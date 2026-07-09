@@ -85,7 +85,7 @@ router.post('/update', async (req, res) => {
                     }
                 }
             },
-            { new: true }
+            { returnDocument: 'after' }
         );
 
         if (!user) {

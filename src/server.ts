@@ -92,6 +92,7 @@ validateEnv();
 
 // ─── Orphan Process Killer (FFmpeg) ─────────────────────────────────
 import { killAllFfmpegProcesses } from './services/FfmpegService';
+import { streamCleanupService } from './services/StreamCleanupService';
 // ────────────────────────────────────────────────────────────────────
 
 const app = express();
@@ -247,6 +248,7 @@ connectDB().then(async () => {
     server.listen(port, '0.0.0.0', () => {
         console.log(`🌍 API Server started on http://127.0.0.1:${port}`);
         initFirebase();
+        streamCleanupService.start(io);
     });
 }).catch(error => {
     console.error('❌ [DB] Falha na conexão com MongoDB:', error.message);
@@ -302,6 +304,7 @@ app.use('/api', emptyResponseTracker);
 
 app.use(express.json({
   limit: '50mb',
+  type: ['application/json', 'application/webhook+json'],
   verify: (req: any, _res, buf) => {
     req.rawBody = buf.toString('utf-8');
   }
@@ -566,11 +569,9 @@ io.on('connection', (socket) => {
           { $set: { isOnline: true, currentStreamId: streamId, lastSeen: new Date().toISOString() } }
         );
       }
-      const onlineUsersInStream = Array.from(onlineUsers.values())
-        .filter((u: any) => u.streamId === streamId)
-        .map((u: any) => ({ userId: u.userId, lastSeen: u.lastSeen }));
-      io.to(streamId).emit('online_users_updated', { streamId, users: onlineUsersInStream, count: onlineUsersInStream.length });
-      io.to(streamId).emit('viewers_count_updated', { streamId, count: onlineUsersInStream.length });
+      const onlineCount = Array.from(onlineUsers.values()).filter((u: any) => u.streamId === streamId).length;
+      io.to(streamId).emit('online_users_updated', { streamId, count: onlineCount });
+      // viewers_count_updated removido — redundante com online_users_updated.count
       let userName = 'Usuário', userAvatar = '', userLevel = 0;
       try {
         const userDoc = await models.User.findOne({ id: userId }).select('name avatarUrl level').lean();
@@ -599,7 +600,16 @@ io.on('connection', (socket) => {
       io.to(streamId).emit('online_counts_updated', { streamId, fans: counts.fans, visitors: counts.visitors, total: counts.fans + counts.visitors });
       try {
         const { Streamer } = await import('./models/Streamer');
-        await Streamer.findOneAndUpdate({ id: streamId }, { $set: { viewers: onlineUsersInStream.length } });
+        await Streamer.findOneAndUpdate({ id: streamId }, { $set: { viewers: onlineCount } });
+        // Sincronizar viewers no LiveCard para o card da transmissão
+        // Usar o hostId da stream (já buscado acima) para encontrar o LiveCard correto
+        if (hostId) {
+          const { LiveCard } = await import('./models/index');
+          await LiveCard.findOneAndUpdate(
+            { hostId },
+            { $set: { viewers: onlineCount, updatedAt: new Date() } }
+          );
+        }
       } catch (_) {}
       // Notificar o host via NotificationService centralizado
       if (hostId && hostId !== userId) {
@@ -610,6 +620,64 @@ io.on('connection', (socket) => {
           console.error('[NOTIFICATION] Erro ao notificar join stream:', notifErr?.message || notifErr);
         }
       }
+
+      // Auto-registro no chat da stream
+      try {
+        const { Chat } = await import('./models/index');
+        const chatId = `stream_chat_${streamId}`;
+        
+        // Buscar ou criar chat da stream
+        let streamChat = await Chat.findOne({ id: chatId });
+        if (!streamChat) {
+          streamChat = await Chat.create({
+            id: chatId,
+            participants: [userId],
+            type: 'stream',
+            title: `Chat da transmissão ${streamId}`,
+            isActive: true,
+            metadata: { streamId },
+            createdAt: new Date(),
+            updatedAt: new Date()
+          });
+          console.log(`📝 [CHAT] Chat da stream criado: ${chatId}`);
+        } else {
+          // Adicionar usuário como participante se não estiver
+          // Usar $addToSet para evitar duplicatas em cenários de concorrência
+          await Chat.findOneAndUpdate(
+            { id: chatId },
+            { $addToSet: { participants: userId }, $set: { updatedAt: new Date() } }
+          );
+          console.log(`👤 [CHAT] Usuário ${userId} registrado no chat da stream ${chatId}`);
+        }
+
+        // Juntar socket à sala do chat
+        socket.join(`chat_${chatId}`);
+        
+        // Notificar outros participantes que um novo usuário entrou no chat
+        socket.to(`chat_${chatId}`).emit('user_joined_chat', {
+          userId,
+          userName,
+          userAvatar,
+          chatId,
+          streamId,
+          timestamp: new Date()
+        });
+        
+        // Notificar o próprio usuário para conectar ao chat
+        io.to(`user_${userId}`).emit('auto_join_chat', {
+          chatId,
+          streamId,
+          userName,
+          userAvatar,
+          participants: streamChat?.participants ? [...streamChat.participants, userId] : [userId],
+          timestamp: new Date().toISOString()
+        });
+
+        console.log(`💬 [CHAT] Usuário ${userId} auto-registrado no chat da stream ${streamId}`);
+      } catch (chatErr: any) {
+        console.warn('[CHAT] Erro ao auto-registrar usuário no chat:', chatErr?.message || chatErr);
+      }
+
       console.log(`✅ Usuário ${userId} conectado à stream ${streamId} (sockets: ${userEntry.socketIds.size})`);
     }
 
@@ -759,27 +827,54 @@ io.on('connection', (socket) => {
                         timestamp: new Date().toISOString()
                     });
 
-                    // Enviar lista atualizada de usuários online
-                    const onlineUsersInStream = Array.from(onlineUsers.values())
-                        .filter(user => user.streamId === userEntry.streamId)
-                        .map(user => ({ userId: user.userId, lastSeen: user.lastSeen }));
+                    // Enviar apenas contagem (NÃO a lista completa de usuários)
+                    const onlineCount = Array.from(onlineUsers.values())
+                        .filter((u: any) => u.streamId === userEntry.streamId).length;
 
                     io.to(userEntry.streamId).emit('online_users_updated', {
                         streamId: userEntry.streamId,
-                        users: onlineUsersInStream,
-                        count: onlineUsersInStream.length
-                    });
-                    io.to(userEntry.streamId).emit('viewers_count_updated', {
-                        streamId: userEntry.streamId,
-                        count: onlineUsersInStream.length
+                        count: onlineCount
                     });
 
                     // Persistir viewer count no banco
-                    const count = onlineUsersInStream.length;
                     models.Streamer.findOneAndUpdate(
                         { id: userEntry.streamId },
-                        { $set: { viewers: count } }
+                        { $set: { viewers: onlineCount } }
                     ).catch(() => {});
+
+                    // Sincronizar viewers no LiveCard
+                    try {
+                        const { LiveCard } = await import('./models/index');
+                        // Buscar todos os hosts da stream para atualizar LiveCards
+                        const streamerDoc = await models.Streamer.findOne({ id: userEntry.streamId }).select('hostId').lean();
+                        if (streamerDoc && streamerDoc.hostId) {
+                            await LiveCard.findOneAndUpdate(
+                                { hostId: streamerDoc.hostId },
+                                { $set: { viewers: onlineCount, updatedAt: new Date() } }
+                            );
+                        }
+                    } catch (_) {}
+
+                    // Remover do chat da stream
+                    try {
+                        const { Chat } = await import('./models/index');
+                        const chatId = `stream_chat_${userEntry.streamId}`;
+                        await Chat.findOneAndUpdate(
+                            { id: chatId },
+                            { $pull: { participants: userId }, $set: { updatedAt: new Date() } }
+                        );
+                        console.log(`💬 [CHAT] Usuário ${userId} removido do chat ${chatId}`);
+
+                        // Notificar outros participantes que o usuário saiu do chat
+                        io.to(`chat_${chatId}`).emit('user_left_chat', {
+                            userId,
+                            chatId,
+                            streamId: userEntry.streamId,
+                            timestamp: new Date().toISOString()
+                        });
+                    } catch (chatErr: any) {
+                        console.warn('[CHAT] Erro ao remover usuário do chat:', chatErr?.message || chatErr);
+                    }
                 }
 
                 // Marcar como offline no banco (assíncrono, não bloqueia os eventos)
@@ -1259,7 +1354,7 @@ io.on('connection', (socket) => {
             const user = await User.findOneAndUpdate(
                 { id: data.userId },
                 { $inc: { diamonds: data.change } },
-                { new: true }
+                { returnDocument: 'after' }
             );
 
             if (user) {
@@ -1406,6 +1501,44 @@ io.on('connection', (socket) => {
         }
     });
 
+    // toggle_mic — alternar microfone em tempo real
+    socket.on('toggle_mic', async (data: { streamId: string; userId: string; microphoneEnabled: boolean }) => {
+        try {
+            const { streamId, userId, microphoneEnabled } = data;
+            const { Streamer } = await import('./models/index');
+            await Streamer.findOneAndUpdate(
+                { id: streamId },
+                { $set: { microphoneEnabled } }
+            );
+            io.to(streamId).emit('mic_toggled', {
+                streamId, userId, microphoneEnabled,
+                timestamp: new Date().toISOString()
+            });
+            console.log(`[SOCKET-MIC] Microfone ${microphoneEnabled ? 'ativado' : 'mutado'} por ${userId} na stream ${streamId}`);
+        } catch (error) {
+            console.error('[SOCKET-MIC] Erro:', error);
+        }
+    });
+
+    // toggle_sound — alternar som em tempo real
+    socket.on('toggle_sound', async (data: { streamId: string; userId: string; soundEnabled: boolean }) => {
+        try {
+            const { streamId, userId, soundEnabled } = data;
+            const { Streamer } = await import('./models/index');
+            await Streamer.findOneAndUpdate(
+                { id: streamId },
+                { $set: { soundEnabled } }
+            );
+            io.to(streamId).emit('sound_toggled', {
+                streamId, userId, soundEnabled,
+                timestamp: new Date().toISOString()
+            });
+            console.log(`[SOCKET-SOUND] Som ${soundEnabled ? 'ativado' : 'silenciado'} por ${userId} na stream ${streamId}`);
+        } catch (error) {
+            console.error('[SOCKET-SOUND] Erro:', error);
+        }
+    });
+
     // cohost_invite — direciona convite de co-host para o guest
     socket.on('cohost_invite', async (data: { inviteeId: string; streamId: string; hostId: string; hostName?: string }) => {
         try {
@@ -1454,7 +1587,7 @@ io.on('connection', (socket) => {
             const updated = await Battle.findOneAndUpdate(
                 { _id: battleId as any },
                 { $inc: { [field]: 1 } },
-                { new: true }
+                { returnDocument: 'after' }
             );
             if (updated) {
                 io.to(`battle_${battleId}`).emit('pk_heart_update', {
