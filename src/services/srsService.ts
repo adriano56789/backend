@@ -73,7 +73,7 @@ class SRSService {
           const parts = location.split('/');
           sessionid = parts[parts.length - 1] || '';
         }
-        console.log(`[SRS-WHIP] Resposta do SRS: status=${response.status}, sdp.length=${sdp.length}, sessionId=${sessionid}`);
+        console.log(`[SRS-WHIP] Resposta do SRS: status=${response.status}, sessionId=${sessionid}`);
         return { code: 0, sdp, sessionid };
       }
       throw new Error(`SRS WHIP Error: ${response.status} ${response.statusText}`);
@@ -101,7 +101,7 @@ class SRSService {
           const parts = location.split('/');
           sessionid = parts[parts.length - 1] || '';
         }
-        console.log(`[SRS-WHEP] Resposta do SRS: status=${response.status}, sdp.length=${sdp.length}, sessionId=${sessionid}`);
+        console.log(`[SRS-WHEP] Resposta do SRS: status=${response.status}, sessionId=${sessionid}`);
         return { code: 0, sdp, sessionid };
       }
       throw new Error(`SRS WHEP Error: ${response.status} ${response.statusText}`);

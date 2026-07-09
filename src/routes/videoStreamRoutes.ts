@@ -4,6 +4,7 @@ import { Streamer } from '../models/Streamer';
 import { srsService } from '../services/srsService';
 import { ENV } from '../config/env';
 import { httpClient } from '../utils/httpClient';
+import { protect } from '../middleware/auth';
 
 const router = express.Router();
 
@@ -724,7 +725,7 @@ router.post('/rtc/v1/play', async (req, res) => {
 // O frontend DEVE chamar POST /api/turn/credentials para obter credenciais TURN válidas.
 router.get('/rtc/ice-servers', (req, res) => {
   const { TURN_HOST, TURN_PORT } = ENV;
-  const BACKEND_URL = process.env.BACKEND_URL || `https://${req.hostname}`;
+  const BACKEND_URL = process.env.BACKEND_URL || '';
   res.json({
     success: true,
     iceServers: [
@@ -733,18 +734,8 @@ router.get('/rtc/ice-servers', (req, res) => {
       { urls: 'stun:stun1.l.google.com:19302' },
       // STUN customizado (se disponível)
       { urls: `stun:${TURN_HOST}:${TURN_PORT}` },
-      // TURN - usar credenciais DINÂMICAS do endpoint /api/turn/credentials
-      // O frontend deve chamar o endpoint abaixo para obter username/credential válidos
-      {
-        urls: [
-          `turn:${TURN_HOST}:${TURN_PORT}`,
-          `turn:${TURN_HOST}:${TURN_PORT}?transport=tcp`,
-        ],
-        username: '_fetch_from_turn_credentials_endpoint',
-        credential: '_fetch_from_turn_credentials_endpoint',
-      },
+      // TURN - o frontend deve obter credenciais via POST /api/turn/credentials
     ],
-    // Endpoint para o frontend obter credenciais TURN dinâmicas
     turnCredentialsEndpoint: `${BACKEND_URL}/api/turn/credentials`,
   });
 });
@@ -805,11 +796,11 @@ function rewritePrivateIpsInSdp(sdp: string, publicIp?: string): string {
   }).join('\r\n');
 }
 
-const rawSdpParser = express.text({ type: '*/*' });
+const whipSdpParser = express.text({ type: 'application/sdp', limit: '1mb' });
 
 // @route POST /api/rtc/v1/whip/
 // Proxy raw SDP → SRS WHIP endpoint (via backend proxy)
-router.post('/rtc/v1/whip/', rawSdpParser, async (req, res) => {
+router.post('/rtc/v1/whip/', protect, whipSdpParser, async (req, res) => {
   try {
     const { app, stream } = req.query;
     const sdp = req.body;
@@ -820,7 +811,7 @@ router.post('/rtc/v1/whip/', rawSdpParser, async (req, res) => {
     const sanitizedSdp = srsService.sanitizeSDP(sdp);
 
     const srsUrl = `${getSrsApiBaseUrl()}/rtc/v1/whip/?app=${encodeURIComponent(String(app || 'live'))}&stream=${encodeURIComponent(String(stream))}`;
-    console.log('[RTC] WHIP proxy:', { stream, srsUrl });
+    console.log('[RTC] WHIP proxy:', { stream });
 
     const srsRes = await httpClient.requestRaw('POST', srsUrl, sanitizedSdp, {
       headers: { 'Content-Type': 'application/sdp' },
@@ -835,7 +826,7 @@ router.post('/rtc/v1/whip/', rawSdpParser, async (req, res) => {
       res.set('ETag', srsRes.headers.get('ETag')!);
     }
 
-    console.log('[RTC] WHIP response:', { status: srsRes.status, length: srsRes.bodyText.length });
+    console.log('[RTC] WHIP response:', { status: srsRes.status });
     res.status(srsRes.status).send(srsRes.bodyText);
   } catch (err: any) {
     console.error('[RTC] WHIP proxy error:', err);
@@ -845,7 +836,7 @@ router.post('/rtc/v1/whip/', rawSdpParser, async (req, res) => {
 
 // @route PATCH /api/rtc/v1/whip/:sessionId
 // Proxy ICE trickle PATCH → SRS
-router.patch('/rtc/v1/whip/:sessionId', rawSdpParser, async (req, res) => {
+router.patch('/rtc/v1/whip/:sessionId', protect, whipSdpParser, async (req, res) => {
   try {
     const { sessionId } = req.params;
     const eTag = req.headers['etag'] as string;
@@ -871,7 +862,7 @@ router.patch('/rtc/v1/whip/:sessionId', rawSdpParser, async (req, res) => {
 
 // @route DELETE /api/rtc/v1/whip/:sessionId
 // Proxy DELETE → SRS WHIP session cleanup
-router.delete('/rtc/v1/whip/:sessionId', async (req, res) => {
+router.delete('/rtc/v1/whip/:sessionId', protect, async (req, res) => {
   try {
     const { sessionId } = req.params;
     const srsUrl = `${getSrsApiBaseUrl()}/rtc/v1/whip/${sessionId}`;
@@ -886,7 +877,7 @@ router.delete('/rtc/v1/whip/:sessionId', async (req, res) => {
 
 // @route POST /api/rtc/v1/whep/
 // Proxy raw SDP → SRS WHEP endpoint (via backend proxy)
-router.post('/rtc/v1/whep/', rawSdpParser, async (req, res) => {
+router.post('/rtc/v1/whep/', protect, whipSdpParser, async (req, res) => {
   try {
     const { app, stream } = req.query;
     const sdp = req.body;
@@ -894,12 +885,12 @@ router.post('/rtc/v1/whep/', rawSdpParser, async (req, res) => {
       return res.status(400).send('Missing SDP body or stream query param');
     }
 
-    console.log('[RTC-WHEP] 📥 Request recebido:', { app, stream, sdpLength: sdp?.length });
+    console.log('[RTC-WHEP] Request recebido:', { app, stream, sdpLength: sdp?.length });
 
     const sanitizedSdp = srsService.sanitizeSDP(sdp);
 
     const srsUrl = `${getSrsApiBaseUrl()}/rtc/v1/whep/?app=${encodeURIComponent(String(app || 'live'))}&stream=${encodeURIComponent(String(stream))}`;
-    console.log('[RTC-WHEP] 🔄 Proxy para SRS:', { stream, srsUrl });
+    console.log('[RTC-WHEP] Proxy para SRS:', { stream });
 
     if (sanitizedSdp.length !== sdp.length) {
       console.log('[RTC-WHEP] SDP sanitizado:', { originalLen: sdp.length, sanitizedLen: sanitizedSdp.length });
@@ -909,21 +900,10 @@ router.post('/rtc/v1/whep/', rawSdpParser, async (req, res) => {
       headers: { 'Content-Type': 'application/sdp' },
     });
 
-    console.log('[RTC-WHEP] 📤 Resposta do SRS:', {
-      stream,
-      status: srsRes.status,
-      statusText: srsRes.statusText,
-      ok: srsRes.ok,
-      location: srsRes.headers.get('location'),
-      etag: srsRes.headers.get('ETag'),
-    });
+    console.log('[RTC-WHEP] Resposta do SRS:', { stream, status: srsRes.status });
 
     if (!srsRes.ok) {
-      console.error('[RTC-WHEP] ❌ SRS retornou erro:', {
-        stream,
-        status: srsRes.status,
-        body: srsRes.bodyText.substring(0, 500),
-      });
+      console.error('[RTC-WHEP] SRS retornou erro:', { stream, status: srsRes.status });
       return res.status(srsRes.status).send(srsRes.bodyText);
     }
 
@@ -931,7 +911,7 @@ router.post('/rtc/v1/whep/', rawSdpParser, async (req, res) => {
     if (srsRes.headers.get('location')) {
       const loc = srsRes.headers.get('location')!;
       res.set('location', loc.replace('/rtc/v1/whep/', '/api/rtc/v1/whep/'));
-      console.log('[RTC-WHEP] Location reescrito:', { original: loc, rewritten: `/api/rtc/v1/whep/${loc.split('/').pop()}` });
+      // Location reescrito para ICE trickle via proxy
     }
     if (srsRes.headers.get('ETag')) {
       res.set('ETag', srsRes.headers.get('ETag')!);
@@ -946,7 +926,7 @@ router.post('/rtc/v1/whep/', rawSdpParser, async (req, res) => {
       console.log('[RTC-WHEP] 🧹 IPs privados removidos do SDP answer');
     }
 
-    console.log('[RTC-WHEP] ✅ Sucesso:', { status: 201, sdpLength: cleanedSdp.length, sessionStart: cleanedSdp.substring(0, 80) });
+    console.log('[RTC-WHEP] Sucesso:', { status: 201, sdpLength: cleanedSdp.length });
     res.status(201).send(cleanedSdp);
   } catch (err: any) {
     console.error('[RTC] WHEP proxy error:', err);
@@ -956,7 +936,7 @@ router.post('/rtc/v1/whep/', rawSdpParser, async (req, res) => {
 
 // @route PATCH /api/rtc/v1/whep/:sessionId
 // Proxy ICE trickle PATCH → SRS (WHEP)
-router.patch('/rtc/v1/whep/:sessionId', rawSdpParser, async (req, res) => {
+router.patch('/rtc/v1/whep/:sessionId', protect, whipSdpParser, async (req, res) => {
   try {
     const { sessionId } = req.params;
     const eTag = req.headers['etag'] as string;
@@ -982,7 +962,7 @@ router.patch('/rtc/v1/whep/:sessionId', rawSdpParser, async (req, res) => {
 
 // @route DELETE /api/rtc/v1/whep/:sessionId
 // Proxy DELETE → SRS WHEP session cleanup
-router.delete('/rtc/v1/whep/:sessionId', async (req, res) => {
+router.delete('/rtc/v1/whep/:sessionId', protect, async (req, res) => {
   try {
     const { sessionId } = req.params;
     const srsUrl = `${getSrsApiBaseUrl()}/rtc/v1/whep/${sessionId}`;

@@ -94,14 +94,15 @@ router.post('/turn/credentials', turnSecurityMiddleware, async (req, res) => {
     }
 
     const turnConfig = TURN_CONFIGS[region] || TURN_CONFIGS.BR;
-    const expiry = now + (5 * 60 * 1000);
-    const randomString = Math.random().toString(36).substring(2, 15);
-    const timeHash = crypto.createHmac('sha256', turnConfig.secret)
-      .update(`${userId}_${now}`)
-      .digest('hex');
-
-    const temporaryUsername = `temp_${userId}_${timeHash.substring(0, 8)}`;
-    const temporaryCredential = `${randomString}_${expiry}`;
+    const ttl = 5 * 60;
+    const expiry = now + (ttl * 1000);
+    // Formato padrão Coturn REST API: username=<timestamp>:<userId>
+    // HMAC-SHA1(secret, <timestamp>:<userId>) = credential
+    const timestamp = Math.floor(now / 1000) + ttl;
+    const temporaryUsername = `${timestamp}:${userId}`;
+    const temporaryCredential = crypto.createHmac('sha1', turnConfig.secret)
+      .update(temporaryUsername)
+      .digest('base64');
 
     // Limpar credenciais expiradas deste usuário
     for (const [key, cred] of activeCredentials.entries()) {
@@ -128,18 +129,13 @@ router.post('/turn/credentials', turnSecurityMiddleware, async (req, res) => {
       username: temporaryUsername,
       credential: temporaryCredential,
       urls: turnConfig.urls,
-      ttl: 300,
+      ttl,
       expiry: new Date(expiry).toISOString(),
       region,
       maxConnections: turnConfig.maxConnections,
-      warnings: [
-        'Credenciais expiram em 5 minutos',
-        'Uso monitorado para abuso',
-        'IP e usuário registrados para auditoria',
-      ],
     });
   } catch (error) {
-    console.error('❌ [TURN CREDS] Erro:', error);
+    console.error('[TURN CREDS] Erro:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -182,7 +178,7 @@ router.post('/turn/validate', turnSecurityMiddleware, async (req, res) => {
       streamId: foundCredentials.streamId,
     });
   } catch (error) {
-    console.error('❌ [TURN VALIDATE] Erro:', error);
+    console.error('[TURN VALIDATE] Erro:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -210,7 +206,7 @@ router.post('/turn/revoke', turnSecurityMiddleware, async (req, res) => {
 
     res.json({ success: true, revokedCount, message: `${revokedCount} credenciais revogadas` });
   } catch (error) {
-    console.error('❌ [TURN REVOKE] Erro:', error);
+    console.error('[TURN REVOKE] Erro:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -221,28 +217,13 @@ router.get('/turn/status', turnSecurityMiddleware, async (req, res) => {
     const now = Date.now();
     const active = Array.from(activeCredentials.entries()).map(([key, cred]) => ({
       key,
-      username: cred.username,
-      userId: cred.userId,
-      streamId: cred.streamId,
-      region: cred.region,
       remainingTime: Math.max(0, cred.expiry - now),
       expiry: new Date(cred.expiry).toISOString(),
     }));
 
-    // Log activity for active users (fire-and-forget)
-    const uniqueUserIds = [...new Set(active.map(cred => cred.userId))];
-    for (const uid of uniqueUserIds) {
-      pushActivity(uid, {
-        action: 'turn_status_viewed',
-        resource: 'turn_server',
-        timestamp: new Date(),
-        endpoint: '/api/turn/status',
-      });
-    }
-
-    res.json({ active, total: active.length, timestamp: new Date(now).toISOString() });
+    res.json({ total: active.length, timestamp: new Date(now).toISOString() });
   } catch (error) {
-    console.error('❌ [TURN STATUS] Erro:', error);
+    console.error('[TURN STATUS] Erro:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
