@@ -3346,7 +3346,9 @@ router.get('/streams', async (req, res) => {
             limit = 50,
             cursor = '',
             isLive = 'true',
-            userId
+            userId,
+            latitude,
+            longitude
         } = req.query;
 
         const parseLimit = Math.min(parseInt(limit as string) || 50, 100);
@@ -3382,7 +3384,7 @@ router.get('/streams', async (req, res) => {
                                 country: (user?.country || 'BR').toLowerCase(),
                                 isLive: true,
                                 streamStatus: 'active',
-                                category: (req.query.category as string || 'popular').toLowerCase(),
+                                category: (user as any)?.category || 'popular',
                                 startTime: new Date(),
                                 updatedAt: new Date()
                             } },
@@ -3407,9 +3409,10 @@ router.get('/streams', async (req, res) => {
             console.warn('[SRS-SYNC] Erro ao sincronizar com SRS:', srsErr);
         }
 
-        // Construir filtro base
-        const baseFilter: any = {};
-        baseFilter.streamKey = { $not: /_transcoded$/ };
+        // Construir filtro base: apenas streams ativas
+        const baseFilter: any = {
+            streamKey: { $not: /_transcoded$/ }
+        };
         if (isLive === 'true') {
             baseFilter.isLive = true;
             baseFilter.streamStatus = { $in: ['active', 'live'] };
@@ -3417,51 +3420,94 @@ router.get('/streams', async (req, res) => {
             baseFilter.isLive = false;
         }
 
-        if (category === 'followed' && userId) {
+        const cat = (category as string).toLowerCase();
+        let sortField: any = { viewers: -1, startTime: -1, _id: -1 };
+        let useGeoSearch = false;
+
+        // Aplicar filtros por categoria
+        if (cat === 'followed' && userId) {
             const follows = await Followers.find({
                 followerId: userId as string,
                 isActive: true
             }).select('followingId').lean();
-
             const followedIds = follows.map(f => f.followingId);
-
             if (followedIds.length === 0) {
                 return res.json({
-                    code: 0,
-                    msg: 'OK',
+                    code: 0, msg: 'OK',
                     data: { streams: [], nextCursor: null, hasMore: false }
                 });
             }
-
             baseFilter.hostId = { $in: followedIds };
-        } else if (category && category !== 'all') {
-            baseFilter.category = (category as string).toLowerCase();
+        } else if (cat === 'nearby') {
+            useGeoSearch = true;
+        } else if (cat === 'new') {
+            sortField = { startTime: -1, _id: -1 };
+        } else if (cat === 'all' || cat === 'popular') {
+        } else if (cat === 'private') {
+            baseFilter.isPrivate = true;
+        } else {
+            baseFilter.category = cat;
         }
 
-        // Paginação cursor-based: se cursor for fornecido, busca a partir daquele _id
         if (cursor) {
             baseFilter._id = { $lt: new ObjectId(cursor as string) };
         }
 
+        let cardDocs: any[] = [];
+
+        if (useGeoSearch && latitude && longitude) {
+            const lat = parseFloat(latitude as string);
+            const lng = parseFloat(longitude as string);
+            if (!isNaN(lat) && !isNaN(lng)) {
+                const nearbyUsers = await User.find({
+                    latitude: { $exists: true, $ne: null },
+                    longitude: { $exists: true, $ne: null }
+                }).select('id latitude longitude').lean();
+
+                const maxDist = 50000;
+                const nearbyIds: string[] = [];
+                for (const u of nearbyUsers) {
+                    const uLat = (u as any).latitude;
+                    const uLng = (u as any).longitude;
+                    if (uLat == null || uLng == null) continue;
+                    const R = 6371000;
+                    const dLat = (lat - uLat) * Math.PI / 180;
+                    const dLng = (lng - uLng) * Math.PI / 180;
+                    const a = Math.sin(dLat/2) ** 2 +
+                             Math.cos(lat * Math.PI / 180) * Math.cos(uLat * Math.PI / 180) *
+                             Math.sin(dLng/2) ** 2;
+                    const dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+                    if (dist <= maxDist) nearbyIds.push(u.id);
+                }
+
+                if (nearbyIds.length > 0) {
+                    baseFilter.hostId = { $in: nearbyIds };
+                } else {
+                    return res.json({
+                        code: 0, msg: 'OK',
+                        data: { streams: [], nextCursor: null, hasMore: false }
+                    });
+                }
+            }
+        }
+
         const hasCountryFilter = country && country !== 'all' && country !== 'ICON_GLOBE';
-        let cardDocs;
 
         if (hasCountryFilter) {
             const countryFilter = { ...baseFilter, country: (country as string).toLowerCase() };
             cardDocs = await LiveCard.find(countryFilter)
-                .sort({ viewers: -1, startTime: -1, _id: -1 })
+                .sort(sortField)
                 .limit(parseLimit + 1)
                 .lean();
-
             if (cardDocs.length === 0) {
                 cardDocs = await LiveCard.find(baseFilter)
-                    .sort({ viewers: -1, startTime: -1, _id: -1 })
+                    .sort(sortField)
                     .limit(parseLimit + 1)
                     .lean();
             }
         } else {
             cardDocs = await LiveCard.find(baseFilter)
-                .sort({ viewers: -1, startTime: -1, _id: -1 })
+                .sort(sortField)
                 .limit(parseLimit + 1)
                 .lean();
         }
@@ -3470,7 +3516,7 @@ router.get('/streams', async (req, res) => {
             const fallbackFilter: any = { ...baseFilter };
             delete fallbackFilter.country;
             cardDocs = await LiveCard.find(fallbackFilter)
-                .sort({ viewers: -1, startTime: -1, _id: -1 })
+                .sort(sortField)
                 .limit(parseLimit + 1)
                 .lean();
         }
@@ -3485,7 +3531,6 @@ router.get('/streams', async (req, res) => {
                 .lean();
         }
 
-        // Verificar se há mais resultados (peek extra)
         const hasMore = cardDocs.length > parseLimit;
         const items = hasMore ? cardDocs.slice(0, parseLimit) : cardDocs;
         const nextCursor = hasMore && items.length > 0 ? items[items.length - 1]._id : null;
@@ -3539,8 +3584,7 @@ router.get('/streams', async (req, res) => {
         );
 
         res.json({
-            code: 0,
-            msg: 'OK',
+            code: 0, msg: 'OK',
             data: {
                 streams: enrichedStreams,
                 nextCursor: nextCursor ? nextCursor.toString() : null,

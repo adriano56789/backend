@@ -9,6 +9,7 @@ export interface ILiveMessage {
     level: number;
     activeFrameId: string | null;
     text: string;
+    type: 'user' | 'system';
     timestamp: Date;
 }
 

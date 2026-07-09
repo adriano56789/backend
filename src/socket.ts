@@ -71,10 +71,43 @@ export const initSocket = (server: any) => {
                     { $set: { isOnline: true, lastSeen: now } }
                 ).catch(() => {});
             });
+
+            // Buscar nome do usuário e notificar presença
+            import('./models').then(({ User }) => {
+                User.findOne({ id: userId }).select('name').lean().then(user => {
+                    const userName = (user as any)?.name || userId;
+                    import('./services/PresenceService').then(({ PresenceService }) => {
+                        PresenceService.userEnteredApp(userId, userName);
+                    });
+                });
+            });
         }
         
         socket.on('disconnect', (reason) => {
             console.log(` [SOCKET] Client disconnected: ${socket.id} - Reason: ${reason}`);
+
+            // Notificar saída do aplicativo
+            if (userId) {
+                import('./models').then(({ User }) => {
+                    User.findOne({ id: userId }).select('name').lean().then(user => {
+                        const userName = (user as any)?.name || userId;
+                        import('./services/PresenceService').then(({ PresenceService }) => {
+                            PresenceService.userLeftApp(userId, userName);
+                        });
+                    });
+                });
+            }
+        });
+
+        // Evento de abertura do aplicativo (enviado pelo frontend ao abrir o app)
+        socket.on('user_app_open', async () => {
+            if (userId) {
+                const { User } = await import('./models');
+                const user = await User.findOne({ id: userId }).select('name').lean();
+                const userName = (user as any)?.name || userId;
+                const { PresenceService } = await import('./services/PresenceService');
+                await PresenceService.userEnteredApp(userId, userName);
+            }
         });
         
         // Eventos binários como BuzzCast
@@ -558,6 +591,23 @@ export const initSocket = (server: any) => {
             }
         });
         
+        // Evento para broadcast de mudanças de estado das transmissões
+        socket.on('live_broadcast', async (data: { type: 'started' | 'ended'; streamId: string; hostId: string; streamData?: any }) => {
+            try {
+                const broadcastData = {
+                    type: data.type,
+                    streamId: data.streamId,
+                    hostId: data.hostId,
+                    streamData: data.streamData || null,
+                    timestamp: new Date().toISOString()
+                };
+                io.emit('live_state_changed', broadcastData);
+                console.log(` [LIVE-BROADCAST] ${data.type} - stream: ${data.streamId}, host: ${data.hostId}`);
+            } catch (error) {
+                console.error(' [LIVE-BROADCAST] Error:', error);
+            }
+        });
+
         socket.on('friendship_accept', async (data: { friendshipId: string; userId: string }) => {
             try {
                 const { FriendshipService } = await import('./services/FriendshipService');
