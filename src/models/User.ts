@@ -93,6 +93,8 @@ export interface IUser extends Document {
   messagesSent?: number;
   searchesPerformed?: number;
   recentActivities?: Array<{ action: string; resource?: string; timestamp?: Date; endpoint?: string }>;
+  isNewUser?: boolean;
+  newUserNotified?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -194,7 +196,9 @@ const UserSchema: Schema = new Schema({
   livesJoined: { type: Number, default: 0 },
   messagesSent: { type: Number, default: 0 },
   searchesPerformed: { type: Number, default: 0 },
-  recentActivities: [{ action: String, resource: String, timestamp: Date, endpoint: String }]
+  recentActivities: [{ action: String, resource: String, timestamp: Date, endpoint: String }],
+  isNewUser: { type: Boolean, default: true },
+  newUserNotified: { type: Boolean, default: false }
 }, { timestamps: true, id: false });
 
 // Create text index for search

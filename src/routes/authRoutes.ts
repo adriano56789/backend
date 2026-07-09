@@ -222,6 +222,14 @@ router.post('/register', async (req, res) => {
             console.log(`🔄 [WEBSOCKET] Token atualizado em tempo real para usuário ${updatedUser!.id}`);
         }
 
+        // Notificar novo usuário para todos os usuários online
+        try {
+            const { NewUserNotificationService } = await import('../services/NewUserNotificationService');
+            await NewUserNotificationService.notifyNewUser(updatedUser!.id);
+        } catch (notifErr) {
+            console.warn('[REGISTER] Erro ao notificar novo usuário:', notifErr);
+        }
+
         res.status(201).json({
             success: true,
             token,

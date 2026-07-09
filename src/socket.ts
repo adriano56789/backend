@@ -103,10 +103,16 @@ export const initSocket = (server: any) => {
         socket.on('user_app_open', async () => {
             if (userId) {
                 const { User } = await import('./models');
-                const user = await User.findOne({ id: userId }).select('name').lean();
+                const user = await User.findOne({ id: userId }).select('name isNewUser newUserNotified').lean();
                 const userName = (user as any)?.name || userId;
                 const { PresenceService } = await import('./services/PresenceService');
                 await PresenceService.userEnteredApp(userId, userName);
+
+                // Se for novo usuário e ainda não foi notificado, dispara a notificação
+                if ((user as any)?.isNewUser && !(user as any)?.newUserNotified) {
+                    const { NewUserNotificationService } = await import('./services/NewUserNotificationService');
+                    await NewUserNotificationService.notifyNewUser(userId);
+                }
             }
         });
         
