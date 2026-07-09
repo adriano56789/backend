@@ -263,6 +263,31 @@ setInterval(() => {
     userStatusManager.cleanupInactiveUsers();
 }, 5 * 60 * 1000);
 
+// Limpar marcações de online que ficaram presas no banco User (a cada 10 minutos)
+setInterval(async () => {
+    try {
+        const { User, UserStatus } = await import('./models');
+        const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+        const staleUsers = await User.find({
+            isOnline: true,
+            lastSeen: { $lt: fiveMinutesAgo }
+        }).select('id name').limit(100).lean();
+        for (const u of staleUsers) {
+            const sid = (u as any).id;
+            const status = await UserStatus.findOne({ userId: sid }).lean();
+            if (!status || !(status as any).isOnline) {
+                await User.findOneAndUpdate(
+                    { id: sid },
+                    { $set: { isOnline: false } }
+                );
+                console.log(`[CLEANUP] Stale online flag cleared for user ${sid} (${(u as any).name || ''})`);
+            }
+        }
+    } catch (e: any) {
+        console.error('[CLEANUP] Error clearing stale online flags:', e.message);
+    }
+}, 10 * 60 * 1000);
+
 // Middleware CORS - configurado antes de tudo
 const allowedOrigins = ENV.CORS_ORIGIN.split(',').map(o => o.trim());
 
@@ -563,12 +588,17 @@ io.on('connection', (socket) => {
       }
       socket.join(streamId);
       const models = await import('./models');
-      if (isFirstConnection || isChangingStream) {
-        await models.User.findOneAndUpdate(
-          { id: userId },
-          { $set: { isOnline: true, currentStreamId: streamId, lastSeen: new Date().toISOString() } }
-        );
-      }
+      await models.User.findOneAndUpdate(
+        { id: userId },
+        { $set: { isOnline: true, currentStreamId: streamId, lastSeen: new Date().toISOString() } },
+        { upsert: true }
+      );
+      const { UserStatus } = await import('./models');
+      await UserStatus.findOneAndUpdate(
+        { userId },
+        { $set: { isOnline: true, lastSeen: new Date() } },
+        { upsert: true }
+      ).catch(() => {});
       const onlineCount = Array.from(onlineUsers.values()).filter((u: any) => u.streamId === streamId).length;
       io.to(streamId).emit('online_users_updated', { streamId, count: onlineCount });
       // viewers_count_updated removido — redundante com online_users_updated.count

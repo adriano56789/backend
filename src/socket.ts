@@ -4,6 +4,7 @@ import { BinaryProtocol, EventType } from './services/BinaryProtocol';
 import { BackendProtobufService } from './services/protobuf/ProtobufService';
 import { mqttBridge } from './services/MqttBridge';
 import { ENV } from './config/env';
+import { User, UserStatus } from './models';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_key_change_me_in_prod';
 
@@ -53,47 +54,47 @@ export const initSocket = (server: any) => {
         console.log(` [SOCKET] Client connected: ${socket.id} (user: ${socket.data.userId})`);
         console.log(` [SOCKET] Transport: ${socket.conn.transport.name}`);
 
-        // Auto-join user to their personal room for targeted events (chat, notifications, etc.)
         socket.join(`user_${socket.data.userId}`);
 
-        // Marcar como online no banco imediatamente na conexão
+        // Marcar como online no banco imediatamente na conexão (síncrono, com logging)
         const userId = socket.data.userId;
         if (userId) {
-            import('./models').then(({ User, UserStatus }) => {
-                const now = new Date();
-                UserStatus.findOneAndUpdate(
-                    { userId },
-                    { $set: { isOnline: true, lastSeen: now } },
-                    { upsert: true }
-                ).catch(() => {});
-                User.findOneAndUpdate(
-                    { id: userId },
-                    { $set: { isOnline: true, lastSeen: now } }
-                ).catch(() => {});
+            const now = new Date();
+            UserStatus.findOneAndUpdate(
+                { userId },
+                { $set: { isOnline: true, lastSeen: now } },
+                { upsert: true }
+            ).then(() => {
+                console.log(`[SOCKET-PRESENCE] UserStatus online for ${userId}`);
+            }).catch(err => {
+                console.error(`[SOCKET-PRESENCE] Error updating UserStatus for ${userId}:`, err.message);
             });
 
-            // Buscar nome do usuário e notificar presença
-            import('./models').then(({ User }) => {
-                User.findOne({ id: userId }).select('name').lean().then(user => {
-                    const userName = (user as any)?.name || userId;
-                    import('./services/PresenceService').then(({ PresenceService }) => {
-                        PresenceService.userEnteredApp(userId, userName);
-                    });
+            User.findOneAndUpdate(
+                { id: userId },
+                { $set: { isOnline: true, lastSeen: now } },
+                { upsert: true }
+            ).then(() => {
+                console.log(`[SOCKET-PRESENCE] User online for ${userId}`);
+                // Broadcast status changed
+                io.emit('user_status_changed', {
+                    userId,
+                    isOnline: true,
+                    timestamp: now.toISOString()
                 });
+            }).catch(err => {
+                console.error(`[SOCKET-PRESENCE] Error updating User for ${userId}:`, err.message);
             });
         }
         
         socket.on('disconnect', (reason) => {
             console.log(` [SOCKET] Client disconnected: ${socket.id} - Reason: ${reason}`);
-
-            // Notificar saída do aplicativo
             if (userId) {
-                import('./models').then(({ User }) => {
-                    User.findOne({ id: userId }).select('name').lean().then(user => {
-                        const userName = (user as any)?.name || userId;
-                        import('./services/PresenceService').then(({ PresenceService }) => {
-                            PresenceService.userLeftApp(userId, userName);
-                        });
+                const now = new Date();
+                User.findOne({ id: userId }).select('name').lean().then(user => {
+                    const userName = (user as any)?.name || userId;
+                    import('./services/PresenceService').then(({ PresenceService }) => {
+                        PresenceService.userLeftApp(userId, userName);
                     });
                 });
             }

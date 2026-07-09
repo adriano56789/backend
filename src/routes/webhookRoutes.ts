@@ -204,7 +204,7 @@ router.post('/', async (req, res) => {
                     if (updated) {
                         await User.findOneAndUpdate(
                             { id: updated.hostId },
-                            { $set: { isLive: false, isOnline: false, currentStreamId: null } }
+                            { $set: { isLive: false, currentStreamId: null } }
                         );
 
                         await LiveCard.findOneAndUpdate(
