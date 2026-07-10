@@ -54,7 +54,7 @@ services:
       EMQX_AUTHENTICATION__1__USE_JWKS: "false"
       EMQX_AUTHENTICATION__1__SECRET: livego_mqtt_service_token
       EMQX_AUTHENTICATION__1__ALGORITHM: hmac-based
-      EMQX_AUTHORIZATION__NO_MATCH: deny
+      EMQX_AUTHORIZATION__NO_MATCH: allow
       EMQX_AUTHORIZATION__SOURCES__1__TYPE: built_in_database
       EMQX_LOG__CONSOLE_HANDLER__LEVEL: warning
     healthcheck:
