@@ -109,7 +109,7 @@ services:
       - TURN_PORT=3478
       - TURN_USERNAME=livego
       - TURN_CREDENTIAL=livegosecretpassword
-      - TURN_SECRET=dev_turn_secret_key_change_me
+      - TURN_SECRET=7b4c15ee7f60c00ba89e53a96948e68e32e8ba696947e7de11ad3bddbc1b4465
       - STUN_URL=stun:2.25.192.154:3478
       # Firebase Cloud Messaging (FCM)
       - FIREBASE_PROJECT_ID=livego-54bb7
