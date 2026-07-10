@@ -18,5 +18,5 @@ jobs:
           script: |
             cd /app/backend
             git pull
-            docker-compose -f docker-compose.vps.yml build backend
-            docker-compose -f docker-compose.vps.yml up -d backend
+            docker compose -f docker-compose.vps.yml build backend
+            docker compose -f docker-compose.vps.yml up -d backend
