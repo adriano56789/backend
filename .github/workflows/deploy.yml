@@ -20,11 +20,4 @@ jobs:
           command -v sshpass >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq sshpass; }
 
           # Deploy via SSH
-          sshpass -e ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$USER@$HOST" << 'EOF'
-            set -e
-            cd /app/backend
-            git pull
-            docker compose -f docker-compose.vps.yml build backend
-            docker compose -f docker-compose.vps.yml up --no-deps -d backend
-            docker image prune -f
-          EOF
+          sshpass -e ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$USER@$HOST" 'cd /app/backend && git pull && docker compose -f docker-compose.vps.yml build backend && docker compose -f docker-compose.vps.yml up --no-deps -d backend && docker image prune -f'
