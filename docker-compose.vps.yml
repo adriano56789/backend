@@ -194,4 +194,5 @@ volumes:
 
 networks:
   livego-net:
-    driver: bridge
+    name: app_livego-net
+    external: true
