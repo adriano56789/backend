@@ -14,16 +14,16 @@ jobs:
         env:
           HOST: ${{ secrets.HOST }}
           USER: ${{ secrets.USER }}
-          PASSWORD: ${{ secrets.PASSWORD }}
+          SSHPASS: ${{ secrets.PASSWORD }}
         run: |
-          # Install sshpass if not available
-          which sshpass 2>/dev/null || sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+          # Install sshpass if not already available
+          command -v sshpass >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq sshpass; }
 
-          # Deploy commands
-          sshpass -p "$PASSWORD" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$USER@$HOST" "
-            cd /app/backend && \
-            git pull && \
-            docker compose -f docker-compose.vps.yml build backend && \
-            docker compose -f docker-compose.vps.yml up --no-deps -d backend && \
+          # Deploy via SSH
+          sshpass -e ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$USER@$HOST" << 'EOF'
+            cd /app/backend
+            git pull
+            docker compose -f docker-compose.vps.yml build backend
+            docker compose -f docker-compose.vps.yml up --no-deps -d backend
             docker image prune -f
-          "
+          EOF
