@@ -16,9 +16,6 @@ export const protect = async (req: AuthRequest, res: Response, next: NextFunctio
     console.log(`[AUTH] protect middleware: ${req.method} ${req.url}`);
     console.log(`[AUTH]   Content-Type: ${contentType}`);
     console.log(`[AUTH]   Authorization presente: ${authHeader ? 'SIM (length=' + authHeader.length + ')' : 'NÃO'}`);
-    if (authHeader) {
-        console.log(`[AUTH]   Authorization prefix: "${authHeader.substring(0, 20)}..."`);
-    }
 
     if (authHeader && authHeader.toLowerCase().startsWith('bearer')) {
         try {
