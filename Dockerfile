@@ -13,6 +13,8 @@ RUN npm run build
 
 RUN mkdir -p uploads
 
+COPY protobuf /app/protobuf
+
 COPY .dockerignore ./
 
 ENV NODE_ENV=production
