@@ -21,7 +21,7 @@ export interface IUserLevel extends Document {
 }
 
 const UserLevelSchema: Schema = new Schema({
-    userId: { type: String, required: true, unique: true, index: true },
+    userId: { type: String, required: true, unique: true },
     currentLevel: { type: Number, default: 1, min: 1 },
     currentExp: { type: Number, default: 0, min: 0 },
     expForNextLevel: { type: Number, default: 100 },
@@ -38,7 +38,7 @@ const UserLevelSchema: Schema = new Schema({
     }
 }, { timestamps: true });
 
-UserLevelSchema.index({ userId: 1 });
+// userId index já criado via unique:true no schema
 UserLevelSchema.index({ currentLevel: 1 });
 UserLevelSchema.index({ totalExp: -1 });
 

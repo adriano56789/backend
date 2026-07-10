@@ -28,7 +28,7 @@ const LiveUserSchema = new Schema<ILiveUser>(
         socketId: { type: String, default: null },
         isMuted: { type: Boolean, default: false },
         joinedAt: { type: Date, default: Date.now },
-        lastActive: { type: Date, default: Date.now, index: true }
+        lastActive: { type: Date, default: Date.now } // index TTL definido abaixo
     },
     { timestamps: true }
 );

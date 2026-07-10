@@ -44,8 +44,7 @@ const ProfilePhotoSchema: Schema = new Schema({
     }
 }, { timestamps: true });
 
-// Create indexes
+// Create indexes (obraId unique index é criado via unique:true no schema)
 ProfilePhotoSchema.index({ userId: 1, photoType: 1, isActive: 1 });
-ProfilePhotoSchema.index({ obraId: 1 }, { unique: true });
 
 export const ProfilePhoto = mongoose.model<IProfilePhoto>('ProfilePhoto', ProfilePhotoSchema);
