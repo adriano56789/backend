@@ -88,7 +88,7 @@ export class MqttBridge {
         clientId: `livego-backend-${this.instanceId.slice(0, 8)}`,
         username: 'livego-backend',
         password: jwtToken,
-        clean: false,
+        clean: true,
         reconnectPeriod: this.baseReconnectMs,
         connectTimeout: 10000,
         rejectUnauthorized: this.useTls,
