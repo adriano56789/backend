@@ -2,18 +2,18 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-COPY backend/package.json backend/package-lock.json* ./
+COPY package.json package-lock.json* ./
 COPY sdk-nodejs /sdk-nodejs
 RUN npm ci
 
-COPY backend/tsconfig.json ./
-COPY backend/src ./src
+COPY tsconfig.json ./
+COPY src ./src
 
 RUN npm run build
 
 RUN mkdir -p uploads
 
-COPY backend/.dockerignore ./
+COPY .dockerignore ./
 
 ENV NODE_ENV=production
 ENV PORT=3000
