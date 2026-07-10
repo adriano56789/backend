@@ -586,14 +586,12 @@ router.post('/mercadopago', async (req, res) => {
                     { id: order.userId },
                     { 
                         $inc: { diamonds: order.diamonds },
-                        $push: { 
-                            recentActivities: {
+                        $push: { recentActivities: { $each: [{
                                 action: 'webhook_payment_processed',
                                 resource: 'webhook_mercadopago',
                                 timestamp: new Date(),
                                 endpoint: '/api/webhook/mercadopago'
-                            }
-                        }
+                            }], $slice: -50 } }
                     },
                     { returnDocument: 'after' }
                 );
@@ -638,14 +636,12 @@ router.post('/mercadopago', async (req, res) => {
                 await User.findOneAndUpdate(
                     { id: order.userId },
                     { 
-                        $push: { 
-                            recentActivities: {
+                        $push: { recentActivities: { $each: [{
                                 action: 'webhook_payment_rejected',
                                 resource: 'webhook_mercadopago',
                                 timestamp: new Date(),
                                 endpoint: '/api/webhook/mercadopago'
-                            }
-                        }
+                            }], $slice: -50 } }
                     }
                 ).catch(console.error);
                 
@@ -689,14 +685,12 @@ router.post('/test', async (req, res) => {
         await User.findOneAndUpdate(
             { id: 'admin' }, // ou outro identificador de admin
             { 
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'webhook_test_received',
                         resource: 'webhook_system',
                         timestamp: new Date(),
                         endpoint: '/api/webhook/test'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         ).catch(console.error);
         

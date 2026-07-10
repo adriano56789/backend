@@ -1,6 +1,7 @@
 // @ts-nocheck
 import express from 'express';
 import { User, Streamer, Gift, GiftTransaction, Followers, UserStatus, Visitor, ChatMessage, Chat, Conversation, Friendship, Invitation, Message, Photo, UserPhoto, ProfilePhoto, UserVideo } from '../models';
+import { pushRecentActivity } from '../utils/activityHelpers';
 import { kickProtection } from '../middleware/appOwnerProtection';
 import { getUserIdFromToken } from '../middleware/auth';
 import { BeautyEffect } from '../models/BeautyEffect';
@@ -123,35 +124,17 @@ router.post('/streams/:id/private-invite', async (req, res) => {
 
         // Persistir atividade de convite privado
         console.log(`📤 [PRIVATE INVITE] Enviando updates de atividades para o banco...`);
-        const [updatedHost, updatedInvited] = await Promise.all([
-            User.findOneAndUpdate(
-                { id: stream.hostId },
-                { 
-                    $push: { 
-                        recentActivities: {
-                            action: 'private_invite_sent',
-                            resource: 'stream_interaction',
-                            timestamp: new Date(),
-                            endpoint: '/api/interactions/streams/:id/private-invite'
-                        }
-                    }
-                },
-                { returnDocument: 'after' }
-            ),
-            User.findOneAndUpdate(
-                { id: userId },
-                { 
-                    $push: { 
-                        recentActivities: {
-                            action: 'private_invite_received',
-                            resource: 'stream_interaction',
-                            timestamp: new Date(),
-                            endpoint: '/api/interactions/streams/:id/private-invite'
-                        }
-                    }
-                },
-                { returnDocument: 'after' }
-            )
+        await Promise.all([
+            pushRecentActivity(stream.hostId, {
+                action: 'private_invite_sent',
+                resource: 'stream_interaction',
+                endpoint: '/api/interactions/streams/:id/private-invite'
+            }),
+            pushRecentActivity(userId, {
+                action: 'private_invite_received',
+                resource: 'stream_interaction',
+                endpoint: '/api/interactions/streams/:id/private-invite'
+            })
         ]);
 
         console.log(`✅ [PRIVATE INVITE] Resposta MongoDB recebida. Atividades persistidas.`);
@@ -243,19 +226,11 @@ router.get('/streams/:id/access-check', async (req, res) => {
         const requestingUser = userId;
         
         // Persistir atividade de verificação de acesso
-        await User.findOneAndUpdate(
-            { id: requestingUser },
-            { 
-                $push: { 
-                    recentActivities: {
-                        action: 'stream_access_checked',
-                        resource: 'stream_interaction',
-                        timestamp: new Date(),
-                        endpoint: '/api/interactions/streams/:id/access-check'
-                    }
-                }
-            }
-        ).catch(console.error);
+        await pushRecentActivity(requestingUser, {
+            action: 'stream_access_checked',
+            resource: 'stream_interaction',
+            endpoint: '/api/interactions/streams/:id/access-check'
+        });
 
         console.log(`🔐 Checking access for user ${requestingUser} to stream ${streamId}`);
         console.log(`🔒 Stream settings:`, settings);
@@ -374,33 +349,17 @@ router.post('/friends/invite', async (req, res) => {
 
         // Persistir atividade de convite de amizade
         await Promise.all([
-            User.findOneAndUpdate(
-                { id: fromUserId },
-                { 
-                    $push: { 
-                        recentActivities: {
-                            action: 'friend_invite_sent',
-                            resource: 'social_interaction',
-                            timestamp: new Date(),
-                            endpoint: '/api/interactions/friends/invite'
-                        }
-                    }
-                }
-            ),
-            User.findOneAndUpdate(
-                { id: toUserId },
-                { 
-                    $push: { 
-                        recentActivities: {
-                            action: 'friend_invite_received',
-                            resource: 'social_interaction',
-                            timestamp: new Date(),
-                            endpoint: '/api/interactions/friends/invite'
-                        }
-                    }
-                }
-            )
-        ]).catch(console.error);
+            pushRecentActivity(fromUserId, {
+                action: 'friend_invite_sent',
+                resource: 'social_interaction',
+                endpoint: '/api/interactions/friends/invite'
+            }),
+            pushRecentActivity(toUserId, {
+                action: 'friend_invite_received',
+                resource: 'social_interaction',
+                endpoint: '/api/interactions/friends/invite'
+            })
+        ]);
         
         // Notificar via WebSocket
         const io = require('../server').getIO();
@@ -492,20 +451,11 @@ router.post('/streams/:id/interactions', async (req, res) => {
 
         // Persistir atividade de interação na stream
         console.log(`📤 [INTERACTION] Enviando update de atividades para o banco (User ${userId})...`);
-        const updateResult = await User.findOneAndUpdate(
-            { id: userId },
-            { 
-                $push: { 
-                    recentActivities: {
-                        action: 'stream_interaction',
-                        resource: 'stream_interaction',
-                        timestamp: new Date(),
-                        endpoint: '/api/interactions/streams/:id/interactions'
-                    }
-                }
-            },
-            { returnDocument: 'after' }
-        );
+        await pushRecentActivity(userId, {
+            action: 'stream_interaction',
+            resource: 'stream_interaction',
+            endpoint: '/api/interactions/streams/:id/interactions'
+        });
 
         console.log(`✅ [INTERACTION] Resposta MongoDB recebida. Atividades persistidas. Total: ${updateResult?.recentActivities?.length}`);
         
@@ -569,33 +519,17 @@ router.post('/invitations/send', async (req, res) => {
 
         // Persistir atividade de envio de convite
         await Promise.all([
-            User.findOneAndUpdate(
-                { id: fromUserId },
-                { 
-                    $push: { 
-                        recentActivities: {
-                            action: 'invitation_sent',
-                            resource: 'social_interaction',
-                            timestamp: new Date(),
-                            endpoint: '/api/interactions/invitations/send'
-                        }
-                    }
-                }
-            ),
-            User.findOneAndUpdate(
-                { id: toUserId },
-                { 
-                    $push: { 
-                        recentActivities: {
-                            action: 'invitation_received',
-                            resource: 'social_interaction',
-                            timestamp: new Date(),
-                            endpoint: '/api/interactions/invitations/send'
-                        }
-                    }
-                }
-            )
-        ]).catch(console.error);
+            pushRecentActivity(fromUserId, {
+                action: 'invitation_sent',
+                resource: 'social_interaction',
+                endpoint: '/api/interactions/invitations/send'
+            }),
+            pushRecentActivity(toUserId, {
+                action: 'invitation_received',
+                resource: 'social_interaction',
+                endpoint: '/api/interactions/invitations/send'
+            })
+        ]);
         
         // Notificar via WebSocket
         const io = require('../server').getIO();
@@ -996,19 +930,11 @@ router.post('/photos/:id/like', async (req, res) => {
         await photo.save();
 
         // Persistir atividade de like/unlike na foto
-        await User.findOneAndUpdate(
-            { id: userId },
-            { 
-                $push: { 
-                    recentActivities: {
-                        action: req.body.action === 'unlike' ? 'photo_unliked' : 'photo_liked',
-                        resource: 'content_interaction',
-                        timestamp: new Date(),
-                        endpoint: '/api/interactions/photos/:id/like'
-                    }
-                }
-            }
-        ).catch(console.error);
+        await pushRecentActivity(userId, {
+            action: req.body.action === 'unlike' ? 'photo_unliked' : 'photo_liked',
+            resource: 'content_interaction',
+            endpoint: '/api/interactions/photos/:id/like'
+        });
 
         res.json({ success: true, likes: newLikes, isLiked });
     } catch (error: any) {
@@ -1053,19 +979,11 @@ router.post('/photos/upload/:id', async (req, res) => {
         });
 
         // Persistir atividade de upload de foto
-        await User.findOneAndUpdate(
-            { id: userId },
-            { 
-                $push: { 
-                    recentActivities: {
-                        action: 'photo_uploaded',
-                        resource: 'content_creation',
-                        timestamp: new Date(),
-                        endpoint: '/api/interactions/photos/upload/:id'
-                    }
-                }
-            }
-        ).catch(console.error);
+        await pushRecentActivity(userId, {
+            action: 'photo_uploaded',
+            resource: 'content_creation',
+            endpoint: '/api/interactions/photos/upload/:id'
+        });
 
         console.log('✅ Foto salva com URL:', processedUrl);
 

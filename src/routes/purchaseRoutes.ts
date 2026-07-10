@@ -141,14 +141,12 @@ router.post('/confirm',
                     diamonds_purchased: order.diamonds,
                     xp: xpGain
                 },
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'purchase',
                         resource: 'financial_transaction',
                         timestamp: new Date(),
                         endpoint: '/api/purchase/confirm'
-                    }
-                }
+                    }], $slice: -50 } }
             },
             { returnDocument: 'after' }
         );

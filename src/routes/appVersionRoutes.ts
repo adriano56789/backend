@@ -1,5 +1,6 @@
 import express from 'express';
 import { AppVersion, User } from '../models';
+import { pushRecentActivity } from '../utils/activityHelpers';
 
 const router = express.Router();
 
@@ -63,19 +64,11 @@ router.post('/check', async (req, res) => {
 
         // Persistir atividade de verificação de versão se userId fornecido
         if (userId) {
-            await User.findOneAndUpdate(
-                { id: userId },
-                { 
-                    $push: { 
-                        recentActivities: {
-                            action: 'version_check',
-                            resource: 'app_version',
-                            timestamp: new Date(),
-                            endpoint: '/api/version/check'
-                        }
-                    }
-                }
-            ).catch(console.error); // Não falhar se não conseguir persistir
+            await pushRecentActivity(userId, {
+                action: 'version_check',
+                resource: 'app_version',
+                endpoint: '/api/version/check'
+            });
         }
 
         res.json({
@@ -121,19 +114,11 @@ router.post('/', async (req, res) => {
         
         // Persistir atividade de administrador se adminId fornecido
         if (versionData.adminId) {
-            await User.findOneAndUpdate(
-                { id: versionData.adminId },
-                { 
-                    $push: { 
-                        recentActivities: {
-                            action: 'admin_version_update',
-                            resource: 'app_version',
-                            timestamp: new Date(),
-                            endpoint: '/api/version'
-                        }
-                    }
-                }
-            ).catch(console.error); // Não falhar se não conseguir persistir
+            await pushRecentActivity(versionData.adminId, {
+                action: 'admin_version_update',
+                resource: 'app_version',
+                endpoint: '/api/version'
+            });
         }
         
         console.log(`✅ Versão ${versionData.latestVersion} ${versionData.app} ${versionData._id ? 'atualizada' : 'criada'}`);

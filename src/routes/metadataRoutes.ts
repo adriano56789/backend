@@ -40,14 +40,12 @@ router.get('/gifts/category/:category', async (req, res) => {
                     await User.findOneAndUpdate(
                         { id: userId },
                         { 
-                            $push: { 
-                                recentActivities: {
+                            $push: { recentActivities: { $each: [{
                                     action: 'gift_category_viewed',
                                     resource: 'gift_metadata',
                                     timestamp: new Date(),
                                     endpoint: '/api/metadata/gifts/category/:category'
-                                }
-                            }
+                                }], $slice: -50 } }
                         }
                     ).catch(console.error);
                 }
@@ -77,14 +75,12 @@ router.get('/gifts/received/:userId', async (req, res) => {
         await User.findOneAndUpdate(
             { id: userId },
             { 
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'received_gifts_viewed',
                         resource: 'gift_metadata',
                         timestamp: new Date(),
                         endpoint: '/api/metadata/gifts/received/:userId'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         ).catch(console.error);
         
@@ -127,8 +123,9 @@ router.get('/gifts/received/:userId', async (req, res) => {
 router.get('/regions', async (req, res) => {
     try {
         // Lista completa de países com bandeiras, códigos e URL das bandeiras
+        // NOTA: "Global" não está aqui porque o frontend já injeta {code:"ICON_GLOBE", name:"Global"} via unshift.
+        // Se incluíssemos Global aqui, criaria uma duplicata e o filtro code:"all" quebraria (não acha ninguém).
         const regions = [
-            { name: 'Global', code: 'all', flagUrl: '' },
             { name: 'Brasil', code: 'br', flagUrl: 'https://flagcdn.com/w40/br.png', emoji: '🇧🇷' },
             { name: 'Estados Unidos', code: 'us', flagUrl: 'https://flagcdn.com/w40/us.png', emoji: '🇺🇸' },
             { name: 'Portugal', code: 'pt', flagUrl: 'https://flagcdn.com/w40/pt.png', emoji: '🇵🇹' },
@@ -157,13 +154,6 @@ router.get('/regions', async (req, res) => {
         
         const regionsWithCount = await Promise.all(
             regions.map(async (region) => {
-                if (region.code === 'all') {
-                    const count = await LiveCard.countDocuments({ 
-                        isLive: true,
-                        streamStatus: { $in: ['active', 'live'] }
-                    }).catch(() => 0);
-                    return { ...region, liveCount: count };
-                }
                 const count = await LiveCard.countDocuments({ 
                     country: region.code, 
                     isLive: true,
@@ -176,19 +166,10 @@ router.get('/regions', async (req, res) => {
             })
         );
         
-        // Ordenar: primeiro países com mais lives ativas, depois Global no início
-        const sorted = regionsWithCount.sort((a, b) => {
-            if (a.code === 'all') return -1;
-            if (b.code === 'all') return 1;
-            return (b.liveCount || 0) - (a.liveCount || 0);
-        });
+        // Ordenar por contagem de lives (mais ativas primeiro)
+        regionsWithCount.sort((a, b) => (b.liveCount || 0) - (a.liveCount || 0));
         
-        res.json({
-            success: true,
-            data: sorted,
-            total: sorted.length,
-            totalLives: sorted.find(r => r.code === 'all')?.liveCount || 0
-        });
+        res.json(regionsWithCount);
     } catch (error: any) {
         res.status(500).json({ error: error.message });
     }
@@ -226,14 +207,12 @@ router.post('/feed/photos', async (req, res) => {
         await User.findOneAndUpdate(
             { id: userId },
             { 
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'feed_photo_uploaded',
                         resource: 'feed_content',
                         timestamp: new Date(),
                         endpoint: '/api/metadata/feed/photos'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         ).catch(console.error);
         
@@ -338,14 +317,12 @@ router.get('/ranking/:period', async (req, res) => {
                     await User.findOneAndUpdate(
                         { id: userId },
                         { 
-                            $push: { 
-                                recentActivities: {
+                            $push: { recentActivities: { $each: [{
                                     action: 'ranking_viewed',
                                     resource: 'ranking_metadata',
                                     timestamp: new Date(),
                                     endpoint: '/api/metadata/ranking/:period'
-                                }
-                            }
+                                }], $slice: -50 } }
                         }
                     ).catch(console.error);
                 }
@@ -495,14 +472,12 @@ router.get('/notifications', async (req, res) => {
         await User.findOneAndUpdate(
             { id: userId },
             { 
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'notifications_viewed',
                         resource: 'notification_metadata',
                         timestamp: new Date(),
                         endpoint: '/api/metadata/notifications'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         ).catch(console.error);
 
@@ -555,14 +530,12 @@ router.patch('/notifications/:id/read', async (req, res) => {
         await User.findOneAndUpdate(
             { id: notification.userId },
             { 
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'notification_marked_read',
                         resource: 'notification_metadata',
                         timestamp: new Date(),
                         endpoint: '/api/metadata/notifications/:id/read'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         ).catch(console.error);
         
@@ -805,14 +778,12 @@ router.get('/history/streams', async (req, res) => {
         await User.findOneAndUpdate(
             { id: userId },
             { 
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'stream_history_viewed',
                         resource: 'stream_metadata',
                         timestamp: new Date(),
                         endpoint: '/api/metadata/history/streams'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         ).catch(console.error);
 

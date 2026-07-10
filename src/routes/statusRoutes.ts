@@ -25,14 +25,12 @@ router.get('/', async (req, res) => {
                 await User.findOneAndUpdate(
                     { id: userId },
                     { 
-                        $push: { 
-                            recentActivities: {
+                        $push: { recentActivities: { $each: [{
                                 action: 'status_viewed',
                                 resource: 'user_status',
                                 timestamp: new Date(),
                                 endpoint: '/api/status'
-                            }
-                        }
+                            }], $slice: -50 } }
                     }
                 ).catch(console.error);
             })
@@ -88,14 +86,12 @@ router.post('/online', async (req, res) => {
             { id: userId },
             { 
                 $set: { isOnline: true, lastSeen: now },
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'status_set_online',
                         resource: 'user_status',
                         timestamp: now,
                         endpoint: '/api/status/online'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         );
 
@@ -144,14 +140,12 @@ router.post('/offline', async (req, res) => {
             { id: userId },
             { 
                 $set: { isOnline: false, lastSeen: now },
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'status_set_offline',
                         resource: 'user_status',
                         timestamp: now,
                         endpoint: '/api/status/offline'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         );
 

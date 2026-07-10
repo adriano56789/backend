@@ -24,14 +24,12 @@ router.post('/register', async (req, res) => {
         await User.findOneAndUpdate(
             { id: userId },
             { 
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'virtual_ip_registered',
                         resource: 'virtual_ip_system',
                         timestamp: new Date(),
                         endpoint: '/api/virtual-ip/register'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         ).catch(console.error);
 
@@ -72,14 +70,12 @@ router.post('/unregister', async (req, res) => {
         await User.findOneAndUpdate(
             { id: userId },
             { 
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'virtual_ip_unregistered',
                         resource: 'virtual_ip_system',
                         timestamp: new Date(),
                         endpoint: '/api/virtual-ip/unregister'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         ).catch(console.error);
 
@@ -110,14 +106,12 @@ router.get('/user/:userId', async (req, res) => {
         await User.findOneAndUpdate(
             { id: userId },
             { 
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'virtual_user_viewed',
                         resource: 'virtual_ip_system',
                         timestamp: new Date(),
                         endpoint: '/api/virtual-ip/user/:userId'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         ).catch(console.error);
 
@@ -189,14 +183,12 @@ router.post('/create', async (req, res) => {
         await User.findOneAndUpdate(
             { id: hostId },
             { 
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'virtual_room_created',
                         resource: 'virtual_ip_system',
                         timestamp: new Date(),
                         endpoint: '/api/virtual-room/create'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         ).catch(console.error);
 
@@ -244,14 +236,12 @@ router.post('/join', async (req, res) => {
         await User.findOneAndUpdate(
             { id: userId },
             { 
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'virtual_room_joined',
                         resource: 'virtual_ip_system',
                         timestamp: new Date(),
                         endpoint: '/api/virtual-room/join'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         ).catch(console.error);
 
@@ -294,14 +284,12 @@ router.post('/leave', async (req, res) => {
         await User.findOneAndUpdate(
             { id: userId },
             { 
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'virtual_room_left',
                         resource: 'virtual_ip_system',
                         timestamp: new Date(),
                         endpoint: '/api/virtual-room/leave'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         ).catch(console.error);
 
@@ -340,14 +328,12 @@ router.post('/end', async (req, res) => {
             await User.findOneAndUpdate(
                 { id: hostId },
                 { 
-                    $push: { 
-                        recentActivities: {
+                    $push: { recentActivities: { $each: [{
                             action: 'virtual_room_ended',
                             resource: 'virtual_ip_system',
                             timestamp: new Date(),
                             endpoint: '/api/virtual-room/end'
-                        }
-                    }
+                        }], $slice: -50 } }
                 }
             ).catch(console.error);
         }

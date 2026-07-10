@@ -14,14 +14,12 @@ router.get('/users/:id/status', async (req: Request, res: Response) => {
         await User.findOneAndUpdate(
             { id: id },
             { 
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'user_status_viewed',
                         resource: 'user_status',
                         timestamp: new Date(),
                         endpoint: '/users/:id/status'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         ).catch(console.error);
         
@@ -69,14 +67,12 @@ router.post('/users/:id/online', async (req: Request, res: Response) => {
             { id: id },
             { 
                 $set: { isOnline: true, lastSeen: now },
-                $push: {
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'user_status_set_online',
                         resource: 'user_status',
                         timestamp: now,
                         endpoint: '/users/:id/online'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         ).catch(err => console.error(`Erro ao sincronizar User ${id}:`, err));
         
@@ -124,14 +120,12 @@ router.post('/users/:id/offline', async (req: Request, res: Response) => {
             { id: id },
             { 
                 $set: { isOnline: false, lastSeen: now },
-                $push: {
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'user_status_set_offline',
                         resource: 'user_status',
                         timestamp: now,
                         endpoint: '/users/:id/offline'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         ).catch(err => console.error(`Erro ao sincronizar User ${id}:`, err));
 
@@ -174,14 +168,12 @@ router.put('/users/:id/status', async (req: Request, res: Response) => {
         await User.findOneAndUpdate(
             { id: id },
             { 
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'user_status_updated',
                         resource: 'user_status',
                         timestamp: new Date(),
                         endpoint: '/users/:id/status'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         ).catch(console.error);
 
@@ -230,14 +222,12 @@ router.get('/online', async (req: Request, res: Response) => {
             await User.findOneAndUpdate(
                 { id: user.id },
                 { 
-                    $push: { 
-                        recentActivities: {
+                    $push: { recentActivities: { $each: [{
                             action: 'online_users_listed',
                             resource: 'user_status',
                             timestamp: new Date(),
                             endpoint: '/online'
-                        }
-                    }
+                        }], $slice: -50 } }
                 }
             ).catch(console.error);
         });
@@ -269,14 +259,12 @@ router.post('/batch-status', async (req: Request, res: Response) => {
             await User.findOneAndUpdate(
                 { id: userId },
                 { 
-                    $push: { 
-                        recentActivities: {
+                    $push: { recentActivities: { $each: [{
                             action: 'batch_status_viewed',
                             resource: 'user_status',
                             timestamp: new Date(),
                             endpoint: '/batch-status'
-                        }
-                    }
+                        }], $slice: -50 } }
                 }
             ).catch(console.error);
         });

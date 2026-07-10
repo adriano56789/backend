@@ -1,6 +1,7 @@
 // @ts-nocheck
 import express from 'express';
 import { Chat, ChatMessage, User } from '../models/index';
+import { pushRecentActivity } from '../utils/activityHelpers';
 import { canSendMessage } from '../utils/chatPermission';
 
 const router = express.Router();
@@ -207,19 +208,11 @@ router.post('/', async (req, res) => {
         // Persistir atividade de criação de chat para todos participantes
         await Promise.all(
             participants.map(async (participantId: string) => {
-                await User.findOneAndUpdate(
-                    { id: participantId },
-                    { 
-                        $push: { 
-                            recentActivities: {
-                                action: type === 'group' ? 'group_chat_created' : 'private_chat_created',
-                                resource: 'chat',
-                                timestamp: new Date(),
-                                endpoint: '/api/chats'
-                            }
-                        }
-                    }
-                ).catch(console.error);
+                await pushRecentActivity(participantId, {
+                    action: type === 'group' ? 'group_chat_created' : 'private_chat_created',
+                    resource: 'chat',
+                    endpoint: '/api/chats'
+                });
             })
         );
 
@@ -304,19 +297,11 @@ router.post('/send', async (req, res) => {
             }
         ))!;
 
-        User.findOneAndUpdate(
-            { id: from },
-            { 
-                $push: { 
-                    recentActivities: {
-                        action: 'chat_message_sent',
-                        resource: 'chat',
-                        timestamp: new Date(),
-                        endpoint: '/api/chats/send'
-                    }
-                }
-            }
-        ).catch(() => {});
+        pushRecentActivity(from, {
+            action: 'chat_message_sent',
+            resource: 'chat',
+            endpoint: '/api/chats/send'
+        });
 
         const frontendMessage = {
             id: newMessage.id,
@@ -499,19 +484,11 @@ router.put('/messages/:id/read', async (req, res) => {
         );
 
         // Persistir atividade de leitura de mensagem
-        await User.findOneAndUpdate(
-            { id: userId },
-            { 
-                $push: { 
-                    recentActivities: {
-                        action: 'chat_message_read',
-                        resource: 'chat',
-                        timestamp: new Date(),
-                        endpoint: '/api/messages/:id/read'
-                    }
-                }
-            }
-        ).catch(console.error);
+        await pushRecentActivity(userId, {
+            action: 'chat_message_read',
+            resource: 'chat',
+            endpoint: '/api/messages/:id/read'
+        });
 
         console.log(`✅ Mensagem ${id} marcada como lida`);
 

@@ -1,6 +1,7 @@
 import express from 'express';
 import { Followers, User } from '../models';
 import { findUserByAnyId, updateUserByRealId } from '../utils/idHelper';
+import { pushRecentActivity } from '../utils/activityHelpers';
 
 const router = express.Router();
 
@@ -49,26 +50,20 @@ router.post('/', async (req, res) => {
         
         // Atualizar contadores usando helper estrito + persistir atividades
         await updateUserByRealId(User, followerId, { 
-            $inc: { following: 1 },
-            $push: { 
-                recentActivities: {
-                    action: 'follow',
-                    resource: 'social_relation',
-                    timestamp: new Date(),
-                    endpoint: '/api/followers'
-                }
-            }
+            $inc: { following: 1 }
+        });
+        await pushRecentActivity(followerId, {
+            action: 'follow',
+            resource: 'social_relation',
+            endpoint: '/api/followers'
         });
         await updateUserByRealId(User, followingId, { 
-            $inc: { fans: 1 },
-            $push: { 
-                recentActivities: {
-                    action: 'followed_by',
-                    resource: 'social_relation',
-                    timestamp: new Date(),
-                    endpoint: '/api/followers'
-                }
-            }
+            $inc: { fans: 1 }
+        });
+        await pushRecentActivity(followingId, {
+            action: 'followed_by',
+            resource: 'social_relation',
+            endpoint: '/api/followers'
         });
         
         // Notificar via WebSocket + serviço centralizado (LiveNotification + socket + FCM)

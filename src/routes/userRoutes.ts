@@ -291,13 +291,16 @@ UserRoutes.patch("/:id", async (req, res) => {
             'city', 'state', 'country', 'age', 'isAvatarProtected',
             'chatPermission', 'pipEnabled', 'locationPermission',
             'showActivityStatus', 'showLocation', 'privateStreamSettings',
-            'activeFrameId', 'obras'
+            'activeFrameId', 'obras', 'location', 'latitude', 'longitude'
         ];
         const updateData: any = {};
         for (const key of allowedFields) {
             if (req.body[key] !== undefined) {
                 updateData[key] = req.body[key];
             }
+        }
+        if (updateData.country) {
+            updateData.country = updateData.country.toLowerCase().trim();
         }
 
         let user = await User.findOneAndUpdate({ id: paramId }, updateData, { returnDocument: 'after' });
@@ -1464,6 +1467,33 @@ UserRoutes.get('/:id/messages', async (req, res) => {
 
 
 
+        // Buscar IDs de usuários bloqueados pelo usuário atual e que bloqueiam o usuário
+        const currentUser = await User.findOne({ id: userId }).select('blockedUsers').lean();
+        const blockedByMe = (currentUser as any)?.blockedUsers || [];
+        const blockers = await User.find({ blockedUsers: userId }).select('id').lean();
+        const blockedMe = blockers.map((b: any) => b.id);
+        const allBlocked = [...blockedByMe, ...blockedMe];
+
+        // Buscar também USUÁRIOS ONLINE que NÃO estão nos parceiros de conversa nem bloqueados
+        // para que apareçam na lista de mensagens mesmo sem histórico
+        const onlinePartnerIds = Array.from(partnerIds);
+        const onlineUsers = await User.find({
+            isOnline: true,
+            id: { $ne: userId, $nin: [...onlinePartnerIds, ...allBlocked] }
+        })
+            .sort({ lastSeen: -1 })
+            .limit(20)
+            .select('id name avatarUrl level fans following isOnline lastSeen')
+            .lean();
+
+        // Adicionar usuários online aos partnerIds e criar entradas sem mensagem
+        onlineUsers.forEach((u: any) => {
+            partnerIds.add(u.id);
+            // Não adicionar ao lastMessageByPartner — fica sem mensagem
+        });
+
+
+
         if (partnerIds.size === 0) {
 
             return res.json([]);
@@ -1518,30 +1548,19 @@ UserRoutes.get('/:id/messages', async (req, res) => {
 
             const lastMsgText = lastMsg?.content || '';
 
-            const lastMsgTime = lastMsg?.sentAt ? new Date(lastMsg.sentAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '';
-
-
-
-            return {
-
+            const lastMsgTime = lastMsg?.sentAt ? new Date(lastMsg.sentAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '';            return {
                 id: `conv_${userId}_${partner.id}`,
-
                 friend: partner,
-
                 lastMessage: lastMsgText,
-
                 timestamp: lastMsgTime,
-
                 unreadCount: unreadMap.get(partner.id) || 0
-
             };
 
         });
 
 
 
-        // Ordenar por mensagem mais recente primeiro
-
+        // Ordenar: quem tem conversa (com mensagem) primeiro, depois online sem mensagem
         conversations.sort((a: any, b: any) => {
 
             const aMsg = lastMessageByPartner.get(a.friend.id);
@@ -1552,7 +1571,10 @@ UserRoutes.get('/:id/messages', async (req, res) => {
 
             const bTime = bMsg?.sentAt ? new Date(bMsg.sentAt).getTime() : 0;
 
-            return bTime - aTime;
+            if (aTime && bTime) return bTime - aTime;
+            if (aTime) return -1;
+            if (bTime) return 1;
+            return 0;
 
         });
 

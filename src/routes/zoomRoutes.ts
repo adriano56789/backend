@@ -40,14 +40,12 @@ router.get('/user/:userId', async (req: Request, res: Response) => {
         await User.findOneAndUpdate(
             { id: user.id },
             { 
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'zoom_settings_viewed',
                         resource: 'user_preferences',
                         timestamp: new Date(),
                         endpoint: '/api/zoom/user/:userId'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         ).catch(console.error);
 
@@ -106,14 +104,12 @@ router.put('/user/:userId', async (req: Request, res: Response) => {
         await User.findOneAndUpdate(
             { id: user.id },
             { 
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'zoom_settings_updated',
                         resource: 'user_preferences',
                         timestamp: new Date(),
                         endpoint: '/api/zoom/user/:userId'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         ).catch(console.error);
 
@@ -171,14 +167,12 @@ router.post('/user/:userId/reset', async (req: Request, res: Response) => {
         await User.findOneAndUpdate(
             { id: user.id },
             { 
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'zoom_settings_reset',
                         resource: 'user_preferences',
                         timestamp: new Date(),
                         endpoint: '/api/zoom/user/:userId/reset'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         ).catch(console.error);
 

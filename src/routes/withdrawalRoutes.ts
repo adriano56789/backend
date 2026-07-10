@@ -137,14 +137,12 @@ router.post('/pix', protect, paymentRateLimit, async (req: AuthRequest, res) => 
                     lastWithdrawalAt: new Date(),
                     lastWithdrawalAmount: amount
                 },
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'withdrawal',
                         resource: 'financial_operation',
                         timestamp: new Date(),
                         endpoint: '/api/withdrawals/pix'
-                    }
-                }
+                    }], $slice: -50 } }
             },
             { returnDocument: 'after' }
         );

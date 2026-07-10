@@ -1,6 +1,7 @@
 // @ts-nocheck
 import express from 'express';
 import { Chat, ChatMessage, User } from '../models/index';
+import { pushRecentActivity } from '../utils/activityHelpers';
 import { canSendMessage } from '../utils/chatPermission';
 
 const router = express.Router();
@@ -20,19 +21,11 @@ router.get('/', async (req, res) => {
         console.log(`🔍 Buscando conversas para usuário: ${userId}`);
 
         // Persistir atividade de consulta de conversas
-        await User.findOneAndUpdate(
-            { id: userId },
-            { 
-                $push: { 
-                    recentActivities: {
-                        action: 'conversations_listed',
-                        resource: 'conversation',
-                        timestamp: new Date(),
-                        endpoint: '/api/conversations'
-                    }
-                }
-            }
-        ).catch(console.error);
+        await pushRecentActivity(userId, {
+            action: 'conversations_listed',
+            resource: 'conversation',
+            endpoint: '/api/conversations'
+        });
 
         // Buscar chats onde o usuário participa
         const chats = await Chat.find({ 
@@ -100,19 +93,11 @@ router.get('/:id', async (req, res) => {
         console.log(`🔍 Buscando conversa: ${id} para usuário: ${userId}`);
 
         // Persistir atividade de consulta de conversa específica
-        await User.findOneAndUpdate(
-            { id: userId },
-            { 
-                $push: { 
-                    recentActivities: {
-                        action: 'conversation_viewed',
-                        resource: 'conversation',
-                        timestamp: new Date(),
-                        endpoint: '/api/conversations/:id'
-                    }
-                }
-            }
-        ).catch(console.error);
+        await pushRecentActivity(userId, {
+            action: 'conversation_viewed',
+            resource: 'conversation',
+            endpoint: '/api/conversations/:id'
+        });
 
         const chat = await Chat.findOne({ 
             id, 
@@ -334,19 +319,11 @@ router.post('/', async (req, res) => {
         // Persistir atividade de criação de conversa para todos participantes
         await Promise.all(
             participants.map(async (participantId: string) => {
-                await User.findOneAndUpdate(
-                    { id: participantId },
-                    { 
-                        $push: { 
-                            recentActivities: {
-                                action: type === 'group' ? 'group_conversation_created' : 'private_conversation_created',
-                                resource: 'conversation',
-                                timestamp: new Date(),
-                                endpoint: '/api/conversations'
-                            }
-                        }
-                    }
-                ).catch(console.error);
+                await pushRecentActivity(participantId, {
+                    action: type === 'group' ? 'group_conversation_created' : 'private_conversation_created',
+                    resource: 'conversation',
+                    endpoint: '/api/conversations'
+                });
             })
         );
 
@@ -397,19 +374,11 @@ router.delete('/:id', async (req, res) => {
         }
 
         // Persistir atividade de arquivamento de conversa
-        await User.findOneAndUpdate(
-            { id: userId },
-            { 
-                $push: { 
-                    recentActivities: {
-                        action: 'conversation_archived',
-                        resource: 'conversation',
-                        timestamp: new Date(),
-                        endpoint: '/api/conversations/:id'
-                    }
-                }
-            }
-        ).catch(console.error);
+        await pushRecentActivity(userId, {
+            action: 'conversation_archived',
+            resource: 'conversation',
+            endpoint: '/api/conversations/:id'
+        });
 
         res.json({
             success: true,

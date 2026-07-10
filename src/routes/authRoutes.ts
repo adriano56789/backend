@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken';
 import { User } from '../models';
 import { connectDB } from '../config/db';
 import { standardizeUserResponse } from '../utils/userResponse';
+import { pushRecentActivity } from '../utils/activityHelpers';
 import { activityLogger } from '../middleware/ActivityLogger';
 import { ActivityType } from '../models/UserActivity';
 import { getUserIdFromToken } from '../middleware/auth';
@@ -172,7 +173,7 @@ router.post('/register', async (req, res) => {
             { id: user.id },
             {
                 $set: {
-                identification: user.id, // Usar id manual como identification
+                identification: user.id,
                 permanentStreamId: permanentStreamId,
                 streamKey: streamKey,
                 roomId: roomId,
@@ -181,17 +182,14 @@ router.post('/register', async (req, res) => {
                 playbackUrl: playbackUrl,
                 isOnline: true,
                 lastSeen: new Date()
-                },
-                $push: { 
-                    recentActivities: {
-                        action: 'register',
-                        resource: 'user_registration',
-                        timestamp: new Date(),
-                        endpoint: '/api/auth/register'
-                    }
                 }
             }
         );
+        await pushRecentActivity(user.id, {
+            action: 'register',
+            resource: 'user_registration',
+            endpoint: '/api/auth/register'
+        });
 
         // Buscar usuário atualizado
         const updatedUser = await User.findOne({ id: user.id });
@@ -292,14 +290,13 @@ router.post('/login', async (req, res) => {
                     user.lastSeen = new Date();
                     user.loginCount = (user.loginCount || 0) + 1;
                     user.lastLogin = new Date();
-                    if (!user.recentActivities) user.recentActivities = [];
-                    user.recentActivities.push({
+                    await user.save();
+
+                    pushRecentActivity(user.id, {
                         action: 'login',
                         resource: 'user_authentication',
-                        timestamp: new Date(),
                         endpoint: '/api/auth/login'
                     });
-                    await user.save();
 
                     activityLogger.logManualActivity({
                         userId: user.id,
@@ -309,6 +306,21 @@ router.post('/login', async (req, res) => {
                         ipAddress: clientIp,
                         userAgent
                     }).catch(() => {});
+
+                    // 🔔 Emitir evento de entrada do usuário
+                    try {
+                        const io = req.app.get('io');
+                        if (io) {
+                            io.emit('user_entered_app', {
+                                userId: user.id,
+                                userName: user.name || 'Usuário',
+                                avatarUrl: user.avatarUrl || '',
+                                level: user.level || 1,
+                                timestamp: new Date().toISOString()
+                            });
+                            console.log(`🟢 [ENTRY] ${user.name || user.id} entrou no aplicativo (login token)`);
+                        }
+                    } catch (_) {}
 
                     console.log(`[LOGIN] ✅ Login via token bem-sucedido para ${user.id} (${Date.now() - startTime}ms)`);
                     return res.json({
@@ -374,18 +386,13 @@ router.post('/login', async (req, res) => {
             user.token = token;
             user.loginCount = (user.loginCount || 0) + 1;
             user.lastLogin = new Date();
-            user.recentActivities = user.recentActivities || [];
-            user.recentActivities.push({
+            await user.save();
+
+            pushRecentActivity(user.id, {
                 action: 'login',
                 resource: 'user_authentication',
-                timestamp: new Date(),
                 endpoint: '/api/auth/login'
             });
-            // Manter apenas as últimas 50 atividades
-            if (user.recentActivities.length > 50) {
-                user.recentActivities = user.recentActivities.slice(-50);
-            }
-            await user.save();
 
             // Enviar atualização em tempo real via WebSocket
             const io = req.app.get('io');
@@ -407,17 +414,14 @@ router.post('/login', async (req, res) => {
                     freshUser.token = token;
                     freshUser.loginCount = (freshUser.loginCount || 0) + 1;
                     freshUser.lastLogin = new Date();
-                    freshUser.recentActivities = freshUser.recentActivities || [];
-                    freshUser.recentActivities.push({
+                    await freshUser.save();
+
+                    pushRecentActivity(freshUser.id, {
                         action: 'login',
                         resource: 'user_authentication',
-                        timestamp: new Date(),
                         endpoint: '/api/auth/login'
                     });
-                    if (freshUser.recentActivities.length > 50) {
-                        freshUser.recentActivities = freshUser.recentActivities.slice(-50);
-                    }
-                    await freshUser.save();
+
                     Object.assign(user, freshUser.toObject());
                     console.log(`[LOGIN] ✅ Re-salvo com sucesso após VersionError`);
                 }
@@ -429,6 +433,21 @@ router.post('/login', async (req, res) => {
         const elapsed = Date.now() - startTime;
         console.log(`[LOGIN] ✅ Login completo com sucesso para ${user.id} (${elapsed}ms)`);
         console.log(`[LOGIN]   IP: ${clientIp}, User-Agent: ${userAgent}`);
+
+        // 🔔 Emitir evento de entrada do usuário
+        try {
+            const io = req.app.get('io');
+            if (io) {
+                io.emit('user_entered_app', {
+                    userId: user.id,
+                    userName: user.name || 'Usuário',
+                    avatarUrl: user.avatarUrl || '',
+                    level: user.level || 1,
+                    timestamp: new Date().toISOString()
+                });
+                console.log(`🟢 [ENTRY] ${user.name || user.id} entrou no aplicativo (login)`);
+            }
+        } catch (_) {}
 
         res.json({
             success: true,
@@ -461,17 +480,15 @@ router.post('/logout', async (req, res) => {
                     $set: {
                     isOnline: false, 
                     lastSeen: new Date().toISOString()
-                    },
-                    $push: { 
-                        recentActivities: {
-                            action: 'logout',
-                            resource: 'user_session',
-                            timestamp: new Date(),
-                            endpoint: '/api/auth/logout'
-                        }
                     }
                 }
             );
+
+            pushRecentActivity(userId, {
+                action: 'logout',
+                resource: 'user_session',
+                endpoint: '/api/auth/logout'
+            });
 
             activityLogger.logManualActivity({
                 userId: userId,

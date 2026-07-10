@@ -3,6 +3,7 @@ import { Order, User, PurchaseAuditTrail } from '../models';
 import FraudDetectionMiddleware from '../middleware/fraudDetection';
 import { protect, AuthRequest } from '../middleware/auth';
 import { requirePaymentAuth, validatePackageAmounts } from '../middleware/paymentSecurity';
+import { pushRecentActivity } from '../utils/activityHelpers';
 import { paymentRateLimit } from '../middleware/rateLimit';
 import { DIAMOND_PACKAGES } from '../utils/diamondConversion';
 
@@ -56,19 +57,11 @@ router.post('/order',
         }).catch(() => {});
 
         if (order.userId) {
-            await User.findOneAndUpdate(
-                { id: order.userId },
-                {
-                    $push: {
-                        recentActivities: {
-                            action: 'purchase_order_created',
-                            resource: 'financial_transaction',
-                            timestamp: new Date(),
-                            endpoint: '/api/checkout/order'
-                        }
-                    }
-                }
-            ).catch(console.error);
+            await pushRecentActivity(order.userId, {
+                action: 'purchase_order_created',
+                resource: 'financial_transaction',
+                endpoint: '/api/checkout/order'
+            });
         }
 
         console.log(`[ORDER SUCCESS] Order criada: ${order.id} para usuário ${order.userId} (R$${safeAmount}, ${safeDiamonds} diamantes)`);
@@ -173,19 +166,11 @@ router.post('/pix',
 
             // Persistir atividade de geração de PIX
             if (order.userId) {
-                await User.findOneAndUpdate(
-                    { id: order.userId },
-                    { 
-                        $push: { 
-                            recentActivities: {
-                                action: 'pix_payment_generated',
-                                resource: 'financial_transaction',
-                                timestamp: new Date(),
-                                endpoint: '/api/checkout/pix'
-                            }
-                        }
-                    }
-                ).catch(console.error);
+                await pushRecentActivity(order.userId, {
+                    action: 'pix_payment_generated',
+                    resource: 'financial_transaction',
+                    endpoint: '/api/checkout/pix'
+                });
             }
             
             const pixResponse = {
@@ -330,24 +315,14 @@ router.post('/credit-card',
         );
 
         const io = req.app.get('io');
-        io.emit('order_updated', { userId: order.userId, orderId: order.id, status: order.status });
-
-        // Persistir atividade de pagamento com cartão
-        if (order.userId) {
-            await User.findOneAndUpdate(
-                { id: order.userId },
-                { 
-                    $push: { 
-                        recentActivities: {
-                            action: 'credit_card_payment',
-                            resource: 'financial_transaction',
-                            timestamp: new Date(),
-                            endpoint: '/api/checkout/credit-card'
-                        }
-                    }
-                }
-            ).catch(console.error);
-        }
+        io.emit('order_updated', { userId: order.userId, orderId: order.id, status: order.status });            // Persistir atividade de pagamento com cartão
+            if (order.userId) {
+                await pushRecentActivity(order.userId, {
+                    action: 'credit_card_payment',
+                    resource: 'financial_transaction',
+                    endpoint: '/api/checkout/credit-card'
+                });
+            }
         
         res.json({ 
             success: true, 
@@ -511,18 +486,15 @@ router.post('/confirm',
         const user = await import('../models').then(m => m.User).then(U => U.findOneAndUpdate(
             { id: order.userId },
             { 
-                $inc: { diamonds: order.diamonds },
-                $push: { 
-                    recentActivities: {
-                        action: 'diamond_purchase_completed',
-                        resource: 'financial_transaction',
-                        timestamp: new Date(),
-                        endpoint: '/api/checkout/confirm'
-                    }
-                }
+                $inc: { diamonds: order.diamonds }
             },
             { returnDocument: 'after' }
         ));
+        await pushRecentActivity(order.userId, {
+            action: 'diamond_purchase_completed',
+            resource: 'financial_transaction',
+            endpoint: '/api/checkout/confirm'
+        });
 
         if (!user) {
             console.log(`[PURCHASE ERROR] Usuário não encontrado: ${order.userId}`);

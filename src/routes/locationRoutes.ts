@@ -7,6 +7,36 @@ import { httpClient } from '../utils/httpClient';
 
 const router = express.Router();
 
+const COUNTRY_NAME_TO_CODE: Record<string, string> = {
+  'brasil': 'br', 'brazil': 'br',
+  'portugal': 'pt',
+  'argentina': 'ar',
+  'méxico': 'mx', 'mexico': 'mx',
+  'colômbia': 'co', 'colombia': 'co',
+  'chile': 'cl',
+  'peru': 'pe',
+  'venezuela': 've',
+  'espanha': 'es', 'spain': 'es',
+  'itália': 'it', 'italy': 'it',
+  'frança': 'fr', 'france': 'fr',
+  'alemanha': 'de', 'germany': 'de',
+  'reino unido': 'gb', 'united kingdom': 'gb',
+  'canadá': 'ca', 'canada': 'ca',
+  'japão': 'jp', 'japan': 'jp',
+  'coreia do sul': 'kr', 'south korea': 'kr',
+  'índia': 'in', 'india': 'in',
+  'angola': 'ao',
+  'moçambique': 'mz', 'mozambique': 'mz',
+  'cabo verde': 'cv',
+  'estados unidos': 'us', 'united states': 'us',
+};
+
+function normalizeCountryName(name: string): string {
+  if (!name) return 'br';
+  const trimmed = name.trim().toLowerCase();
+  return COUNTRY_NAME_TO_CODE[trimmed] || trimmed;
+}
+
 interface NominatimResponse {
   address?: {
     city?: string;
@@ -60,7 +90,8 @@ router.post('/update', async (req, res) => {
             return res.status(400).json({ error: 'Latitude and longitude are required' });
         }
 
-        const { city, state, country, residence } = await reverseGeocode(latitude, longitude);
+        const { city, state, country: rawCountry, residence } = await reverseGeocode(latitude, longitude);
+        const country = normalizeCountryName(rawCountry || req.body.country || '');
 
         const user = await User.findOneAndUpdate(
             { id: userId },
@@ -76,14 +107,12 @@ router.post('/update', async (req, res) => {
                     locationPermission: 'granted',
                     showLocation: true
                 },
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'location_updated',
                         resource: 'location_service',
                         timestamp: new Date(),
                         endpoint: '/api/location/update'
-                    }
-                }
+                    }], $slice: -50 } }
             },
             { returnDocument: 'after' }
         );
@@ -119,14 +148,12 @@ router.get('/nearby', async (req, res) => {
             await User.findOneAndUpdate(
                 { id: userId },
                 { 
-                    $push: { 
-                        recentActivities: {
+                    $push: { recentActivities: { $each: [{
                             action: 'nearby_users_searched',
                             resource: 'location_service',
                             timestamp: new Date(),
                             endpoint: '/api/location/nearby'
-                        }
-                    }
+                        }], $slice: -50 } }
                 }
             ).catch(console.error);
         }
@@ -173,14 +200,12 @@ router.get('/user', async (req, res) => {
         await User.findOneAndUpdate(
             { id: userId },
             { 
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'location_viewed',
                         resource: 'location_service',
                         timestamp: new Date(),
                         endpoint: '/api/location/user'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         ).catch(console.error);
 

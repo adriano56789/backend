@@ -1,5 +1,6 @@
 import express from 'express';
 import { Friendship, User } from '../models';
+import { pushRecentActivity, pushRecentActivityForUsers } from '../utils/activityHelpers';
 
 const router = express.Router();
 
@@ -50,34 +51,10 @@ router.post('/', async (req, res) => {
         });
 
         // Persistir atividade de amizade para ambos usuários
-        await Promise.all([
-            User.findOneAndUpdate(
-                { id: userId1 },
-                { 
-                    $push: { 
-                        recentActivities: {
-                            action: 'friend_added',
-                            resource: 'social_interaction',
-                            timestamp: new Date(),
-                            endpoint: '/api/friends'
-                        }
-                    }
-                }
-            ),
-            User.findOneAndUpdate(
-                { id: userId2 },
-                { 
-                    $push: { 
-                        recentActivities: {
-                            action: 'friend_added',
-                            resource: 'social_interaction',
-                            timestamp: new Date(),
-                            endpoint: '/api/friends'
-                        }
-                    }
-                }
-            )
-        ]).catch(console.error);
+        await Promise.all(pushRecentActivityForUsers(
+            [userId1, userId2],
+            { action: 'friend_added', resource: 'social_interaction', endpoint: '/api/friends' }
+        ));
         
         // Notificar ambos os usuários via WebSocket
         const friendshipData = {
@@ -140,19 +117,11 @@ router.get('/:userId', async (req, res) => {
         console.log(`🔍 Buscando amigos do usuário: ${userId}`);
 
         // Persistir atividade de consulta de lista de amigos
-        await User.findOneAndUpdate(
-            { id: userId },
-            { 
-                $push: { 
-                    recentActivities: {
-                        action: 'friends_listed',
-                        resource: 'social_interaction',
-                        timestamp: new Date(),
-                        endpoint: '/api/friends/:userId'
-                    }
-                }
-            }
-        ).catch(console.error);
+        await pushRecentActivity(userId, {
+            action: 'friends_listed',
+            resource: 'social_interaction',
+            endpoint: '/api/friends/:userId'
+        });
         
         // Buscar relações de amizade ativas
         const friendships = await Friendship.find({
@@ -229,34 +198,10 @@ router.delete('/:id', async (req, res) => {
         );
 
         // Persistir atividade de remoção de amizade para ambos usuários
-        await Promise.all([
-            User.findOneAndUpdate(
-                { id: friendship.userId1 },
-                { 
-                    $push: { 
-                        recentActivities: {
-                            action: 'friend_removed',
-                            resource: 'social_interaction',
-                            timestamp: new Date(),
-                            endpoint: '/api/friends/:id'
-                        }
-                    }
-                }
-            ),
-            User.findOneAndUpdate(
-                { id: friendship.userId2 },
-                { 
-                    $push: { 
-                        recentActivities: {
-                            action: 'friend_removed',
-                            resource: 'social_interaction',
-                            timestamp: new Date(),
-                            endpoint: '/api/friends/:id'
-                        }
-                    }
-                }
-            )
-        ]).catch(console.error);
+        await Promise.all(pushRecentActivityForUsers(
+            [friendship.userId1, friendship.userId2],
+            { action: 'friend_removed', resource: 'social_interaction', endpoint: '/api/friends/:id' }
+        ));
         
         // Notificar ambos os usuários via WebSocket
         const io = req.app.get('io');
@@ -293,19 +238,11 @@ router.get('/check/:userId1/:userId2', async (req, res) => {
         const { userId1, userId2 } = req.params;
         
         // Persistir atividade de verificação de amizade
-        await User.findOneAndUpdate(
-            { id: userId1 },
-            { 
-                $push: { 
-                    recentActivities: {
-                        action: 'friendship_checked',
-                        resource: 'social_interaction',
-                        timestamp: new Date(),
-                        endpoint: '/api/friends/check/:userId1/:userId2'
-                    }
-                }
-            }
-        ).catch(console.error);
+        await pushRecentActivity(userId1, {
+            action: 'friendship_checked',
+            resource: 'social_interaction',
+            endpoint: '/api/friends/check/:userId1/:userId2'
+        });
 
         const friendship = await Friendship.findOne({
             $or: [

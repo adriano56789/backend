@@ -478,14 +478,12 @@ router.delete('/me/photos/:obraId', protect, async (req: AuthRequest, res) => {
         await User.findOneAndUpdate(
             { id: userId },
             { 
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'profile_photo_deleted',
                         resource: 'profile_photo',
                         timestamp: new Date(),
                         endpoint: '/api/users/me/photos/:obraId'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         ).catch(console.error);
 
@@ -655,14 +653,12 @@ router.delete('/:userId/photos/:obraId', async (req, res) => {
         await User.findOneAndUpdate(
             { id: userId },
             {
-                $push: {
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'profile_photo_deleted',
                         resource: 'profile_photo',
                         timestamp: new Date(),
                         endpoint: '/api/users/:userId/photos/:obraId'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         ).catch(console.error);
 

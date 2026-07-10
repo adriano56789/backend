@@ -155,14 +155,12 @@ router.post('/settings/gift-notifications/:id', async (req, res) => {
             userId, 
             { 
                 showActivityStatus: Boolean(settings.enabled),
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'settings_change',
                         resource: 'gift_notification_settings',
                         timestamp: new Date(),
                         endpoint: '/api/settings/gift-notifications/:id'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         );
         
@@ -421,7 +419,7 @@ router.post('/permissions/microphone/:id', async (req, res) => {
         const userId = req.params.id;
         
         if (!status || !['granted', 'denied', 'prompt'].includes(status)) {
-            return status(400).json({ error: 'Invalid permission status' });
+            return res.status(400).json({ error: 'Invalid permission status' });
         }
         
         const updatedUser = await updateUserByRealId(

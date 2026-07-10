@@ -3,6 +3,8 @@ import { BannedEntity } from '../models/BannedEntity';
 import { User } from '../models';
 import FraudDetectionMiddleware from '../middleware/fraudDetection';
 
+import { pushRecentActivity } from '../utils/activityHelpers';
+
 export class FraudManagementRoutes {
     static setup(router: any) {
         // Banir entidade manualmente (admin)
@@ -26,19 +28,11 @@ export class FraudManagementRoutes {
 
                 // Persistir atividade administrativa de banimento
                 if (req.headers['admin-user-id']) {
-                    await User.findOneAndUpdate(
-                        { id: req.headers['admin-user-id'] as string },
-                        { 
-                            $push: { 
-                                recentActivities: {
-                                    action: 'admin_entity_banned',
-                                    resource: 'fraud_management',
-                                    timestamp: new Date(),
-                                    endpoint: '/api/fraud/ban/entity'
-                                }
-                            }
-                        }
-                    ).catch(console.error);
+                    await pushRecentActivity(req.headers['admin-user-id'] as string, {
+                        action: 'admin_entity_banned',
+                        resource: 'fraud_management',
+                        endpoint: '/api/fraud/ban/entity'
+                    });
                 }
 
                 res.json({
@@ -81,19 +75,11 @@ export class FraudManagementRoutes {
 
                 // Persistir atividade administrativa de banimento em massa
                 if (req.headers['admin-user-id']) {
-                    await User.findOneAndUpdate(
-                        { id: req.headers['admin-user-id'] as string },
-                        { 
-                            $push: { 
-                                recentActivities: {
-                                    action: 'admin_related_entities_banned',
-                                    resource: 'fraud_management',
-                                    timestamp: new Date(),
-                                    endpoint: '/api/fraud/ban/related'
-                                }
-                            }
-                        }
-                    ).catch(console.error);
+                    await pushRecentActivity(req.headers['admin-user-id'] as string, {
+                        action: 'admin_related_entities_banned',
+                        resource: 'fraud_management',
+                        endpoint: '/api/fraud/ban/related'
+                    });
                 }
 
                 res.json({
@@ -168,19 +154,11 @@ export class FraudManagementRoutes {
 
                 // Persistir atividade administrativa de desbanimento
                 if (req.headers['admin-user-id']) {
-                    await User.findOneAndUpdate(
-                        { id: req.headers['admin-user-id'] as string },
-                        { 
-                            $push: { 
-                                recentActivities: {
-                                    action: 'admin_entity_unbanned',
-                                    resource: 'fraud_management',
-                                    timestamp: new Date(),
-                                    endpoint: '/api/fraud/unban/:entityType/:entityId'
-                                }
-                            }
-                        }
-                    ).catch(console.error);
+                    await pushRecentActivity(req.headers['admin-user-id'] as string, {
+                        action: 'admin_entity_unbanned',
+                        resource: 'fraud_management',
+                        endpoint: '/api/fraud/unban/:entityType/:entityId'
+                    });
                 }
 
                 console.log(`✅ [FRAUD ADMIN] Entidade desbanida: ${entityType}:${entityId}`);
@@ -303,19 +281,11 @@ export class FraudManagementRoutes {
 
                 // Persistir atividade administrativa de limpeza
                 if (req.headers['admin-user-id']) {
-                    await User.findOneAndUpdate(
-                        { id: req.headers['admin-user-id'] as string },
-                        { 
-                            $push: { 
-                                recentActivities: {
-                                    action: 'admin_bans_cleanup',
-                                    resource: 'fraud_management',
-                                    timestamp: new Date(),
-                                    endpoint: '/api/fraud/cleanup'
-                                }
-                            }
-                        }
-                    ).catch(console.error);
+                    await pushRecentActivity(req.headers['admin-user-id'] as string, {
+                        action: 'admin_bans_cleanup',
+                        resource: 'fraud_management',
+                        endpoint: '/api/fraud/cleanup'
+                    });
                 }
 
                 console.log(`🧹 [FRAUD ADMIN] Limpeza de banimentos expirados: ${result.modifiedCount} atualizados`);

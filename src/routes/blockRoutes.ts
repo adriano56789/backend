@@ -1,5 +1,6 @@
 import express from 'express';
 import { Block, User, Followers, Friendship } from '../models';
+import { pushRecentActivity, pushRecentActivityForUsers } from '../utils/activityHelpers';
 import { blockProtection } from '../middleware/appOwnerProtection';
 
 const router = express.Router();
@@ -48,34 +49,14 @@ router.post('/', blockProtection(), async (req, res) => {
         });
 
         // Persistir atividade de bloqueio para ambos usuários
-        await Promise.all([
-            User.findOneAndUpdate(
-                { id: blockerId },
-                { 
-                    $push: { 
-                        recentActivities: {
-                            action: 'block',
-                            resource: 'social_relation',
-                            timestamp: new Date(),
-                            endpoint: '/api/blocks'
-                        }
-                    }
-                }
-            ),
-            User.findOneAndUpdate(
-                { id: blockedId },
-                { 
-                    $push: { 
-                        recentActivities: {
-                            action: 'blocked_by',
-                            resource: 'social_relation',
-                            timestamp: new Date(),
-                            endpoint: '/api/blocks'
-                        }
-                    }
-                }
-            )
-        ]).catch(console.error); // Não falhar se não conseguir persistir
+        await Promise.all(pushRecentActivityForUsers(
+            [blockerId, blockedId],
+            { action: 'block', resource: 'social_relation', endpoint: '/api/blocks' }
+        ));
+        // Segundo usuário recebe ação específica
+        await pushRecentActivity(blockedId, {
+            action: 'blocked_by', resource: 'social_relation', endpoint: '/api/blocks'
+        });
         
         // Remover follow/seguimento existente entre eles
         await Promise.all([
@@ -211,34 +192,14 @@ router.delete('/:id', async (req, res) => {
         );
 
         // Persistir atividade de desbloqueio para ambos usuários
-        await Promise.all([
-            User.findOneAndUpdate(
-                { id: block.blockerId },
-                { 
-                    $push: { 
-                        recentActivities: {
-                            action: 'unblock',
-                            resource: 'social_relation',
-                            timestamp: new Date(),
-                            endpoint: '/api/blocks'
-                        }
-                    }
-                }
-            ),
-            User.findOneAndUpdate(
-                { id: block.blockedId },
-                { 
-                    $push: { 
-                        recentActivities: {
-                            action: 'unblocked_by',
-                            resource: 'social_relation',
-                            timestamp: new Date(),
-                            endpoint: '/api/blocks'
-                        }
-                    }
-                }
-            )
-        ]).catch(console.error); // Não falhar se não conseguir persistir
+        await Promise.all(pushRecentActivityForUsers(
+            [block.blockerId, block.blockedId],
+            { action: 'unblock', resource: 'social_relation', endpoint: '/api/blocks' }
+        ));
+        // Segundo usuário recebe ação específica
+        await pushRecentActivity(block.blockedId, {
+            action: 'unblocked_by', resource: 'social_relation', endpoint: '/api/blocks'
+        });
         
         // Notificar via WebSocket
         const io = req.app.get('io');

@@ -3,6 +3,7 @@ import { User } from '../models';
 import { UserLevel } from '../models/UserLevel';
 import { standardizeUserResponse } from '../utils/userResponse';
 import { findUserByAnyId, updateUserByRealId } from '../utils/idHelper';
+import { pushRecentActivity } from '../utils/activityHelpers';
 
 const router = express.Router();
 
@@ -84,15 +85,12 @@ router.post('/:userId/add-exp', async (req, res) => {
     await updateUserByRealId(User, userId, { 
       level: result.currentLevel,
       xp: result.currentExp,
-      totalExp: result.totalExp,
-      $push: { 
-        recentActivities: {
-          action: result.leveledUp ? 'level_up' : 'exp_gain',
-          resource: 'user_progression',
-          timestamp: new Date(),
-          endpoint: '/api/level/:userId/add-exp'
-        }
-      }
+      totalExp: result.totalExp
+    });
+    await pushRecentActivity(userId, {
+      action: result.leveledUp ? 'level_up' : 'exp_gain',
+      resource: 'user_progression',
+      endpoint: '/api/level/:userId/add-exp'
     });
 
     // Emitir evento WebSocket se disponível

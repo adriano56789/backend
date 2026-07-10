@@ -1,5 +1,6 @@
 import express from 'express';
 import { Streamer, User } from '../models';
+import { pushRecentActivity } from '../utils/activityHelpers';
 
 const router = express.Router();
 
@@ -37,19 +38,11 @@ router.post('/streams/:id/like', async (req, res) => {
         );
 
         // Persistir atividade do usuário que curtiu
-        await User.findOneAndUpdate(
-            { id: userId },
-            { 
-                $push: { 
-                    recentActivities: {
-                        action: 'like',
-                        resource: 'content_engagement',
-                        timestamp: new Date(),
-                        endpoint: '/api/streams/:id/like'
-                    }
-                }
-            }
-        );
+        await pushRecentActivity(userId, {
+            action: 'like',
+            resource: 'content_engagement',
+            endpoint: '/api/streams/:id/like'
+        });
 
         // Emitir WebSocket para atualização em tempo real
         const io = req.app.get('io');

@@ -500,6 +500,16 @@ app.use('/uploads', (req, res, next) => {
     next();
 }, express.static(path.join(__dirname, '../uploads')));
 
+// Fallback para /uploads: quando o arquivo de avatar não existe no disco,
+// retorna um PNG 1x1 transparente em vez de HTML 404 (que causa ERR_BLOCKED_BY_ORB no Chrome)
+app.use('/uploads', (req, res) => {
+    res.status(200);
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'public, max-age=31536000');
+    const transparentPixel = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+    res.send(transparentPixel);
+});
+
 app.use('/api/*', (req, res) => {
     res.status(404).json({ error: `API endpoint not found: ${req.method} ${req.path}` });
 });
@@ -1414,6 +1424,27 @@ io.on('connection', (socket) => {
                 isOnline: true,
                 lastSeen: new Date().toISOString()
             });
+
+            // 🔔 Emitir evento de entrada do usuário no aplicativo
+            (async () => {
+                try {
+                    const { User: UserModel } = await import('./models/index');
+                    const user = await UserModel.findOne({ id: userId }).select('id name avatarUrl level').lean();
+                    if (user) {
+                        const u = user as any;
+                        io.emit('user_entered_app', {
+                            userId: u.id,
+                            userName: u.name || 'Usuário',
+                            avatarUrl: u.avatarUrl || '',
+                            level: u.level || 1,
+                            timestamp: new Date().toISOString()
+                        });
+                        console.log(`🟢 [ENTRY] ${u.name || u.id} entrou no aplicativo`);
+                    }
+                } catch (err) {
+                    // Silencioso - não travar o fluxo por causa do evento
+                }
+            })();
 
             // Atualizar status no banco (assíncrono, não bloqueia o evento)
             const { User } = await import('./models/index');

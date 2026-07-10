@@ -1,6 +1,7 @@
 import express from 'express';
 import { User, Streamer, CallInvitation } from '../models';
 import { getUserIdFromToken } from '../middleware/auth';
+import { pushRecentActivity } from '../utils/activityHelpers';
 import { roomService, generateLiveKitToken, roomExists } from '../services/LiveKitTokenService';
 import { ENV } from '../config/env';
 
@@ -89,8 +90,8 @@ router.post('/invite', async (req, res) => {
     await invitation.save();
 
     await Promise.all([
-      User.findOneAndUpdate({ id: hostId }, { $push: { recentActivities: { action: 'call_invite_sent', resource: 'video_call', timestamp: new Date(), endpoint: '/api/call-invitation/invite' } } }).catch(() => {}),
-      User.findOneAndUpdate({ id: guestId }, { $push: { recentActivities: { action: 'call_invite_received', resource: 'video_call', timestamp: new Date(), endpoint: '/api/call-invitation/invite' } } }).catch(() => {})
+      pushRecentActivity(hostId, { action: 'call_invite_sent', resource: 'video_call', endpoint: '/api/call-invitation/invite' }),
+      pushRecentActivity(guestId, { action: 'call_invite_received', resource: 'video_call', endpoint: '/api/call-invitation/invite' })
     ]);
 
     // Gerar token do host com permissões bidirecionais
@@ -195,7 +196,7 @@ router.post('/respond', async (req, res) => {
     }
     await invitation.save();
 
-    await User.findOneAndUpdate({ id: userId }, { $push: { recentActivities: { action: response === 'accept' ? 'call_accepted' : 'call_declined', resource: 'video_call', timestamp: new Date(), endpoint: '/api/call-invitation/respond' } } }).catch(() => {});
+    await pushRecentActivity(userId, { action: response === 'accept' ? 'call_accepted' : 'call_declined', resource: 'video_call', endpoint: '/api/call-invitation/respond' });
 
     const io = req.app.get('io');
 
@@ -353,8 +354,8 @@ router.post('/end', async (req, res) => {
     await invitation.save();
 
     await Promise.all([
-      User.findOneAndUpdate({ id: invitation.hostId }, { $push: { recentActivities: { action: 'call_ended', resource: 'video_call', timestamp: new Date(), endpoint: '/api/call-invitation/end' } } }).catch(() => {}),
-      User.findOneAndUpdate({ id: invitation.guestId }, { $push: { recentActivities: { action: 'call_ended', resource: 'video_call', timestamp: new Date(), endpoint: '/api/call-invitation/end' } } }).catch(() => {})
+      pushRecentActivity(invitation.hostId, { action: 'call_ended', resource: 'video_call', endpoint: '/api/call-invitation/end' }),
+      pushRecentActivity(invitation.guestId, { action: 'call_ended', resource: 'video_call', endpoint: '/api/call-invitation/end' })
     ]);
 
     const io = req.app.get('io');

@@ -1448,181 +1448,6 @@ function getCountryInfo(countryCode: string): { name: string; flagUrl: string } 
 
 
 
-// ====== Endpoints obsoletos - Removidos, usar POST /api/streams + /api/streams/:id/publish ======
-// POST /api/srs/start removido
-// POST /api/streams/start removido  
-// POST /api/lives/start removido
-// ================================================================================================
-
-        const webrtcUrl = `webrtc://${srsHost}/${srsApp}/${streamId}?vhost=${srsVhost}&token=${token}`;
-
-        // HLS URL para reprodução via proxy HTTPS (evita mixed content)
-        const BACKEND_URL = process.env.BACKEND_URL || 'https://api.livego.store';
-        const hlsUrl = `${BACKEND_URL}/api/video/http/live/${streamId}.m3u8`;
-
-        console.log('[SRS-START] URLs SRS configuradas');
-
-
-
-        console.log('[SRS-START] Buscando dados do usuário no MongoDB...');
-
-        // Buscar dados do usuário
-
-        const user = await findUserByAnyId(User, userId);
-
-        console.log('[SRS-START] Usuário encontrado:', user ? 'SIM' : 'NÃO');
-
-        if (!user) {
-
-            return res.status(404).json({ 
-
-                code: 1, 
-
-                msg: 'Usuário não encontrado' 
-
-            });
-
-        }
-
-
-
-        const hostName = user.name || 'Unknown';
-
-        const hostAvatar = user.avatarUrl || '';
-
-
-
-        // Armazenar sessão da live no banco para validação posterior
-
-        const liveSession = {
-
-            liveId,
-
-            streamId,
-
-            streamKey,
-
-            token,
-
-            userId,
-
-            hostName,
-
-            hostAvatar,
-
-            status: 'prepared',
-
-            createdAt: new Date(),
-
-            expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 horas
-
-        };
-
-
-
-        // Salvar sessão no MongoDB
-
-        try {
-            const db = getDb();
-            await db.collection('live_sessions').insertOne(liveSession);
-            console.log(`[SRS-START] Sessão salva: ${liveId}`);
-        } catch (sessionError) {
-            console.error('[SRS-START] Erro ao salvar sessão:', sessionError);
-        }
-
-
-
-        // Resposta conforme documentação SRS
-
-        const response = {
-
-            code: 0,
-
-            msg: 'OK',
-
-            data: {
-
-                liveId,
-
-                streamId,
-
-                streamKey,
-
-                token,
-
-                pushUrl,
-
-                rtmpUrl,
-
-                webrtcUrl,
-
-                hlsUrl, // URL HLS para reprodução no ExoPlayer (Android) e LivePlayer (Web)
-
-                vhost: srsVhost,
-
-                app: srsApp,
-
-                stream: streamId,
-
-
-
-                // Metadados
-
-                hostId: userId,
-
-          hostName: user.name,
-
-                hostAvatar: user.avatarUrl,
-
-                preparedAt: new Date().toISOString(),
-
-                status: 'prepared' // Status: prepared para pré-live
-
-            }
-
-        };
-
-
-
-        console.log('[SRS-START] Transmissão preparada com sucesso:', { liveId, streamId, token });
-
-        res.json(response);
-
-
-
-    } catch (error) {
-
-        const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-
-        const errorStack = error instanceof Error ? error.stack : undefined;
-
-        const errorName = error instanceof Error ? error.name : 'UnknownError';
-
-        
-
-        console.error('[SRS-START] Erro na preparação - Detalhes:', {
-
-            message: errorMessage,
-
-            stack: errorStack,
-
-            name: errorName
-
-        });
-
-        res.status(500).json({ 
-
-            code: 1,
-
-            msg: `Erro interno ao preparar transmissão: ${errorMessage}` 
-
-        });
-
-    }
-
-});
-
-
 
 // Endpoint PUBLISH - Usa token gerado na START e inicia transmissão SRS
 
@@ -2075,14 +1900,12 @@ router.post('/permissions/audio/request', async (req, res) => {
         await User.findOneAndUpdate(
             { id: userId },
             {
-                $push: {
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'audio_permission_request',
                         resource: purpose,
                         timestamp: new Date(),
                         endpoint: '/api/permissions/audio/request'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         );
 
@@ -2132,14 +1955,12 @@ router.post('/permissions/audio/grant', async (req, res) => {
                     audioRecordingPermanent: permanent,
                     audioRecordingGrantedAt: new Date()
                 },
-                $push: {
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'audio_permission_granted',
                         resource: 'microphone_access',
                         timestamp: new Date(),
                         endpoint: '/api/permissions/audio/grant'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         );
 
@@ -2188,14 +2009,12 @@ router.post('/permissions/audio/deny', async (req, res) => {
                     audioRecordingEnabled: false,
                     audioRecordingDeniedAt: new Date()
                 },
-                $push: {
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'audio_permission_denied',
                         resource: 'microphone_access',
                         timestamp: new Date(),
                         endpoint: '/api/permissions/audio/deny'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         );
 
@@ -2282,14 +2101,12 @@ router.post('/permissions/camera/request', async (req, res) => {
         await User.findOneAndUpdate(
             { id: userId },
             {
-                $push: {
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'camera_permission_request',
                         resource: purpose,
                         timestamp: new Date(),
                         endpoint: '/api/permissions/camera/request'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         );
 
@@ -2339,14 +2156,12 @@ router.post('/permissions/camera/grant', async (req, res) => {
                     cameraAccessPermanent: permanent,
                     cameraAccessGrantedAt: new Date()
                 },
-                $push: {
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'camera_permission_granted',
                         resource: 'camera_access',
                         timestamp: new Date(),
                         endpoint: '/api/permissions/camera/grant'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         );
 
@@ -2395,14 +2210,12 @@ router.post('/permissions/camera/deny', async (req, res) => {
                     cameraAccessEnabled: false,
                     cameraAccessDeniedAt: new Date()
                 },
-                $push: {
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'camera_permission_denied',
                         resource: 'camera_access',
                         timestamp: new Date(),
                         endpoint: '/api/permissions/camera/deny'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         );
 
@@ -2768,14 +2581,12 @@ router.post('/streams/:id/join', async (req, res) => {
             {
                 $set: { currentStreamId: id, isOnline: true },
                 $inc: { livesJoined: 1 },
-                $push: {
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'live_join',
                         resource: 'streaming',
                         timestamp: new Date(),
                         endpoint: '/api/streams/:id/join'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         );
 
@@ -3242,14 +3053,12 @@ router.post('/streams/:id/publish', async (req, res) => {
             {
                 $set: { isLive: true, currentStreamId: id },
                 $inc: { totalLives: 1 },
-                $push: {
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'live_start',
                         resource: 'streaming',
                         timestamp: new Date(),
                         endpoint: '/api/streams/publish'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         );
 
@@ -4505,14 +4314,12 @@ router.post('/live/end', async (req, res) => {
                     isOnline: false,
                     currentStreamId: null
                 },
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'live_end',
                         resource: 'live_broadcast',
                         timestamp: new Date(),
                         endpoint: '/api/live/end'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         );
 
@@ -9307,6 +9114,71 @@ router.get('/new-users/recent', async (req, res) => {
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
   }
+});
+
+
+// POST /api/streams/:id/live-message - Enviar mensagem na live (REST equivalente ao socket send_live_message)
+router.post('/streams/:id/live-message', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const userId = getUserIdFromToken(req);
+        if (!userId) {
+            return res.status(401).json({ success: false, message: 'Usuario nao autenticado' });
+        }
+        const { text } = req.body;
+        if (!text || typeof text !== 'string' || text.trim().length === 0) {
+            return res.status(400).json({ success: false, message: 'Texto da mensagem e obrigatorio' });
+        }
+        const user = await User.findOne({ id: userId }).lean();
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'Usuario nao encontrado' });
+        }
+        const stream = await Streamer.findOne({ id }).lean();
+        if (!stream) {
+            return res.status(404).json({ success: false, message: 'Stream nao encontrada' });
+        }
+        const liveMessage = await LiveMessage.create({
+            streamId: id,
+            userId,
+            userName: user.name || 'Usuario',
+            avatarUrl: user.avatarUrl || '',
+            level: user.level || 1,
+            activeFrameId: user.activeFrameId || null,
+            text: text.trim(),
+            timestamp: new Date()
+        });
+        const messagePayload = {
+            id: liveMessage.id,
+            userId,
+            userName: user.name || 'Usuario',
+            avatarUrl: user.avatarUrl || '',
+            level: user.level || 1,
+            activeFrameId: user.activeFrameId || null,
+            text: text.trim(),
+            timestamp: new Date()
+        };
+        try {
+            const io = req.app.get('io');
+            if (io) {
+                io.to(id).emit('live_message', messagePayload);
+            }
+        } catch (ioErr) {
+            console.warn('[LIVE-MESSAGE-REST] Erro ao emitir socket:', ioErr);
+        }
+        console.log('[LIVE-MESSAGE-REST] Mensagem criada na live', id, 'por', userId);
+        res.json({
+            success: true,
+            message: 'Mensagem enviada com sucesso',
+            data: messagePayload
+        });
+    } catch (error) {
+        console.error('[LIVE-MESSAGE-REST] Erro:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erro interno ao enviar mensagem',
+            error: error instanceof Error ? error.message : String(error)
+        });
+    }
 });
 
 export default router;

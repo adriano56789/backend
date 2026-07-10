@@ -1,6 +1,7 @@
 import express from 'express';
 import { ChildProcess } from 'child_process';
 import { User, Streamer, Battle } from '../models';
+import { pushRecentActivity } from '../utils/activityHelpers';
 import { ENV } from '../config/env';
 import { roomService, generateLiveKitToken } from '../services/LiveKitTokenService';
 import { startBattleMixer, stopMixer } from '../services/FfmpegService';
@@ -79,10 +80,11 @@ router.get('/active/:userId', async (req, res) => {
 router.get('/config', async (req, res) => {
   const userId = req.headers['user-id'] as string;
   if (userId) {
-    await User.findOneAndUpdate(
-      { id: userId },
-      { $push: { recentActivities: { action: 'pk_config_viewed', resource: 'pk_battle', timestamp: new Date(), endpoint: '/api/pk/config' } } }
-    ).catch(console.error);
+    await pushRecentActivity(userId, {
+      action: 'pk_config_viewed',
+      resource: 'pk_battle',
+      endpoint: '/api/pk/config'
+    }, console.error);
   }
   res.json({ duration: 300 });
 });
@@ -91,10 +93,11 @@ router.get('/config', async (req, res) => {
 router.post('/config', async (req, res) => {
   const userId = req.body.userId || req.headers['user-id'] as string;
   if (userId) {
-    await User.findOneAndUpdate(
-      { id: userId },
-      { $push: { recentActivities: { action: 'pk_config_updated', resource: 'pk_battle', timestamp: new Date(), endpoint: '/api/pk/config' } } }
-    ).catch(console.error);
+    await pushRecentActivity(userId, {
+      action: 'pk_config_updated',
+      resource: 'pk_battle',
+      endpoint: '/api/pk/config'
+    }, console.error);
   }
   res.json({ success: true, config: {} });
 });
@@ -239,10 +242,11 @@ router.post('/start', async (req, res) => {
       });
     }
 
-    await User.findOneAndUpdate(
-      { id: challengerId },
-      { $push: { recentActivities: { action: 'pk_battle_started', resource: 'pk_battle', timestamp: new Date(), endpoint: '/api/pk/start' } } }
-    ).catch(console.error);
+    await pushRecentActivity(challengerId, {
+      action: 'pk_battle_started',
+      resource: 'pk_battle',
+      endpoint: '/api/pk/start'
+    }, console.error);
 
     res.json({
       success: true,
@@ -372,10 +376,11 @@ router.post('/end/:battleId', async (req, res) => {
 
     const userId = req.body.userId || req.headers['user-id'] as string;
     if (userId) {
-      await User.findOneAndUpdate(
-        { id: userId },
-        { $push: { recentActivities: { action: 'pk_battle_ended', resource: 'pk_battle', timestamp: new Date(), endpoint: '/api/pk/end' } } }
-      ).catch(console.error);
+      await pushRecentActivity(userId, {
+        action: 'pk_battle_ended',
+        resource: 'pk_battle',
+        endpoint: '/api/pk/end'
+      }, console.error);
     }
 
     res.json({ success: true, battle: updated });
@@ -389,10 +394,11 @@ router.post('/end/:battleId', async (req, res) => {
 router.post('/heart', async (req, res) => {
   const userId = req.body.userId || req.headers['user-id'] as string;
   if (userId) {
-    await User.findOneAndUpdate(
-      { id: userId },
-      { $push: { recentActivities: { action: 'pk_heart_sent', resource: 'pk_battle', timestamp: new Date(), endpoint: '/api/pk/heart' } } }
-    ).catch(console.error);
+    await pushRecentActivity(userId, {
+      action: 'pk_heart_sent',
+      resource: 'pk_battle',
+      endpoint: '/api/pk/heart'
+    });
   }
   res.json({ success: true });
 });

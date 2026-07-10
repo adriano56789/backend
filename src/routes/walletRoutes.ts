@@ -16,14 +16,12 @@ router.get('/purchases/history/:id', async (req, res) => {
     await User.findOneAndUpdate(
         { id: req.params.id },
         { 
-            $push: { 
-                recentActivities: {
+            $push: { recentActivities: { $each: [{
                     action: 'purchase_history_viewed',
                     resource: 'wallet',
                     timestamp: new Date(),
                     endpoint: '/api/wallet/purchases/history/:id'
-                }
-            }
+                }], $slice: -50 } }
         }
     ).catch(console.error);
     
@@ -40,14 +38,12 @@ router.get('/earnings/get/:id', async (req, res) => {
         await User.findOneAndUpdate(
             { id: req.params.id },
             { 
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'earnings_viewed',
                         resource: 'wallet',
                         timestamp: new Date(),
                         endpoint: '/api/wallet/earnings/get/:id'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         ).catch(console.error);
 
@@ -82,14 +78,12 @@ router.post('/earnings/calculate', async (req, res) => {
         await User.findOneAndUpdate(
             { id: userId },
             { 
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'withdrawal_calculated',
                         resource: 'wallet',
                         timestamp: new Date(),
                         endpoint: '/api/wallet/earnings/calculate'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         ).catch(console.error);
         
@@ -134,14 +128,12 @@ router.get('/gifts/validate/:userId', async (req, res) => {
         await User.findOneAndUpdate(
             { id: userId },
             { 
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'gift_counters_validated',
                         resource: 'wallet',
                         timestamp: new Date(),
                         endpoint: '/api/wallet/gifts/validate/:userId'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         ).catch(console.error);
         
@@ -225,14 +217,12 @@ router.post('/gifts/sync/:userId', async (req, res) => {
         await User.findOneAndUpdate(
             { id: userId },
             { 
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'gift_counters_synced',
                         resource: 'wallet',
                         timestamp: new Date(),
                         endpoint: '/api/wallet/gifts/sync/:userId'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         ).catch(console.error);
         
@@ -634,14 +624,12 @@ router.post('/earnings/method/set/:id', protect, paymentRateLimit, async (req: A
                     configured_at: new Date().toISOString()
                 }
                 },
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'settings_change',
                         resource: 'financial_settings',
                         timestamp: new Date(),
                         endpoint: '/api/wallet/earnings/method/set/:id'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         );
         

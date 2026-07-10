@@ -206,14 +206,12 @@ router.post('/:id/like', async (req: Request, res: Response) => {
         await User.findOneAndUpdate(
             { id: userId },
             { 
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'photo_liked',
                         resource: 'photo_interaction',
                         timestamp: new Date(),
                         endpoint: '/api/photos/:id/like'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         ).catch(console.error);
 
@@ -272,14 +270,12 @@ router.delete('/:id/like', async (req: Request, res: Response) => {
         await User.findOneAndUpdate(
             { id: userId },
             { 
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'photo_unliked',
                         resource: 'photo_interaction',
                         timestamp: new Date(),
                         endpoint: '/api/photos/:id/like'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         ).catch(console.error);
 

@@ -185,14 +185,12 @@ router.post('/', async (req, res) => {
             { id: senderId },
             { 
                 $inc: { messagesSent: 1 },
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'message_send',
                         resource: 'communication',
                         timestamp: new Date(),
                         endpoint: '/api/messages'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         ).catch(() => {});
 

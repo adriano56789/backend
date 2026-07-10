@@ -29,14 +29,12 @@ router.post('/users/:userId/photos', async (req, res) => {
         await User.findOneAndUpdate(
             { id: userId },
             { 
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'photo_uploaded',
                         resource: 'media_content',
                         timestamp: new Date(),
                         endpoint: '/api/media/users/:userId/photos'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         ).catch(console.error);
         
@@ -102,14 +100,12 @@ router.post('/users/:userId/videos', async (req, res) => {
         await User.findOneAndUpdate(
             { id: userId },
             { 
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'video_uploaded',
                         resource: 'media_content',
                         timestamp: new Date(),
                         endpoint: '/api/media/users/:userId/videos'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         ).catch(console.error);
         
@@ -130,14 +126,12 @@ router.get('/users/:userId/photos', async (req, res) => {
         await User.findOneAndUpdate(
             { id: userId },
             { 
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'photos_viewed',
                         resource: 'media_content',
                         timestamp: new Date(),
                         endpoint: '/api/media/users/:userId/photos'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         ).catch(console.error);
         
@@ -179,14 +173,12 @@ router.get('/users/:userId/videos', async (req, res) => {
         await User.findOneAndUpdate(
             { id: userId },
             { 
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'videos_viewed',
                         resource: 'media_content',
                         timestamp: new Date(),
                         endpoint: '/api/media/users/:userId/videos'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         ).catch(console.error);
         
@@ -285,14 +277,12 @@ router.put('/users/:userId/profile', async (req, res) => {
                 $set: {
                     ...updateData
                 },
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'profile_updated',
                         resource: 'user_profile',
                         timestamp: new Date(),
                         endpoint: '/api/media/users/:userId/profile'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         );
         
@@ -318,14 +308,12 @@ router.get('/users/:userId/profile-updates', async (req, res) => {
         await User.findOneAndUpdate(
             { id: userId },
             { 
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'profile_history_viewed',
                         resource: 'user_profile',
                         timestamp: new Date(),
                         endpoint: '/api/media/users/:userId/profile-updates'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         ).catch(console.error);
         

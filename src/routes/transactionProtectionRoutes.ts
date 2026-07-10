@@ -116,14 +116,12 @@ router.get('/check-block-status/:userId/:targetUserId', async (req, res) => {
         await User.findOneAndUpdate(
             { id: userId },
             { 
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'block_status_checked',
                         resource: 'transaction_protection',
                         timestamp: new Date(),
                         endpoint: '/api/transaction-protection/check-block-status/:userId/:targetUserId'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         ).catch(console.error);
 
@@ -179,14 +177,12 @@ router.post('/register-block-attempt', async (req, res) => {
         await User.findOneAndUpdate(
             { id: userId },
             { 
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'block_attempt_registered',
                         resource: 'transaction_protection',
                         timestamp: new Date(),
                         endpoint: '/api/transaction-protection/register-block-attempt'
-                    }
-                }
+                    }], $slice: -50 } }
             }
         ).catch(console.error);
 

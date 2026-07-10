@@ -1,5 +1,6 @@
 import express from 'express';
 import { User, Streamer, GiftTransaction } from '../models';
+import { pushRecentActivity } from '../utils/activityHelpers';
 
 const router = express.Router();
 
@@ -14,19 +15,11 @@ router.get('/contribution/:period', async (req, res) => {
 
         // Persistir atividade de consulta de ranking se userId fornecido
         if (userId && typeof userId === 'string') {
-            await User.findOneAndUpdate(
-                { id: userId },
-                { 
-                    $push: { 
-                        recentActivities: {
-                            action: 'ranking_viewed',
-                            resource: 'analytics',
-                            timestamp: new Date(),
-                            endpoint: '/api/contribution/:period'
-                        }
-                    }
-                }
-            ).catch(console.error); // Não falhar se não conseguir persistir
+            await pushRecentActivity(userId, {
+                action: 'ranking_viewed',
+                resource: 'analytics',
+                endpoint: '/api/contribution/:period'
+            });
         }
         
         // 🔧 CORREÇÃO: Para ranking "Live", usar transações de presentes em tempo real

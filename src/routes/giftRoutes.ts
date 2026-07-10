@@ -1,5 +1,6 @@
 import express from 'express';
 import { User, Gift, GiftTransaction, Streamer, Followers, Battle } from '../models';
+import { pushRecentActivity } from '../utils/activityHelpers';
 import { getDb } from '../config/db';
 import { isFollowing, createFollow } from '../models/Follow';
 import { ComboService } from '../services/ComboService';
@@ -133,17 +134,14 @@ async function processGiftSend(fromUserId: string, toUserId: string, giftId: str
             { id: fromUserId },
             { 
                 $inc: { diamonds: -totalCost, enviados: totalCost },
-                $set: { lastSeen: new Date().toISOString() },
-                $push: { 
-                    recentActivities: {
-                        action: 'live_gift',
-                        resource: 'monetary_transaction',
-                        timestamp: new Date(),
-                        endpoint: '/api/gifts/send'
-                    }
-                }
+                $set: { lastSeen: new Date().toISOString() }
             }
         );
+        await pushRecentActivity(fromUserId, {
+            action: 'live_gift',
+            resource: 'monetary_transaction',
+            endpoint: '/api/gifts/send'
+        });
         
         // Se for presente para stream, acumular diamantes na stream E no widget da streamer
         if (streamId && streamId !== 'unknown') {

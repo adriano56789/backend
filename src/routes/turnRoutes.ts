@@ -4,6 +4,7 @@ import { User } from '../models';
 import Security from '../utils/Security';
 import { ENV } from '../config/env';
 import { turnSecurityMiddleware } from '../middleware/TurnSecurity';
+import { pushRecentActivity } from '../utils/activityHelpers';
 
 const router = express.Router();
 
@@ -45,17 +46,7 @@ const TURN_CONFIGS: Record<string, TurnConfig> = {
   EU: { urls: [`turn:${TURN_HOST}:${TURN_PORT}`], maxConnections: 2000, secret: TURN_SECRET },
 };
 
-// Helper para registrar atividade recente no User
-async function pushActivity(userId: string, activity: RecentActivity): Promise<void> {
-  try {
-    await User.findOneAndUpdate(
-      { id: userId },
-      { $push: { recentActivities: activity } }
-    );
-  } catch {
-    // Falha silenciosa - não travar a requisição
-  }
-}
+// Helper para registrar atividade recente no User (usa o helper compartilhado)
 
 // POST /api/turn/credentials
 router.post('/turn/credentials', turnSecurityMiddleware, async (req, res) => {
@@ -118,7 +109,7 @@ router.post('/turn/credentials', turnSecurityMiddleware, async (req, res) => {
 
     setTimeout(() => { activeCredentials.delete(credentialKey); }, 5 * 60 * 1000);
 
-    await pushActivity(userId, {
+    await pushRecentActivity(userId, {
       action: 'turn_credentials_generated',
       resource: 'turn_server',
       timestamp: new Date(),
@@ -164,7 +155,7 @@ router.post('/turn/validate', turnSecurityMiddleware, async (req, res) => {
       return res.status(401).json({ error: 'Credentials expired' });
     }
 
-    await pushActivity(foundCredentials.userId, {
+    await pushRecentActivity(foundCredentials.userId, {
       action: 'turn_credentials_validated',
       resource: 'turn_server',
       timestamp: new Date(),
@@ -197,7 +188,7 @@ router.post('/turn/revoke', turnSecurityMiddleware, async (req, res) => {
       }
     }
 
-    await pushActivity(userId, {
+    await pushRecentActivity(userId, {
       action: 'turn_credentials_revoked',
       resource: 'turn_server',
       timestamp: new Date(),

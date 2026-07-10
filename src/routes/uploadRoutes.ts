@@ -111,14 +111,12 @@ router.post('/avatar', protect, avatarUpload.single('avatar'), async (req, res) 
             { id: userId },
             { 
                 $set: { avatarUrl },
-                $push: { 
-                    recentActivities: {
+                $push: { recentActivities: { $each: [{
                         action: 'avatar_change',
                         resource: 'user_profile',
                         timestamp: new Date(),
                         endpoint: '/api/upload/avatar'
-                    }
-                }
+                    }], $slice: -50 } }
             },
             { returnDocument: 'after' } // Forçar retorno do documento atualizado
         );
@@ -243,15 +241,22 @@ router.post('/avatar/:userId', avatarUpload.single('avatar'), async (req, res) =
         
         console.log(`[UPLOAD] Avatar para usuário ${userId}: ${avatarUrl}`);
 
-        // Atualizar avatarUrl do usuário
+        // Atualizar avatarUrl do usuário E adicionar ao array obras
+        const obraId = `avatar_${Date.now()}_${userId}`;
+        const newObra = { id: obraId, url: avatarUrl };
+        
         await User.findOneAndUpdate(
             { id: userId },
-            { $set: { avatarUrl } },
+            { 
+                $set: { avatarUrl },
+                $push: { obras: newObra }
+            },
             { returnDocument: 'after' }
         );
 
+        console.log(`[UPLOAD] Avatar salvo no User: avatarUrl=${avatarUrl}, obraId=${obraId}`);
+
         // Criar registro em ProfilePhoto (obras) - como gallery para aparecer na galeria
-        const obraId = `avatar_${Date.now()}_${userId}`;
         
         // Salvar como avatar principal
         await ProfilePhoto.findOneAndUpdate(

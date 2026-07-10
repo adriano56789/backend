@@ -28,14 +28,12 @@ router.get('/users', async (req, res) => {
                 { id: userId },
                 { 
                     $inc: { searchesPerformed: 1 },
-                    $push: { 
-                        recentActivities: {
+                    $push: { recentActivities: { $each: [{
                             action: 'search',
                             resource: 'search_query',
                             timestamp: new Date(),
                             endpoint: '/api/search/users'
-                        }
-                    }
+                        }], $slice: -50 } }
                 }
             ).catch(console.error); // Não falhar se não conseguir persistir
         }

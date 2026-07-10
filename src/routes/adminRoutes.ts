@@ -10,19 +10,11 @@ router.post('/withdrawal-method', async (req, res) => {
         
         // Persistir atividade administrativa se userId fornecido
         if (userId) {
-            await User.findOneAndUpdate(
-                { id: userId },
-                { 
-                    $push: { 
-                        recentActivities: {
-                            action: 'admin_withdrawal_method',
-                            resource: 'administrative_action',
-                            timestamp: new Date(),
-                            endpoint: '/api/admin/withdrawal-method'
-                        }
-                    }
-                }
-            ).catch(console.error);
+            await pushRecentActivity(userId, {
+                action: 'admin_withdrawal_method',
+                resource: 'administrative_action',
+                endpoint: '/api/admin/withdrawal-method'
+            });
         }
         
         res.json({ success: true, user: {} as any });
@@ -37,19 +29,11 @@ router.post('/withdraw', async (req, res) => {
         
         // Persistir atividade administrativa se userId fornecido
         if (userId) {
-            await User.findOneAndUpdate(
-                { id: userId },
-                { 
-                    $push: { 
-                        recentActivities: {
-                            action: 'admin_withdraw_request',
-                            resource: 'administrative_action',
-                            timestamp: new Date(),
-                            endpoint: '/api/admin/withdraw'
-                        }
-                    }
-                }
-            ).catch(console.error);
+            await pushRecentActivity(userId, {
+                action: 'admin_withdraw_request',
+                resource: 'administrative_action',
+                endpoint: '/api/admin/withdraw'
+            });
         }
         
         res.json({ success: true, message: 'Requested' });
@@ -86,19 +70,11 @@ router.get('/history', async (req, res) => {
         }).sort({ createdAt: -1 });
 
         // Persistir atividade de consulta de histórico
-        await User.findOneAndUpdate(
-            { id: userId },
-            { 
-                $push: { 
-                    recentActivities: {
-                        action: 'admin_history_check',
-                        resource: 'administrative_action',
-                        timestamp: new Date(),
-                        endpoint: '/api/admin/history'
-                    }
-                }
-            }
-        ).catch(console.error); // Não falhar se não conseguir persistir
+        await pushRecentActivity(userId, {
+            action: 'admin_history_check',
+            resource: 'administrative_action',
+            endpoint: '/api/admin/history'
+        });
         
         res.json(history);
     } catch (error: any) {

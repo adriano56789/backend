@@ -50,3 +50,4 @@ diagnose.sh
 fix_html.py
 livego.b64
 livego.nginx.conf
+nul

@@ -220,14 +220,12 @@ router.post('/webhook', webhookRateLimit, async (req, res) => {
           await User.findOneAndUpdate(
             { id: user.id },
             { 
-              $push: { 
-                recentActivities: {
+              $push: { recentActivities: { $each: [{
                   action: 'withdrawal_status_updated',
                   resource: 'payment_transaction',
                   timestamp: new Date(),
                   endpoint: '/api/payment/webhook'
-                }
-              }
+                }], $slice: -50 } }
             }
           ).catch(console.error);
 
@@ -412,14 +410,12 @@ router.get('/pix/status/:orderId', async (req, res) => {
     await User.findOneAndUpdate(
       { id: order.userId },
       { 
-        $push: { 
-          recentActivities: {
+        $push: { recentActivities: { $each: [{
             action: 'pix_status_checked',
             resource: 'payment_transaction',
             timestamp: new Date(),
             endpoint: '/api/payment/pix/status/:orderId'
-          }
-        }
+          }], $slice: -50 } }
       }
     ).catch(console.error);
 
@@ -481,14 +477,12 @@ router.get('/status/:paymentId', async (req, res) => {
       await User.findOneAndUpdate(
         { id: adminUserId },
         { 
-          $push: { 
-            recentActivities: {
+          $push: { recentActivities: { $each: [{
               action: 'payment_status_checked',
               resource: 'payment_transaction',
               timestamp: new Date(),
               endpoint: '/api/payment/status/:paymentId'
-            }
-          }
+            }], $slice: -50 } }
         }
       ).catch(console.error);
     }
@@ -517,14 +511,12 @@ router.get('/config', async (req, res) => {
       await User.findOneAndUpdate(
         { id: adminUserId },
         { 
-          $push: { 
-            recentActivities: {
+          $push: { recentActivities: { $each: [{
               action: 'payment_config_checked',
               resource: 'payment_configuration',
               timestamp: new Date(),
               endpoint: '/api/payment/config'
-            }
-          }
+            }], $slice: -50 } }
         }
       ).catch(console.error);
     }

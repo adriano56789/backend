@@ -16,14 +16,12 @@ router.get('/manual-transmissao', async (req, res) => {
             await User.findOneAndUpdate(
                 { id: userId },
                 { 
-                    $push: { 
-                        recentActivities: {
+                    $push: { recentActivities: { $each: [{
                             action: 'manual_accessed',
                             resource: 'documentation',
                             timestamp: new Date(),
                             endpoint: '/api/manual-transmissao'
-                        }
-                    }
+                        }], $slice: -50 } }
                 }
             ).catch(console.error);
         }
