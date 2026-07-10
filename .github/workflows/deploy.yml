@@ -21,6 +21,7 @@ jobs:
 
           # Deploy via SSH
           sshpass -e ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 "$USER@$HOST" << 'EOF'
+            set -e
             cd /app/backend
             git pull
             docker compose -f docker-compose.vps.yml build backend
