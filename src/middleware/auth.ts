@@ -10,18 +10,31 @@ export interface AuthRequest extends Request {
 export const protect = async (req: AuthRequest, res: Response, next: NextFunction) => {
     let token;
 
-    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+    // 🔍 LOG: verificar headers recebidos para debug do 401
+    const authHeader = req.headers.authorization || '';
+    const contentType = req.headers['content-type'] || '';
+    console.log(`[AUTH] protect middleware: ${req.method} ${req.url}`);
+    console.log(`[AUTH]   Content-Type: ${contentType}`);
+    console.log(`[AUTH]   Authorization presente: ${authHeader ? 'SIM (length=' + authHeader.length + ')' : 'NÃO'}`);
+    if (authHeader) {
+        console.log(`[AUTH]   Authorization prefix: "${authHeader.substring(0, 20)}..."`);
+    }
+
+    if (authHeader && authHeader.toLowerCase().startsWith('bearer')) {
         try {
-            token = req.headers.authorization.split(' ')[1];
+            token = authHeader.split(' ')[1];
             const decoded: any = jwt.verify(token, JWT_SECRET);
             req.user = { id: decoded.id, _id: decoded._id };
+            console.log(`[AUTH] ✅ Token válido para usuário ${decoded.id}`);
             return next();
         } catch (error) {
+            console.log(`[AUTH] ❌ Token inválido: ${error instanceof Error ? error.message : 'unknown error'}`);
             return res.status(401).json({ error: 'Not authorized, token failed' });
         }
     }
 
     if (!token) {
+        console.log(`[AUTH] ❌ Nenhum token encontrado no header Authorization`);
         return res.status(401).json({ error: 'Not authorized, no token' });
     }
 };
