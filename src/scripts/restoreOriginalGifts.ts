@@ -222,6 +222,9 @@ async function restoreOriginalGifts() {
       icon: g.icon,
       category: g.category as any,
       videoUrl: (g as any).videoUrl || undefined,
+      audioUrl: (g as any).audioUrl || undefined,
+      duration: (g as any).duration || undefined,
+      noBlend: (g as any).noBlend ?? false,
       triggersAutoFollow: (g as any).triggersAutoFollow ?? false,
     }));
 
