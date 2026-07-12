@@ -796,8 +796,183 @@ function rewritePrivateIpsInSdp(sdp: string, publicIp?: string): string {
   }).join('\r\n');
 }
 
-// REMOVIDO: Rotas WHIP/WHEP foram movidas para o Nginx
-// WHIP/WHEP agora sao proxyadas DIRETAMENTE para o SRS (porta 1985)
-// sem passar pelo backend Node.js para evitar erro 401 de autenticacao
+const whipSdpParser = express.text({ type: 'application/sdp', limit: '1mb' });
+
+// @route POST /api/rtc/v1/whip/
+// Proxy raw SDP → SRS WHIP endpoint (via backend proxy)
+router.post('/rtc/v1/whip/', protect, whipSdpParser, async (req, res) => {
+  try {
+    const { app, stream } = req.query;
+    const sdp = req.body;
+    if (!sdp || !stream) {
+      return res.status(400).send('Missing SDP body or stream query param');
+    }
+
+    const sanitizedSdp = srsService.sanitizeSDP(sdp);
+
+    const srsUrl = `${getSrsApiBaseUrl()}/rtc/v1/whip/?app=${encodeURIComponent(String(app || 'live'))}&stream=${encodeURIComponent(String(stream))}`;
+    console.log('[RTC] WHIP proxy:', { stream });
+
+    const srsRes = await httpClient.requestRaw('POST', srsUrl, sanitizedSdp, {
+      headers: { 'Content-Type': 'application/sdp' },
+    });
+
+    // Rewrite location header for ICE trickle to go through backend proxy
+    if (srsRes.headers.get('location')) {
+      const loc = srsRes.headers.get('location')!;
+      res.set('location', loc.replace('/rtc/v1/whip/', '/api/rtc/v1/whip/'));
+    }
+    if (srsRes.headers.get('ETag')) {
+      res.set('ETag', srsRes.headers.get('ETag')!);
+    }
+
+    console.log('[RTC] WHIP response:', { status: srsRes.status });
+    res.status(srsRes.status).send(srsRes.bodyText);
+  } catch (err: any) {
+    console.error('[RTC] WHIP proxy error:', err);
+    res.status(502).send(`WHIP proxy error: ${err.message}`);
+  }
+});
+
+// @route PATCH /api/rtc/v1/whip/:sessionId
+// Proxy ICE trickle PATCH → SRS
+router.patch('/rtc/v1/whip/:sessionId', protect, whipSdpParser, async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const eTag = req.headers['etag'] as string;
+
+    const srsUrl = `${getSrsApiBaseUrl()}/rtc/v1/whip/${sessionId}`;
+    const srsRes = await httpClient.requestRaw('PATCH', srsUrl, req.body, {
+      headers: {
+        'Content-Type': 'application/trickle-ice-sdpfrag',
+        'ETag': eTag || '',
+      },
+    });
+
+    if (srsRes.headers.get('ETag')) {
+      res.set('ETag', srsRes.headers.get('ETag')!);
+    }
+
+    res.status(srsRes.status).send(srsRes.bodyText);
+  } catch (err: any) {
+    console.error('[RTC] WHIP PATCH error:', err);
+    res.status(502).send(`WHIP PATCH error: ${err.message}`);
+  }
+});
+
+// @route DELETE /api/rtc/v1/whip/:sessionId
+// Proxy DELETE → SRS WHIP session cleanup
+router.delete('/rtc/v1/whip/:sessionId', protect, async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const srsUrl = `${getSrsApiBaseUrl()}/rtc/v1/whip/${sessionId}`;
+    const srsRes = await httpClient.requestRaw('DELETE', srsUrl);
+    console.log('[RTC] WHIP DELETE:', { sessionId, status: srsRes.status });
+    res.status(srsRes.status).send(srsRes.bodyText);
+  } catch (err: any) {
+    console.error('[RTC] WHIP DELETE error:', err);
+    res.status(502).send(`WHIP DELETE error: ${err.message}`);
+  }
+});
+
+// @route POST /api/rtc/v1/whep/
+// Proxy raw SDP → SRS WHEP endpoint (via backend proxy)
+router.post('/rtc/v1/whep/', protect, whipSdpParser, async (req, res) => {
+  try {
+    const { app, stream } = req.query;
+    const sdp = req.body;
+    if (!sdp || !stream) {
+      return res.status(400).send('Missing SDP body or stream query param');
+    }
+
+    console.log('[RTC-WHEP] Request recebido:', { app, stream, sdpLength: sdp?.length });
+
+    const sanitizedSdp = srsService.sanitizeSDP(sdp);
+
+    const srsUrl = `${getSrsApiBaseUrl()}/rtc/v1/whep/?app=${encodeURIComponent(String(app || 'live'))}&stream=${encodeURIComponent(String(stream))}`;
+    console.log('[RTC-WHEP] Proxy para SRS:', { stream });
+
+    if (sanitizedSdp.length !== sdp.length) {
+      console.log('[RTC-WHEP] SDP sanitizado:', { originalLen: sdp.length, sanitizedLen: sanitizedSdp.length });
+    }
+
+    const srsRes = await httpClient.requestRaw('POST', srsUrl, sanitizedSdp, {
+      headers: { 'Content-Type': 'application/sdp' },
+    });
+
+    console.log('[RTC-WHEP] Resposta do SRS:', { stream, status: srsRes.status });
+
+    if (!srsRes.ok) {
+      console.error('[RTC-WHEP] SRS retornou erro:', { stream, status: srsRes.status });
+      return res.status(srsRes.status).send(srsRes.bodyText);
+    }
+
+    // Rewrite location header for ICE trickle to go through backend proxy
+    if (srsRes.headers.get('location')) {
+      const loc = srsRes.headers.get('location')!;
+      res.set('location', loc.replace('/rtc/v1/whep/', '/api/rtc/v1/whep/'));
+      // Location reescrito para ICE trickle via proxy
+    }
+    if (srsRes.headers.get('ETag')) {
+      res.set('ETag', srsRes.headers.get('ETag')!);
+    }
+
+    // Remover candidatos ICE com IPs internos (Docker) do SDP answer
+    // para que clientes externos não tentem conectar em IPs inacessíveis
+    const publicIp = process.env.PUBLIC_IP || process.env.SRS_PUBLIC_IP || '';
+    const cleanedSdp = rewritePrivateIpsInSdp(srsRes.bodyText, publicIp);
+
+    if (cleanedSdp !== srsRes.bodyText) {
+      console.log('[RTC-WHEP] 🧹 IPs privados removidos do SDP answer');
+    }
+
+    console.log('[RTC-WHEP] Sucesso:', { status: 201, sdpLength: cleanedSdp.length });
+    res.status(201).send(cleanedSdp);
+  } catch (err: any) {
+    console.error('[RTC] WHEP proxy error:', err);
+    res.status(502).send(`WHEP proxy error: ${err.message}`);
+  }
+});
+
+// @route PATCH /api/rtc/v1/whep/:sessionId
+// Proxy ICE trickle PATCH → SRS (WHEP)
+router.patch('/rtc/v1/whep/:sessionId', protect, whipSdpParser, async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const eTag = req.headers['etag'] as string;
+
+    const srsUrl = `${getSrsApiBaseUrl()}/rtc/v1/whep/${sessionId}`;
+    const srsRes = await httpClient.requestRaw('PATCH', srsUrl, req.body, {
+      headers: {
+        'Content-Type': 'application/trickle-ice-sdpfrag',
+        'ETag': eTag || '',
+      },
+    });
+
+    if (srsRes.headers.get('ETag')) {
+      res.set('ETag', srsRes.headers.get('ETag')!);
+    }
+
+    res.status(srsRes.status).send(srsRes.bodyText);
+  } catch (err: any) {
+    console.error('[RTC] WHEP PATCH error:', err);
+    res.status(502).send(`WHEP PATCH error: ${err.message}`);
+  }
+});
+
+// @route DELETE /api/rtc/v1/whep/:sessionId
+// Proxy DELETE → SRS WHEP session cleanup
+router.delete('/rtc/v1/whep/:sessionId', protect, async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const srsUrl = `${getSrsApiBaseUrl()}/rtc/v1/whep/${sessionId}`;
+    const srsRes = await httpClient.requestRaw('DELETE', srsUrl);
+    console.log('[RTC] WHEP DELETE:', { sessionId, status: srsRes.status });
+    res.status(srsRes.status).send(srsRes.bodyText);
+  } catch (err: any) {
+    console.error('[RTC] WHEP DELETE error:', err);
+    res.status(502).send(`WHEP DELETE error: ${err.message}`);
+  }
+});
 
 export default router;
