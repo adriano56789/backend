@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>LiveKit DataChannel Test</title>
+<style>
+  body { font-family: monospace; background: #1a1a2e; color: #eee; padding: 20px; }
+  h1 { color: #bd00ff; }
+  .log { background: #16213e; padding: 10px; border-radius: 5px; max-height: 400px; overflow-y: auto; font-size: 12px; margin: 10px 0; white-space: pre-wrap; }
+  .log-entry { margin: 2px 0; }
+  .send { color: #00ff88; }
+  .receive { color: #ffcc00; }
+  .error { color: #ff4444; }
+  .info { color: #66ccff; }
+  .system { color: #aa88ff; }
+  button { background: #bd00ff; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin: 5px; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  input { padding: 10px; border-radius: 5px; border: 1px solid #444; background: #16213e; color: white; width: 300px; }
+  .status { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 5px; }
+  .connected { background: #00ff88; }
+  .disconnected { background: #ff4444; }
+  .connecting { background: #ffcc00; }
+  .container { display: flex; gap: 20px; }
+  .participant { flex: 1; border: 1px solid #333; border-radius: 8px; padding: 15px; }
+  textarea { width: 100%; height: 120px; background: #16213e; color: #0f0; border: 1px solid #444; border-radius: 5px; padding: 10px; font-family: monospace; font-size: 11px; }
+</style>
+</head>
+<body>
+<h1>🧪 LiveKit DataChannel Test</h1>
+
+<div style="margin-bottom:20px;">
+  <h3>Passo 1: Gerar tokens</h3>
+  <p>No servidor, rode:</p>
+  <code style="background:#333;padding:8px;display:block;border-radius:4px;">node /app/backend/generate-test-tokens.js meu-stream-id</code>
+  <p style="color:#888;font-size:12px;">Cole o JSON gerado abaixo:</p>
+  <textarea id="tokensInput" placeholder='Cole aqui o JSON com os tokens...'></textarea>
+  <button id="loadTokens" onclick="loadTokens()">📥 Carregar Tokens</button>
+  <span id="roomDisplay" style="margin-left:15px;color:#888;font-size:13px;"></span>
+</div>
+
+<div class="container">
+  <div class="participant">
+    <h2><span id="statusA" class="status disconnected"></span> 👤 Usuário A (Espectador)</h2>
+    <div id="identityA" style="color:#888;font-size:12px;margin-bottom:5px;"></div>
+    <div class="log" id="logA"></div>
+    <div style="margin-top:5px;">
+      <button id="connectA" onclick="connectUser('A')" disabled>🔗 Conectar A</button>
+    </div>
+  </div>
+  <div class="participant">
+    <h2><span id="statusB" class="status disconnected"></span> 👤 Usuário B (Host)</h2>
+    <div id="identityB" style="color:#888;font-size:12px;margin-bottom:5px;"></div>
+    <div class="log" id="logB"></div>
+    <div style="margin-top:5px;">
+      <button id="connectB" onclick="connectUser('B')" disabled>🔗 Conectar B</button>
+    </div>
+  </div>
+</div>
+
+<div style="margin-top:20px;">
+  <h3>Passo 3: Enviar Mensagem</h3>
+  <input id="msgInput" placeholder='Digite a mensagem (ex: "Olá host")' disabled style="width:400px;" />
+  <button id="sendBtn" onclick="sendMessage()" disabled>📤 Enviar via publishData()</button>
+  <button id="autoTestBtn" onclick="autoTest()" disabled>🤖 Teste Automático (envia "Olá host")</button>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/livekit-client@2.20.0/dist/livekit-client.umd.min.js"></script>
+<script>
+let tokens = null;
+let roomA = null;
+let roomB = null;
+let receivedFlag = { A: false, B: false };
+let logEls = {};
+let identityEls = {};
+
+function log(participant, msg, type = 'info') {
+  const el = document.getElementById(`log${participant}`);
+  const entry = document.createElement('div');
+  entry.className = `log-entry ${type}`;
+  const time = new Date().toLocaleTimeString();
+  entry.textContent = `[${time}] ${msg}`;
+  el.appendChild(entry);
+  el.scrollTop = el.scrollHeight;
+}
+
+function loadTokens() {
+  const input = document.getElementById('tokensInput').value.trim();
+  if (!input) { alert('Cole o JSON dos tokens primeiro!'); return; }
+  try {
+    tokens = JSON.parse(input);
+    document.getElementById('roomDisplay').textContent = `📡 Room: ${tokens.roomName} | Server: ${tokens.serverUrl}`;
+    document.getElementById('identityA').textContent = `ID: ${tokens.userA.identity || (tokens.userA.token ? 'token carregado' : '?')}`;
+    document.getElementById('identityB').textContent = `ID: ${tokens.userB.identity || (tokens.userB.token ? 'token carregado' : '?')}`;
+    
+    // Extrair identity do JWT se possível
+    try {
+      const payloadA = JSON.parse(atob(tokens.userA.token.split('.')[1]));
+      document.getElementById('identityA').textContent = `ID: ${payloadA.identity || 'desconhecido'}`;
+      
+      const payloadB = JSON.parse(atob(tokens.userB.token.split('.')[1]));
+      document.getElementById('identityB').textContent = `ID: ${payloadB.identity || 'desconhecido'}`;
+      
+      log('A', `📋 Token A: room=${payloadA.video?.room}, canPublishData=${payloadA.video?.canPublishData}`, 'system');
+      log('A', `📋 Token B: room=${payloadB.video?.room}, canPublishData=${payloadB.video?.canPublishData}`, 'system');
+      
+      // Verificar se estão na MESMA room
+      if (payloadA.video?.room === payloadB.video?.room) {
+        log('A', `✅ AMBOS na mesma room: ${payloadA.video?.room}`, 'system');
+      } else {
+        log('A', `❌ Rooms DIFERENTES! A:${payloadA.video?.room} B:${payloadB.video?.room}`, 'error');
+      }
+      
+      // Verificar permissões
+      if (payloadA.video?.canPublishData && payloadB.video?.canPublishData) {
+        log('A', `✅ Ambos têm canPublishData: true`, 'system');
+      } else {
+        log('A', `❌ canPublishData: A=${payloadA.video?.canPublishData} B=${payloadB.video?.canPublishData}`, 'error');
+      }
+    } catch(e) {
+      log('A', `⚠️ Não foi possível decodificar JWT: ${e.message}`, 'error');
+    }
+    
+    document.getElementById('connectA').disabled = false;
+    document.getElementById('connectB').disabled = false;
+    log('A', '✅ Tokens carregados! Clique em Conectar A e depois Conectar B.', 'system');
+  } catch(e) {
+    alert('JSON inválido: ' + e.message);
+  }
+}
+
+function createRoom(participant, token, serverUrl, logEl) {
+  const room = new LiveKitClient.Room({
+    adaptiveStream: false,
+    dynacast: false,
+  });
+  
+  room.on(LiveKitClient.RoomEvent.DataReceived, (payload, sender, kind, topic) => {
+    receivedFlag[participant] = true;
+    const text = new TextDecoder().decode(payload);
+    log(participant, `📥 DataReceived | topic: ${topic || '(none)'} | sender: ${sender?.identity || 'server'} | bytes: ${payload.byteLength}`, 'receive');
+    log(participant, `📥 Conteúdo raw: ${text}`, 'receive');
+    
+    try {
+      const parsed = JSON.parse(text);
+      log(participant, `📥 JSON: type=${parsed.type} | message="${parsed.message || parsed.text || ''}" | id=${parsed.id}`, 'receive');
+      // Destacar se for "Olá host"
+      if (parsed.message === 'Olá host' || parsed.text === 'Olá host') {
+        log(participant, `🎯 MENSAGEM "Olá host" RECEBIDA! ✅✅✅`, 'receive');
+      }
+    } catch(_) {
+      log(participant, `📥 (texto plano, não é JSON)`, 'receive');
+    }
+  });
+  
+  room.on(LiveKitClient.RoomEvent.Connected, () => {
+    log(participant, `✅ Conectado à room: ${room.name}`, 'system');
+    document.getElementById(`status${participant}`).className = 'status connected';
+    
+    // Log remote participants
+    const remote = Array.from(room.remoteParticipants.values());
+    log(participant, `👥 Participantes remotos: ${remote.length}`, 'system');
+    remote.forEach(p => log(participant, `   - ${p.identity}`, 'system'));
+    
+    // Se ambos conectados, habilitar testes
+    if (roomA && roomB) {
+      document.getElementById('msgInput').disabled = false;
+      document.getElementById('sendBtn').disabled = false;
+      document.getElementById('autoTestBtn').disabled = false;
+    }
+  });
+  
+  room.on(LiveKitClient.RoomEvent.Disconnected, () => {
+    log(participant, `❌ Desconectado`, 'error');
+    document.getElementById(`status${participant}`).className = 'status disconnected';
+  });
+  
+  room.on(LiveKitClient.RoomEvent.ParticipantConnected, (p) => {
+    log(participant, `👋 Participante entrou: ${p.identity}`, 'system');
+    document.getElementById(`status${participant === 'A' ? 'B' : 'A'}`).className = 'status connected';
+    // Se ambos conectados, habilitar testes
+    if (roomA && roomB) {
+      document.getElementById('msgInput').disabled = false;
+      document.getElementById('sendBtn').disabled = false;
+      document.getElementById('autoTestBtn').disabled = false;
+    }
+  });
+  
+  room.on(LiveKitClient.RoomEvent.ParticipantDisconnected, (p) => {
+    log(participant, `👋 Participante saiu: ${p.identity}`, 'system');
+    document.getElementById(`status${participant === 'A' ? 'B' : 'A'}`).className = 'status disconnected';
+  });
+  
+  room.on(LiveKitClient.RoomEvent.Reconnecting, () => {
+    log(participant, `🔄 Reconectando...`, 'system');
+    document.getElementById(`status${participant}`).className = 'status connecting';
+  });
+  
+  room.on(LiveKitClient.RoomEvent.Reconnected, () => {
+    log(participant, `✅ Reconectado`, 'system');
+    document.getElementById(`status${participant}`).className = 'status connected';
+  });
+  
+  room.on(LiveKitClient.RoomEvent.RoomMetadataReceived, (metadata) => {
+    log(participant, `📋 Metadata recebida: ${metadata}`, 'info');
+  });
+  
+  return room;
+}
+
+async function connectUser(participant) {
+  if (!tokens) return;
+  const token = participant === 'A' ? tokens.userA.token : tokens.userB.token;
+  const serverUrl = tokens.serverUrl;
+  
+  log(participant, `🔗 Conectando Usuário ${participant}...`, 'system');
+  document.getElementById(`status${participant}`).className = 'status connecting';
+  document.getElementById(`connect${participant}`).disabled = true;
+  
+  try {
+    const room = createRoom(participant, token, serverUrl, log);
+    
+    log(participant, `📡 Server: ${serverUrl}`, 'info');
+    log(participant, `📡 Chamando room.connect()...`, 'info');
+    await room.connect(serverUrl, token);
+    log(participant, `✅ room.connect() concluído!`, 'system');
+    
+    if (participant === 'A') roomA = room;
+    else roomB = room;
+    
+  } catch (err) {
+    log(participant, `❌ ERRO ao conectar: ${err.message}`, 'error');
+    console.error(err);
+    document.getElementById(`status${participant}`).className = 'status disconnected';
+    document.getElementById(`connect${participant}`).disabled = false;
+    document.getElementById('connectB').disabled = false; // não travar o outro
+  }
+}
+
+async function sendMessage() {
+  const input = document.getElementById('msgInput');
+  const msg = input.value.trim();
+  if (!msg) return;
+  await doSendMessage(msg);
+  input.value = '';
+}
+
+async function doSendMessage(msg) {
+  if (!roomA || !roomA.localParticipant) {
+    log('A', '❌ Usuário A não conectado', 'error');
+    return;
+  }
+  
+  const payload = {
+    type: 'chat_message',
+    id: Date.now(),
+    message: msg,
+    from: roomA.localParticipant.identity,
+    timestamp: Date.now(),
+  };
+  
+  const encoder = new TextEncoder();
+  const data = encoder.encode(JSON.stringify(payload));
+  
+  log('A', `📤 Enviando: "${msg}"`, 'send');
+  log('A', `📤 Payload: ${JSON.stringify(payload)}`, 'send');
+  log('A', `📤 Tamanho: ${data.byteLength} bytes`, 'send');
+  log('A', `📤 Chamando localParticipant.publishData()...`, 'send');
+  log('A', `   participant: ${roomA.localParticipant.identity}`, 'send');
+  log('A', `   room.state: ${roomA.state}`, 'send');
+  log('A', `   room.name: ${roomA.name}`, 'send');
+  
+  receivedFlag.A = false;
+  receivedFlag.B = false;
+  
+  try {
+    // MÉTODO OFICIAL LiveKit: localParticipant.publishData()
+    await roomA.localParticipant.publishData(data, { 
+      reliable: true,
+      topic: 'livechat'
+    });
+    
+    log('A', `✅ publishData() executado sem erro!`, 'send');
+    log('A', `⏳ Aguardando recebimento nos outros participantes (5s)...`, 'send');
+    
+    // Verificar após 5 segundos se recebeu
+    setTimeout(() => {
+      if (receivedFlag.A) log('A', `✅ Usuário A recebeu próprio evento? (sender recebe de volta?)`, 'info');
+      if (receivedFlag.B) log('A', `✅ Usuário B RECEBEU! DataChannel funcionando! 🎉`, 'receive');
+      if (!receivedFlag.B) {
+        log('A', `❌ Usuário B NÃO recebeu. DataChannel com problema!`, 'error');
+        log('A', `   Possíveis causas:`, 'error');
+        log('A', `   1. Token sem canPublishData`, 'error');
+        log('A', `   2. Room diferente para cada participante`, 'error');
+        log('A', `   3. Problema de ICE/TURN/STUN`, 'error');
+        log('A', `   4. Servidor LiveKit não está distribuindo dados`, 'error');
+      }
+    }, 5000);
+    
+  } catch (err) {
+    log('A', `❌ ERRO no publishData(): ${err.message}`, 'error');
+    if (err.stack) log('A', `   ${err.stack.split('\n')[0]}`, 'error');
+  }
+}
+
+async function autoTest() {
+  log('A', '══════════════════════════════', 'system');
+  log('A', '🤖 INICIANDO TESTE AUTOMÁTICO', 'system');
+  log('A', '══════════════════════════════', 'system');
+  log('A', '⏳ Aguardando 2s para estabilizar conexões...', 'system');
+  
+  setTimeout(async () => {
+    await doSendMessage('Olá host');
+    log('A', '⏳ Aguardando 5s para verificar recebimento...', 'system');
+  }, 2000);
+}
+</script>
+</body>
+</html>
