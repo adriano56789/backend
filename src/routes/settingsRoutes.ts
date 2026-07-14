@@ -439,6 +439,64 @@ router.get('/chat-permission/status/:id', async (req, res) => {
     const user = await findUserByAnyId(User, req.params.id);
     res.json({ permission: user?.chatPermission || 'all' });
 });
+// Push Notification Settings (notificações individuais por streamer)
+router.get('/settings/push/:id', async (req, res) => {
+    try {
+        let userId = req.params.id;
+        if (req.needsIdConversion && req.originalMongoId) {
+            const user = await findUserByAnyId(User, req.originalMongoId);
+            if (!user) {
+                return res.status(404).json({ error: 'Usuário não encontrado' });
+            }
+            userId = user.id;
+        }
+        
+        const user = await findUserByAnyId(User, userId);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        const settings = user.pushNotificationSettings || {};
+        res.json({ settings });
+    } catch (error: any) {
+        console.error('Error getting push notification settings:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+router.post('/settings/push/:id', async (req, res) => {
+    try {
+        let userId = req.params.id;
+        if (req.needsIdConversion && req.originalMongoId) {
+            const user = await findUserByAnyId(User, req.originalMongoId);
+            if (!user) {
+                return res.status(404).json({ error: 'Usuário não encontrado' });
+            }
+            userId = user.id;
+        }
+        
+        const { settings } = req.body;
+        if (!settings || typeof settings !== 'object') {
+            return res.status(400).json({ error: 'Settings object is required' });
+        }
+        
+        const updatedUser = await updateUserByRealId(
+            User,
+            userId,
+            { pushNotificationSettings: settings }
+        );
+        
+        if (!updatedUser) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        
+        res.json({ success: true, settings: updatedUser.pushNotificationSettings || {} });
+    } catch (error: any) {
+        console.error('Error updating push notification settings:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 router.get('/can-send-message/:fromId/:toId', async (req, res) => {
     try {
         const { fromId, toId } = req.params;

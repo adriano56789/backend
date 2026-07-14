@@ -70,6 +70,7 @@ export interface IUser extends Document {
   locationPermission?: 'granted' | 'denied' | 'prompt';
   cameraPermissionStatus?: 'granted' | 'denied' | 'prompt';
   microphonePermissionStatus?: 'granted' | 'denied' | 'prompt';
+  pushNotificationSettings?: Record<string, boolean>;
   showActivityStatus?: boolean;
   showLocation?: boolean;
   privateStreamSettings?: { privateInvite: boolean; followersOnly: boolean; fansOnly: boolean; friendsOnly: boolean };
@@ -177,6 +178,7 @@ const UserSchema: Schema = new Schema({
   audioRecordingPermanent: { type: Boolean, default: false },
   audioRecordingGrantedAt: { type: Date },
   audioRecordingDeniedAt: { type: Date },
+  pushNotificationSettings: { type: Schema.Types.Mixed, default: {} },
   showActivityStatus: { type: Boolean, default: true },
   showLocation: { type: Boolean, default: true },
   privateStreamSettings: {
