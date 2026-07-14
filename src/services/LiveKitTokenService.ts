@@ -1,4 +1,5 @@
 import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
+import { DataPacket_Kind } from '@livekit/protocol';
 import { ENV } from '../config/env';
 
 // LiveKit server URL (HTTP API)
@@ -53,5 +54,68 @@ export async function roomExists(roomName: string): Promise<boolean> {
     return rooms.some(r => r.name === roomName);
   } catch (_) {
     return false;
+  }
+}
+
+/**
+ * Gera o nome da sala LiveKit para uma transmissão ao vivo.
+ */
+export function getLiveRoomName(streamId: string): string {
+  return `live_${streamId}`;
+}
+
+/**
+ * Garante que uma sala LiveKit exista para a transmissão ao vivo.
+ * Cria a sala se não existir.
+ */
+export async function ensureLiveKitRoom(streamId: string): Promise<string> {
+  const roomName = getLiveRoomName(streamId);
+  if (!(await roomExists(roomName))) {
+    await roomService.createRoom({
+      name: roomName,
+      emptyTimeout: 600,
+      maxParticipants: 200,
+    });
+    console.log(`[LIVEKIT-CHAT] Sala criada: ${roomName}`);
+  }
+  return roomName;
+}
+
+/**
+ * Envia uma mensagem de chat para todos os participantes de uma sala LiveKit.
+ * Usa DataPacket com tópico 'livechat' e entrega confiável.
+ */
+export async function sendLiveKitChatMessage(
+  streamId: string,
+  payload: Record<string, any>
+): Promise<void> {
+  try {
+    const roomName = getLiveRoomName(streamId);
+    const data = new TextEncoder().encode(JSON.stringify(payload));
+    await roomService.sendData(roomName, data, DataPacket_Kind.RELIABLE, {
+      topic: 'livechat',
+    });
+    console.log(`[LIVEKIT-CHAT] Mensagem enviada para sala ${roomName}`);
+  } catch (err: any) {
+    // Se a sala não existir, criar e tentar novamente
+    if (err.message?.includes('not found') || err.message?.includes('does not exist')) {
+      try {
+        const roomName = getLiveRoomName(streamId);
+        await roomService.createRoom({
+          name: roomName,
+          emptyTimeout: 600,
+          maxParticipants: 200,
+        });
+        const data = new TextEncoder().encode(JSON.stringify(payload));
+        await roomService.sendData(roomName, data, DataPacket_Kind.RELIABLE, {
+          topic: 'livechat',
+        });
+        console.log(`[LIVEKIT-CHAT] Sala criada e mensagem enviada: ${roomName}`);
+      } catch (retryErr: any) {
+        console.warn('[LIVEKIT-CHAT] Erro ao enviar mensagem (após criar sala):', retryErr.message);
+      }
+    } else {
+      console.warn('[LIVEKIT-CHAT] Erro ao enviar mensagem:', err.message);
+    }
   }
 }

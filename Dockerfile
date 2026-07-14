@@ -13,7 +13,6 @@ RUN npm run build
 
 RUN mkdir -p uploads
 
-COPY protobuf /app/protobuf
 
 COPY .dockerignore ./
 

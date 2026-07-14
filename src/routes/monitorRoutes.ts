@@ -116,7 +116,6 @@ const apis = [
 
     // LIVE
     { name: 'GET /api/live', url: '/api/live', method: 'GET' },
-    { name: 'POST /api/live/start', url: '/api/live/start', method: 'POST' },
     { name: 'POST /api/live/stop/:streamId', url: '/api/live/stop/test123', method: 'POST' },
     { name: 'GET /api/live/:streamId', url: '/api/live/test123', method: 'GET' },
     { name: 'PUT /api/live/:streamId', url: '/api/live/test123', method: 'PUT' },

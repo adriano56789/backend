@@ -302,6 +302,11 @@ UserRoutes.patch("/:id", async (req, res) => {
         if (updateData.country) {
             updateData.country = updateData.country.toLowerCase().trim();
         }
+        // FIX: Remove empty location string to avoid geo index error
+        // MongoDB geo index requires location to be a valid GeoJSON object or array, not empty string
+        if (updateData.location === '' || updateData.location === null) {
+            delete updateData.location;
+        }
 
         let user = await User.findOneAndUpdate({ id: paramId }, updateData, { returnDocument: 'after' });
         if (!user) {

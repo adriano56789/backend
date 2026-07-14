@@ -52,7 +52,7 @@ export const ENV = {
   // LiveKit (WebRTC/SFU)
   LIVEKIT_API_KEY: process.env.LIVEKIT_API_KEY || 'devkey',
   LIVEKIT_API_SECRET: process.env.LIVEKIT_API_SECRET || 'secret',
-  LIVEKIT_URL: process.env.LIVEKIT_URL || 'wss://api.livego.store/livekit',
+  LIVEKIT_URL: process.env.LIVEKIT_URL || "wss://livego.store/livekit",
   LIVEKIT_SERVER_URL: process.env.LIVEKIT_SERVER_URL || `http://172.16.4.1:7880`,
 
   // Firebase Cloud Messaging

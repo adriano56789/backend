@@ -270,6 +270,15 @@ router.post('/publish', async (req, res) => {
             console.warn(`[SRS-PUBLISH] ⚠️ FFmpeg não disponível para ${realStreamKey}:`, ffErr.message);
         }
 
+        // Criar sala LiveKit para o chat da transmissão
+        try {
+            const { ensureLiveKitRoom, getLiveRoomName } = await import('../services/LiveKitTokenService');
+            const liveRoom = await ensureLiveKitRoom(realStreamKey);
+            console.log(`[LIVEKIT-CHAT] Sala LiveKit pronta para chat: ${liveRoom}`);
+        } catch (lkErr: any) {
+            console.warn(`[LIVEKIT-CHAT] Erro ao criar sala LiveKit para ${realStreamKey}:`, lkErr.message);
+        }
+
         res.status(200).json({ code: 0 });
     } catch (error: any) {
         console.error('[SRS-PUBLISH] ❌ Erro no webhook on_publish:', error.message);

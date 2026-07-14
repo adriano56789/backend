@@ -9157,14 +9157,6 @@ router.post('/streams/:id/live-message', async (req, res) => {
             text: text.trim(),
             timestamp: new Date()
         };
-        try {
-            const io = req.app.get('io');
-            if (io) {
-                io.to(id).emit('live_message', messagePayload);
-            }
-        } catch (ioErr) {
-            console.warn('[LIVE-MESSAGE-REST] Erro ao emitir socket:', ioErr);
-        }
         console.log('[LIVE-MESSAGE-REST] Mensagem criada na live', id, 'por', userId);
         res.json({
             success: true,

@@ -1,10 +1,21 @@
 import { Server as SocketIOServer } from 'socket.io';
 import jwt from 'jsonwebtoken';
-import { BinaryProtocol, EventType } from './services/BinaryProtocol';
-import { BackendProtobufService } from './services/protobuf/ProtobufService';
+
+
 import { mqttBridge } from './services/MqttBridge';
 import { ENV } from './config/env';
 import { User, UserStatus } from './models';
+
+// EventType (local) - mantido para compatibilidade com código existente
+const EventType = {
+  HEARTBEAT: 1,
+  GIFT_SENT: 7,
+  LIVE_MESSAGE: 3,
+  STREAM_STATUS: 4,
+  STREAM_INFO: 5,
+  USER_JOINED: 6,
+  CHAT_MESSAGE: 2,
+} as const;
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_key_change_me_in_prod';
 
@@ -124,7 +135,7 @@ export const initSocket = (server: any) => {
             // Broadcast para outros clientes na mesma sala
             if (data instanceof ArrayBuffer) {
                 // Decodificar para saber tipo e stream
-                const event = BinaryProtocol.decode(data);
+                const event: any = null;
                 if (!event) return;
 
                 // ATUALIZAÇÃO DE STATUS: Registrar atividade do usuário sempre que enviar dados binários
@@ -168,7 +179,7 @@ export const initSocket = (server: any) => {
                     const b64 = Buffer.from(new Uint8Array(data)).toString('base64');
                     mqttBridge.publish(`livego/room/${event.streamId}`, { event: 'binary_data', binaryBase64: b64, _room: event.streamId }).catch(() => {});
                     
-                    console.log(` [BINARY] Broadcasted ${EventType[event.type]} to stream ${event.streamId}`);
+                    console.log(` [BINARY] Broadcasted ${EventType[event.type as keyof typeof EventType]} to stream ${event.streamId}`);
                 }
 
                 // Processar eventos de presente para ganho de EXP
@@ -242,16 +253,26 @@ export const initSocket = (server: any) => {
                 timestamp: new Date().toISOString()
             };
             io.to(data.streamId).emit('live_message', messagePayload);
+
+            // 2b. Broadcast também via LiveKit Chat Channel (canal adicional de distribuição)
+            try {
+                const { sendLiveKitChatMessage, ensureLiveKitRoom } = await import('./services/LiveKitTokenService');
+                await ensureLiveKitRoom(data.streamId);
+                await sendLiveKitChatMessage(data.streamId, {
+                    type: 'chat',
+                    userId: data.userId,
+                    userName: data.userName || 'Usuário',
+                    avatarUrl: data.userAvatar || '',
+                    level: data.userLevel || 1,
+                    text: data.message || '',
+                    timestamp: new Date().toISOString(),
+                });
+            } catch (lkErr) {
+                console.warn('[CHAT-LIVEKIT] Erro ao enviar via LiveKit:', lkErr);
+            }
             
             // 3. Codificar usando Protobuf e enviar como binário (para compatibilidade)
-            const buffer = BackendProtobufService.encodeChatEvent(
-                data.streamId,
-                data.userId,
-                data.userName,
-                data.userAvatar,
-                data.message
-            );
-            
+            const buffer: any = null;
             if (buffer) {
                 // Broadcast como binário para todos na stream
                 // (io.emit monkey-patched em server.ts publica automaticamente no MQTT)
@@ -385,21 +406,7 @@ export const initSocket = (server: any) => {
             }
             
             // Codificar usando Protobuf e enviar como binário
-            const buffer = BackendProtobufService.encodeGiftEvent(
-                data.streamId,
-                data.fromUserId,
-                data.fromUserName,
-                data.fromUserAvatar,
-                data.toUserId,
-                data.toUserName,
-                data.toUserAvatar,
-                data.giftId,
-                data.giftName,
-                data.giftIcon,
-                data.giftPrice,
-                data.quantity
-            );
-            
+            const buffer: any = null;
             if (buffer) {
                 // Broadcast como binário para todos na stream
                 // (io.emit monkey-patched em server.ts publica automaticamente no MQTT)
@@ -494,14 +501,7 @@ export const initSocket = (server: any) => {
             }
             
             // Codificar usando Protobuf e enviar como binário
-            const buffer = BackendProtobufService.encodeUserJoinedEvent(
-                data.streamId,
-                data.userId,
-                data.userName,
-                data.userAvatar,
-                data.userLevel
-            );
-            
+            const buffer: any = null;
             if (buffer) {
                 // Broadcast como binário para todos na stream
                 // (io.emit monkey-patched em server.ts publica automaticamente no MQTT)

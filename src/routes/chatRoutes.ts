@@ -303,6 +303,9 @@ router.post('/send', async (req, res) => {
             endpoint: '/api/chats/send'
         });
 
+        // FIX: Include sender info so recipient sees name/avatar immediately in real-time
+        const sender = await User.findOne({ id: from }).select('id name avatarUrl level birthday').lean();
+
         const frontendMessage = {
             id: newMessage.id,
             chatId: conversationId,
@@ -312,11 +315,16 @@ router.post('/send', async (req, res) => {
             imageUrl: messageType === 'image' ? newMessage.content : undefined,
             timestamp: newMessage.sentAt?.toISOString() || new Date().toISOString(),
             status: 'sent',
+            senderName: (sender as any)?.name,
+            senderAvatar: (sender as any)?.avatarUrl,
+            senderLevel: (sender as any)?.level,
+            senderBirthday: (sender as any)?.birthday,
         };
 
         const io = req.app.get('io');
 
-        io.to(`user_${to}`).emit('newChatMessage', frontendMessage);
+        // Emit to recipient and also back to sender for confirmation
+        io.to(`user_${to}`).emit('newChatMessage', { ...frontendMessage, tempId });
 
         io.to(`user_${to}`).emit('chat_notification', {
             type: 'new_message',
@@ -326,6 +334,8 @@ router.post('/send', async (req, res) => {
             conversationId
         });
 
+        // Also notify sender of confirmed delivery (with real ID replacing tempId)
+        io.to(`user_${from}`).emit('newChatMessage', { ...frontendMessage, tempId, status: 'sent' });
         io.to(`user_${from}`).emit('message_sent', {
             tempId,
             messageId: newMessage.id,
@@ -335,8 +345,7 @@ router.post('/send', async (req, res) => {
         // === NOTIFICAR DESTINATÁRIO via serviço centralizado (sininho + socket + FCM) ===
         try {
             const { NotificationService } = await import('../services/NotificationService');
-            const sender = await User.findOne({ id: from }).select('name');
-            const senderName = sender?.name || 'Alguém';
+            const senderName = (sender as any)?.name || 'Alguém';
             const preview = messageType === 'image' ? '[Imagem]' : (text || '');
             await NotificationService.notifyNewMessage(io, to, from, senderName, preview, conversationId);
         } catch (notifErr) {

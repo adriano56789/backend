@@ -52,10 +52,7 @@ export class PresenceService {
 
       await LiveMessage.create(systemMessage).catch(() => {});
 
-      io.to(stream.streamKey || stream.hostId).emit('live_message', {
-        ...systemMessage,
-        timestamp: systemMessage.timestamp.toISOString()
-      });
+      
     }
   }
 
@@ -103,10 +100,7 @@ export class PresenceService {
 
       await LiveMessage.create(systemMessage).catch(() => {});
 
-      io.to(stream.streamKey || stream.hostId).emit('live_message', {
-        ...systemMessage,
-        timestamp: systemMessage.timestamp.toISOString()
-      });
+      
     }
   }
 }

@@ -7,9 +7,6 @@ export interface IGift extends Document {
     icon: string;
     category: 'Popular' | 'Luxo' | 'Atividade' | 'VIP' | 'Efeito' | 'Entrada';
     videoUrl?: string;
-    audioUrl?: string;
-    duration?: number; // em milissegundos
-    noBlend?: boolean; // se true, reproduz o video em tela cheia com bordas sem transparência mix-blend-screen
     triggersAutoFollow: boolean;
     createdAt: Date;
     updatedAt: Date;
@@ -26,9 +23,6 @@ const GiftSchema: Schema = new Schema({
         required: true
     },
     videoUrl: { type: String },
-    audioUrl: { type: String },
-    duration: { type: Number },
-    noBlend: { type: Boolean, default: false },
     triggersAutoFollow: { type: Boolean, default: false }
 }, { timestamps: true, id: false });
 

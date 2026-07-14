@@ -14,7 +14,7 @@ import { connectDB } from './config/db';
 import { validateEnv } from './config/validateEnv';
 import { User, Streamer, Message, Followers, Friendship, UserLevel, UserActivity, Battle, LiveMessage, StreamParticipant } from './models/index';
 import { validateAndConvertUserId } from './middleware/idValidation';
-import { BackendProtobufService } from './services/protobuf/ProtobufService';
+
 import { activityEventService } from './services/ActivityEventService';
 import { initializeActivityHooks } from './models/ActivityHooks';
 import userRoutes from './routes/userRoutes';
@@ -76,7 +76,7 @@ import userIdRoutes from './routes/userIdRoutes';
 import turnRoutes from './routes/turnRoutes';
 import stunRoutes from './routes/stunRoutes';
 import streamAccessRoutes from './routes/streamAccessRoutes';
-import protobufRoutes from './routes/protobufRoutes';
+
 import UserStatusManager from './middleware/UserStatusManager';
 import notificationRoutes from './routes/notificationRoutes';
 import { initFirebase } from './services/firebaseService';
@@ -205,7 +205,7 @@ if (ENV.MQTT_ENABLED) {
 }
 
 connectDB().then(async () => {
-    await BackendProtobufService.init();
+    await 
     initializeActivityHooks();
     activityEventService.initialize(io);
 
@@ -467,7 +467,7 @@ app.use('/api', liveRoutes); // handles /api/live, /api/streams, /api/rtc, /api/
 app.use('/api', likesRoutes); // handles stream likes
 app.use('/api', settingsRoutes); // handles /api/settings, /api/notifications/settings
 app.use('/api/pk', pkRoutes);
-app.use('/api/protobuf', protobufRoutes);
+
 app.use('/api/live', liveInviteRoutes); // NOVO - Convites Co-Host/PK com SRS SFU WebRTC
 app.use('/api/interactions', interactionRoutes); // handles /api/interactions/presents, /api/interactions/streams
 app.use('/api/visitors', visitorRoutes); // NOVO - Registro de visitas por nome
@@ -726,15 +726,6 @@ io.on('connection', (socket) => {
       await handleJoinStream(data.roomId);
     });
 
-    socket.on('binary_data', async (data: ArrayBuffer) => {
-      try {
-        const decoded = BackendProtobufService.decodeEvent(new Uint8Array(data));
-        if (decoded?.join_stream) {
-          const streamId = decoded.join_stream.base?.stream_id || decoded.join_stream.stream_id;
-          if (streamId) await handleJoinStream(streamId);
-        }
-      } catch (_) {}
-    });
 
     socket.on('join_stream', async (data: { streamId: string }) => {
       await handleJoinStream(data?.streamId);
@@ -1543,8 +1534,23 @@ io.on('connection', (socket) => {
                 timestamp: new Date()
             };
 
-            // Broadcast para TODOS na stream (io.to inclui o remetente)
-            io.to(streamId).emit('live_message', messagePayload);
+
+            // Broadcast também via LiveKit Chat Channel (canal adicional de distribuição)
+            try {
+                const { sendLiveKitChatMessage, ensureLiveKitRoom } = await import('./services/LiveKitTokenService');
+                await ensureLiveKitRoom(streamId);
+                await sendLiveKitChatMessage(streamId, {
+                    type: 'chat',
+                    userId,
+                    userName: messagePayload.userName,
+                    avatarUrl: messagePayload.avatarUrl,
+                    level: messagePayload.level,
+                    text,
+                    timestamp: messagePayload.timestamp.toISOString(),
+                });
+            } catch (lkErr) {
+                console.warn('[LIVEKIT-CHAT] Erro ao enviar via LiveKit:', lkErr);
+            }
 
             // Persistir no MongoDB (TTL de 24h via índice expireAfterSeconds)
             LiveMessage.create({
@@ -1555,8 +1561,8 @@ io.on('connection', (socket) => {
                 level: messagePayload.level,
                 activeFrameId: messagePayload.activeFrameId,
                 text,
-                timestamp: messagePayload.timestamp
-            }).catch(err => console.error('❌ Erro ao persistir live_message:', err));
+                timestamp: messagePayload.timestamp,
+        });
         } catch (error) {
             console.error('❌ Erro ao processar send_live_message:', error);
         }
@@ -1685,25 +1691,7 @@ wsIo.on('connection', (socket) => {
     console.log(`🔌 [LIVEGO-WEBSOCKET] Client connected: ${socket.id}`);
 
     // Evento de informações básicas (como binfo do LiveGo) - Resposta BINÁRIA
-    socket.on('binfo', (data) => {
-        console.log(`📊 [LIVEGO-BINFO] Received:`, data);
-
-        const buffer = BackendProtobufService.encodeStreamInfoEvent(
-            data.sdkappid || 'system',
-            'LiveGo Stream',
-            'Binary WebSocket System',
-            'system',
-            'LiveGo',
-            'https://via.placeholder.com/40',
-            0, 0,
-            'live'
-        );
-
-        if (buffer) {
-            wsIo.emit('binary_data', buffer);
-            console.log(`📦 [LIVEGO-BINFO] Binary response sent:`, buffer.length, 'bytes');
-        }
-    });
+    
 
     // Evento de join de sala (stream)
     socket.on('join_stream', (streamId) => {
@@ -1711,11 +1699,6 @@ wsIo.on('connection', (socket) => {
         socket.join(streamId);
 
         // Enviar informações do stream para o cliente
-        wsIo.to(streamId).emit('stream_joined', {
-            streamId,
-            clientId: socket.id,
-            timestamp: Date.now()
-        });
     });
 
     // Evento de leave de sala
@@ -1723,11 +1706,6 @@ wsIo.on('connection', (socket) => {
         console.log(`🎥 [STREAM] Client ${socket.id} left stream: ${streamId}`);
         socket.leave(streamId);
 
-        wsIo.to(streamId).emit('stream_left', {
-            streamId,
-            clientId: socket.id,
-            timestamp: Date.now()
-        });
     });
 
     // Heartbeat como Buzzcast
@@ -1778,9 +1756,6 @@ wsIo.on('connection', (socket) => {
                 timestamp: liveMessage.timestamp?.getTime() || Date.now()
             };
 
-            // Broadcast para todos na sala do stream
-            wsIo.to(streamId).emit('live_message', chatData);
-            wsIo.to(streamId).emit('new_chat_message', chatData);
             console.log(`💬 [CHAT] Real message saved and broadcasted: ${message}`);
         } catch (error) {
             console.error(`❌ [CHAT] Error saving message:`, error);
@@ -1846,7 +1821,6 @@ wsIo.on('connection', (socket) => {
                 timestamp: giftRecord.timestamp.getTime()
             };
 
-            // Broadcast para todos na sala do stream
             wsIo.to(data.streamId).emit('new_gift', giftData);
             wsIo.to(data.streamId).emit('live_gift_received', {
                 from: {
@@ -1896,8 +1870,6 @@ wsIo.on('connection', (socket) => {
                 timestamp: Date.now()
             };
 
-            // Broadcast para todos na sala do stream
-            wsIo.to(data.streamId).emit('stream_status', statusData);
             console.log(`📡 [STREAM] Real status updated: ${data.status} for stream ${data.streamId}`);
         } catch (error) {
             console.error(`❌ [STREAM] Error updating status:`, error);
@@ -1960,7 +1932,6 @@ wsIo.on('connection', (socket) => {
             timestamp: Date.now()
         };
 
-        // Broadcast para todos na sala do stream (exceto o próprio)
         socket.to(data.streamId).emit('user_joined', userData);
         console.log(`👤 [USER] ${userData.userName} joined stream ${userData.streamId}`);
     });

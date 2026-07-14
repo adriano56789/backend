@@ -368,11 +368,7 @@ async function processGiftSend(fromUserId: string, toUserId: string, giftId: str
                         price: giftPrice,
                         category: gift.category,
                         rarity: (gift as any).rarity || 'common',
-                        animation: (gift as any).animation || null,
-                        videoUrl: gift.videoUrl || null,
-                        audioUrl: gift.audioUrl || null,
-                        duration: gift.duration || null,
-                        noBlend: gift.noBlend || null
+                        animation: (gift as any).animation || null
                     },
                     quantity: quantity,
                     totalValue: totalCost,

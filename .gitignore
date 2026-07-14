@@ -1,53 +1,56 @@
+# --- Backend GitIgnore ---
+
 # Dependências
 node_modules/
 
 # Build
 dist/
 build/
+dist_old/
 
 # Ambiente
 .env
 .env.local
+.env.development
 .env.production
-.env.backend
-
-# Certificados
-*.pem
-*.crt
-*.key
+env.backend
 
 # Logs
 *.log
-logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# Dados locais
-data/
-uploads/
-
-# Scripts de deploy/config local
-scripts/deploy-*.sh
-scripts/*.conf
-*.local.conf
-
-# IDE
+# IDE e Sistema
 .idea/
 .vscode/
-
-# OS
+*.swp
+*.swo
 .DS_Store
 Thumbs.db
+desktop.ini
 
-# PM2
-.pm2/
+# Temporários e Cache
+*.cache
+*.tmp
+*.temp
+*.bak
+*.old
 
-# Docker
+# Certificados e Chaves
+*.pem
+*.key
+*.crt
+
+# Config LiveKit (contém secrets)
+livekit.yaml
+
+# Arquivos Docker
 docker-compose.override.yml
 
-# Auxiliary deployment artifacts
-dist.zip
-dist_to_deploy/
-diagnose.sh
-fix_html.py
-livego.b64
-livego.nginx.conf
+# Banco de dados local
+mongod/
+data/
+
+# Arquivos de sistema
 nul

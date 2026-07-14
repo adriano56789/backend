@@ -76,10 +76,6 @@ export class NewUserNotificationService {
 
         await LiveMessage.create(msg).catch(() => {});
 
-        io.to(streamId).emit('live_message', {
-          ...msg,
-          timestamp: now.toISOString()
-        });
       }
 
       console.log(`[NEW-USER] Notificação enviada: ${userName} (${userId})`);

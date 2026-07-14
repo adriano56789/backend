@@ -50,7 +50,7 @@ export class Security {
       }
     } catch (error) {
       console.error('❌ Falha ao bloquear usuário abusivo:', error);
-      throw error;
+      return;
     }
   }
 

@@ -1,7 +1,7 @@
 import express from 'express';
 import { WebhookReceiver } from 'livekit-server-sdk';
 import { ENV } from '../config/env';
-import { roomService, generateLiveKitToken, roomExists } from '../services/LiveKitTokenService';
+import { roomService, generateLiveKitToken, roomExists, getLiveRoomName, ensureLiveKitRoom } from '../services/LiveKitTokenService';
 import { getUserIdFromToken } from '../middleware/auth';
 import { Battle, CallInvitation, StreamParticipant, LiveKitWebhookLog } from '../models';
 
@@ -843,4 +843,31 @@ router.get('/webhook/logs', async (req, res) => {
   }
 });
 
+
+// POST /api/livekit/chat-token - Gerar token para chat da live (LiveKit Chat Channel)
+router.post('/chat-token', async (req, res) => {
+    try {
+        const userId = getUserIdFromToken(req);
+        if (!userId) {
+            return res.status(401).json({ success: false, message: 'Usuario nao autenticado' });
+        }
+        const { streamId } = req.body;
+        if (!streamId) {
+            return res.status(400).json({ success: false, message: 'streamId e obrigatorio' });
+        }
+        const liveRoomName = getLiveRoomName(streamId);
+        await ensureLiveKitRoom(streamId);
+        const token = await generateLiveKitToken(
+            userId,
+            liveRoomName,
+            JSON.stringify({ type: 'livechat', streamId }),
+            { canPublish: false, canPublishData: true, canSubscribe: true }
+        );
+        const lkUrl = ENV.LIVEKIT_URL || 'wss://livego.store/livekit';
+        res.json({ success: true, token, serverUrl: lkUrl, roomName: liveRoomName });
+    } catch (error: any) {
+        console.error('[LIVEKIT-CHAT-TOKEN] Erro:', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 export default router;
