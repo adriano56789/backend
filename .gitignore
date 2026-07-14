@@ -68,6 +68,9 @@ livekit.yaml.bak
 # Arquivos Docker
 docker-compose.override.yml
 
+# Conteúdo gerado por usuários
+uploads/
+
 # Banco de dados local
 mongod/
 data/
