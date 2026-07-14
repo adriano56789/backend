@@ -1,0 +1,324 @@
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = __importDefault(require("express"));
+const models_1 = require("../models");
+const idHelper_1 = require("../utils/idHelper");
+const router = express_1.default.Router();
+// POST /api/followers - Seguir usuário
+router.post('/', async (req, res) => {
+    try {
+        const { followerId, followingId } = req.body;
+        if (!followerId || !followingId) {
+            return res.status(400).json({ error: 'followerId e followingId são obrigatórios' });
+        }
+        if (followerId === followingId) {
+            return res.status(400).json({ error: 'Você não pode seguir a si mesmo' });
+        }
+        // Verificar se já segue
+        const existingFollow = await models_1.Followers.findOne({
+            followerId,
+            followingId,
+            isActive: true
+        });
+        if (existingFollow) {
+            return res.status(400).json({ error: 'Você já segue este usuário' });
+        }
+        // Verificar se usuários existem usando helper estrito
+        const [follower, following] = await Promise.all([
+            (0, idHelper_1.findUserByAnyId)(models_1.User, followerId),
+            (0, idHelper_1.findUserByAnyId)(models_1.User, followingId)
+        ]);
+        if (!follower || !following) {
+            return res.status(404).json({ error: 'Usuário não encontrado' });
+        }
+        // Criar relação de follow
+        const follow = await models_1.Followers.create({
+            id: `follow_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            followerId,
+            followingId,
+            followedAt: new Date(),
+            isActive: true
+        });
+        // Atualizar contadores usando helper estrito + persistir atividades
+        await (0, idHelper_1.updateUserByRealId)(models_1.User, followerId, {
+            $inc: { following: 1 },
+            $push: {
+                recentActivities: {
+                    action: 'follow',
+                    resource: 'social_relation',
+                    timestamp: new Date(),
+                    endpoint: '/api/followers'
+                }
+            }
+        });
+        await (0, idHelper_1.updateUserByRealId)(models_1.User, followingId, {
+            $inc: { fans: 1 },
+            $push: {
+                recentActivities: {
+                    action: 'followed_by',
+                    resource: 'social_relation',
+                    timestamp: new Date(),
+                    endpoint: '/api/followers'
+                }
+            }
+        });
+        // Notificar via WebSocket + serviço centralizado (LiveNotification + socket + FCM)
+        const io = req.app.get('io');
+        if (io) {
+            io.to(`user_${followingId}`).emit('new_follower', {
+                followerId,
+                followerName: follower.name,
+                followerAvatar: follower.avatarUrl,
+                timestamp: new Date()
+            });
+        }
+        // === NOTIFICAR DESTINATÁRIO via serviço centralizado ===
+        try {
+            const { NotificationService } = await Promise.resolve().then(() => __importStar(require('../services/NotificationService')));
+            await NotificationService.notifyNewFollower(io, followingId, followerId, follower.name || 'Alguém', follower.avatarUrl || '');
+        }
+        catch (notifErr) {
+            console.warn('[FOLLOW-NOTIFICATION] Erro ao notificar:', notifErr);
+        }
+        console.log(`✅ ${followerId} começou a seguir ${followingId}`);
+        res.json({
+            success: true,
+            follow,
+            follower: {
+                id: follower.id,
+                name: follower.name,
+                avatarUrl: follower.avatarUrl
+            },
+            following: {
+                id: following.id,
+                name: following.name,
+                avatarUrl: following.avatarUrl
+            }
+        });
+    }
+    catch (error) {
+        console.error('❌ Erro ao seguir usuário:', error);
+        res.status(500).json({ error: 'Erro interno ao seguir usuário' });
+    }
+});
+// GET /api/followers/:userId/ids - Listar apenas IDs dos seguidores (formato plano, útil para convites PK)
+router.get('/:userId/ids', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const followingRelations = await models_1.Followers.find({
+            followerId: userId,
+            isActive: true
+        }).select('followingId').lean();
+        const ids = followingRelations.map(r => r.followingId);
+        res.json({
+            success: true,
+            userIds: ids,
+            total: ids.length
+        });
+    }
+    catch (error) {
+        console.error('❌ Erro ao buscar IDs de seguidos:', error);
+        res.status(500).json({ success: false, error: 'Erro interno' });
+    }
+});
+// GET /api/followers/:userId - Listar seguidores de um usuário
+router.get('/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { limit = 50, offset = 0 } = req.query;
+        console.log(`🔍 Buscando seguidores do usuário: ${userId}`);
+        // Buscar relações de seguidores ativas
+        const followerRelations = await models_1.Followers.find({
+            followingId: userId,
+            isActive: true
+        })
+            .sort({ createdAt: -1 })
+            .limit(parseInt(limit))
+            .skip(parseInt(offset));
+        // Buscar detalhes dos seguidores
+        const followerIds = followerRelations.map(rel => rel.followerId);
+        const followers = await models_1.User.find({
+            id: { $in: followerIds }
+        }).select('id name avatarUrl level fans isOnline lastSeen identification');
+        // Combinar dados
+        const followersWithDetails = followerRelations.map(rel => {
+            const followerDetails = followers.find(f => f.id === rel.followerId);
+            return {
+                followId: rel.id,
+                followedAt: rel.followedAt,
+                follower: followerDetails
+            };
+        });
+        console.log(`📊 Encontrados ${followersWithDetails.length} seguidores para ${userId}`);
+        res.json({
+            success: true,
+            followers: followersWithDetails,
+            total: followersWithDetails.length
+        });
+    }
+    catch (error) {
+        console.error('❌ Erro ao buscar seguidores:', error);
+        res.status(500).json({ error: 'Erro interno ao buscar seguidores' });
+    }
+});
+// GET /api/followers/:userId/following - Listar quem um usuário segue
+router.get('/:userId/following', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { limit = 50, offset = 0 } = req.query;
+        console.log(`🔍 Buscando usuários que ${userId} segue`);
+        // Buscar relações de seguindo ativas
+        const followingRelations = await models_1.Followers.find({
+            followerId: userId,
+            isActive: true
+        })
+            .sort({ createdAt: -1 })
+            .limit(parseInt(limit))
+            .skip(parseInt(offset));
+        // Buscar detalhes dos usuários seguidos
+        const followingIds = followingRelations.map(rel => rel.followingId);
+        const followingUsers = await models_1.User.find({
+            id: { $in: followingIds }
+        }).select('id name avatarUrl level fans isOnline lastSeen identification');
+        // Combinar dados
+        const followingWithDetails = followingRelations.map(rel => {
+            const userDetails = followingUsers.find(u => u.id === rel.followingId);
+            return {
+                followId: rel.id,
+                followedAt: rel.followedAt,
+                following: userDetails
+            };
+        });
+        console.log(`📊 ${userId} segue ${followingWithDetails.length} usuários`);
+        res.json({
+            success: true,
+            following: followingWithDetails,
+            total: followingWithDetails.length
+        });
+    }
+    catch (error) {
+        console.error('❌ Erro ao buscar seguindo:', error);
+        res.status(500).json({ error: 'Erro interno ao buscar seguindo' });
+    }
+});
+// DELETE /api/followers/:id - Deixar de seguir
+router.delete('/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { followerId } = req.body; // Para validação
+        // Buscar relação de follow
+        const follow = await models_1.Followers.findOne({ id });
+        if (!follow) {
+            return res.status(404).json({ error: 'Relação de follow não encontrada' });
+        }
+        if (followerId && follow.followerId !== followerId) {
+            return res.status(403).json({ error: 'Não autorizado' });
+        }
+        // Desativar relação (soft delete)
+        await models_1.Followers.updateOne({ id }, {
+            $set: {
+                isActive: false,
+                unfollowedAt: new Date()
+            }
+        });
+        // Atualizar contadores
+        await models_1.User.updateOne({ id: follow.followerId }, { $inc: { following: -1 } });
+        await models_1.User.updateOne({ id: follow.followingId }, { $inc: { fans: -1 } });
+        // Notificar via WebSocket
+        const io = req.app.get('io');
+        if (io) {
+            io.to(`user_${follow.followingId}`).emit('unfollowed', {
+                followerId: follow.followerId,
+                timestamp: new Date()
+            });
+        }
+        console.log(`✅ ${follow.followerId} deixou de seguir ${follow.followingId}`);
+        res.json({
+            success: true,
+            message: 'Deixou de seguir com sucesso'
+        });
+    }
+    catch (error) {
+        console.error('❌ Erro ao deixar de seguir:', error);
+        res.status(500).json({ error: 'Erro interno ao deixar de seguir' });
+    }
+});
+// GET /api/followers/:userId/stats - Estatísticas de seguidores/seguindo
+router.get('/:userId/stats', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const [followerCount, followingCount] = await Promise.all([
+            models_1.Followers.countDocuments({ followingId: userId, isActive: true }),
+            models_1.Followers.countDocuments({ followerId: userId, isActive: true })
+        ]);
+        res.json({
+            success: true,
+            data: {
+                followers: followerCount,
+                following: followingCount,
+                userId
+            }
+        });
+    }
+    catch (error) {
+        console.error('❌ Erro ao buscar stats de seguidores:', error);
+        res.status(500).json({ success: false, error: 'Erro interno ao buscar estatísticas' });
+    }
+});
+// GET /api/followers/check/:followerId/:followingId - Verificar se segue
+router.get('/check/:followerId/:followingId', async (req, res) => {
+    try {
+        const { followerId, followingId } = req.params;
+        const follow = await models_1.Followers.findOne({
+            followerId,
+            followingId,
+            isActive: true
+        });
+        res.json({
+            success: true,
+            isFollowing: !!follow,
+            followId: follow?.id || null
+        });
+    }
+    catch (error) {
+        console.error('❌ Erro ao verificar follow:', error);
+        res.status(500).json({ error: 'Erro interno ao verificar follow' });
+    }
+});
+exports.default = router;

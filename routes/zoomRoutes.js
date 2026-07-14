@@ -1,0 +1,201 @@
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = __importDefault(require("express"));
+const models_1 = require("../models");
+const idHelper_1 = require("../utils/idHelper");
+const router = express_1.default.Router();
+// Obter configurações de zoom do usuário
+router.get('/user/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        // Usar helper estrito para buscar usuário e obter ID real
+        const { User } = await Promise.resolve().then(() => __importStar(require('../models')));
+        const user = await (0, idHelper_1.findUserByAnyId)(User, userId);
+        if (!user) {
+            return res.status(404).json({
+                error: 'Usuário não encontrado',
+                userId
+            });
+        }
+        // Usar ID real do usuário para buscar configurações de zoom
+        const userQuery = { userId: user.id };
+        let zoomSettings = await models_1.ZoomSettings.findOne(userQuery);
+        if (!zoomSettings) {
+            // Criar configurações padrão automaticamente
+            zoomSettings = await models_1.ZoomSettings.create({
+                userId: user.id,
+                zoomLevel: 100,
+                isDefault: true,
+                updatedAt: new Date().toISOString()
+            });
+            console.log(`✅ Configurações de zoom padrão criadas para usuário ${user.id}`);
+        }
+        // Persistir atividade de consulta de configurações de zoom
+        await User.findOneAndUpdate({ id: user.id }, {
+            $push: {
+                recentActivities: {
+                    action: 'zoom_settings_viewed',
+                    resource: 'user_preferences',
+                    timestamp: new Date(),
+                    endpoint: '/api/zoom/user/:userId'
+                }
+            }
+        }).catch(console.error);
+        // Garantir que retorne apenas ID real da API, nunca MongoDB ID
+        const response = {
+            userId: user.id, // ID real da API
+            zoomLevel: zoomSettings.zoomLevel,
+            isDefault: zoomSettings.isDefault || false,
+            updatedAt: zoomSettings.updatedAt || new Date().toISOString()
+        };
+        res.json(response);
+    }
+    catch (error) {
+        console.error('Erro ao buscar configurações de zoom:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+// Atualizar configurações de zoom do usuário
+router.put('/user/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { zoomLevel } = req.body;
+        // Validar o nível de zoom
+        if (zoomLevel < 50 || zoomLevel > 150) {
+            return res.status(400).json({ error: 'Nível de zoom deve estar entre 50 e 150' });
+        }
+        // Usar helper estrito para buscar usuário e obter ID real
+        const { User } = await Promise.resolve().then(() => __importStar(require('../models')));
+        const user = await (0, idHelper_1.findUserByAnyId)(User, userId);
+        if (!user) {
+            return res.status(404).json({
+                error: 'Usuário não encontrado',
+                userId
+            });
+        }
+        // Usar ID real do usuário para buscar configurações de zoom
+        const userQuery = { userId: user.id };
+        const zoomSettings = await models_1.ZoomSettings.findOneAndUpdate(userQuery, {
+            $set: {
+                zoomLevel,
+                isDefault: false,
+                updatedAt: new Date()
+            }
+        }, { upsert: true, returnDocument: 'after' });
+        // Persistir atividade de atualização de configurações de zoom
+        await User.findOneAndUpdate({ id: user.id }, {
+            $push: {
+                recentActivities: {
+                    action: 'zoom_settings_updated',
+                    resource: 'user_preferences',
+                    timestamp: new Date(),
+                    endpoint: '/api/zoom/user/:userId'
+                }
+            }
+        }).catch(console.error);
+        // Garantir que retorne apenas ID real da API, nunca MongoDB ID
+        const response = {
+            success: true,
+            zoomSettings: {
+                userId: user.id,
+                zoomLevel: zoomSettings.zoomLevel,
+                isDefault: zoomSettings.isDefault || false,
+                updatedAt: zoomSettings.updatedAt || new Date().toISOString()
+            },
+            message: 'Configurações de zoom atualizadas com sucesso'
+        };
+        res.json(response);
+    }
+    catch (error) {
+        console.error('Erro ao atualizar configurações de zoom:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+// Resetar zoom para o padrão
+router.post('/user/:userId/reset', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        // Usar helper estrito para buscar usuário e obter ID real
+        const { User } = await Promise.resolve().then(() => __importStar(require('../models')));
+        const user = await (0, idHelper_1.findUserByAnyId)(User, userId);
+        if (!user) {
+            return res.status(404).json({
+                error: 'Usuário não encontrado',
+                userId
+            });
+        }
+        // Usar ID real do usuário para buscar configurações de zoom
+        const userQuery = { userId: user.id };
+        const zoomSettings = await models_1.ZoomSettings.findOneAndUpdate(userQuery, {
+            $set: {
+                zoomLevel: 100,
+                isDefault: true,
+                updatedAt: new Date()
+            }
+        }, { upsert: true, returnDocument: 'after' });
+        // Persistir atividade de reset de configurações de zoom
+        await User.findOneAndUpdate({ id: user.id }, {
+            $push: {
+                recentActivities: {
+                    action: 'zoom_settings_reset',
+                    resource: 'user_preferences',
+                    timestamp: new Date(),
+                    endpoint: '/api/zoom/user/:userId/reset'
+                }
+            }
+        }).catch(console.error);
+        // Garantir que retorne apenas ID real da API, nunca MongoDB ID
+        const response = {
+            success: true,
+            zoomSettings: {
+                userId: user.id,
+                zoomLevel: zoomSettings.zoomLevel,
+                isDefault: zoomSettings.isDefault || false,
+                updatedAt: zoomSettings.updatedAt || new Date().toISOString()
+            },
+            message: 'Zoom resetado para o padrão (100%)'
+        };
+        res.json(response);
+    }
+    catch (error) {
+        console.error('Erro ao resetar zoom:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+exports.default = router;
