@@ -1,3 +1,7 @@
+import http from 'http';
+import https from 'https';
+import { URL } from 'url';
+
 export interface HttpClientOptions {
   baseUrl?: string;
   timeout?: number;
@@ -7,6 +11,83 @@ export interface HttpClientOptions {
 interface RequestOptions {
   headers?: Record<string, string>;
   timeout?: number;
+}
+
+function httpRequest(
+  method: string,
+  urlStr: string,
+  headers: Record<string, string>,
+  body?: any,
+  timeout?: number,
+  responseType: 'text' | 'buffer' = 'text'
+): Promise<{
+  status: number;
+  statusText: string;
+  headers: Record<string, string>;
+  bodyText: string;
+  buffer: Buffer | null;
+}> {
+  return new Promise((resolve, reject) => {
+    const parsedUrl = new URL(urlStr);
+    const mod = parsedUrl.protocol === 'https:' ? https : http;
+    const timeoutMs = timeout || 15000;
+
+    const postData = body !== undefined && method !== 'GET'
+      ? (typeof body === 'string' ? body : JSON.stringify(body))
+      : undefined;
+
+    const options: http.RequestOptions = {
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port || (parsedUrl.protocol === 'https:' ? 443 : 80),
+      path: parsedUrl.pathname + parsedUrl.search,
+      method,
+      headers: {
+        ...headers,
+        ...(postData !== undefined ? { 'Content-Length': Buffer.byteLength(postData).toString() } : {}),
+      },
+      timeout: timeoutMs,
+    };
+
+    const req = mod.request(options, (res) => {
+      const chunks: Buffer[] = [];
+
+      res.on('data', (chunk: Buffer) => chunks.push(chunk));
+
+      res.on('end', () => {
+        const rawHeaders: Record<string, string> = {};
+        if (res.headers) {
+          for (const [k, v] of Object.entries(res.headers)) {
+            rawHeaders[k] = Array.isArray(v) ? v.join(', ') : (v || '');
+          }
+        }
+
+        const fullBuffer = Buffer.concat(chunks);
+
+        resolve({
+          status: res.statusCode || 0,
+          statusText: res.statusMessage || '',
+          headers: rawHeaders,
+          bodyText: fullBuffer.toString('utf-8'),
+          buffer: responseType === 'buffer' ? fullBuffer : null,
+        });
+      });
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error(`Request timeout after ${timeoutMs}ms`));
+    });
+
+    req.on('error', (err) => {
+      reject(err);
+    });
+
+    if (postData !== undefined) {
+      req.write(postData);
+    }
+
+    req.end();
+  });
 }
 
 class HttpClient {
@@ -31,43 +112,20 @@ class HttpClient {
   ): Promise<T> {
     const url = path.startsWith('http') ? path : `${this.baseUrl}${path}`;
     const timeout = options?.timeout ?? this.defaultTimeout;
+    const headers = { ...this.defaultHeaders, ...options?.headers };
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
+    const res = await httpRequest(method, url, headers, body, timeout);
 
-    try {
-      const headers: Record<string, string> = {
-        ...this.defaultHeaders,
-        ...options?.headers,
-      };
-
-      const fetchOptions: RequestInit = {
-        method,
-        headers,
-        signal: controller.signal,
-      };
-
-      if (body !== undefined && method !== 'GET') {
-        fetchOptions.body = typeof body === 'string' ? body : JSON.stringify(body);
-      }
-
-      const response = await fetch(url, fetchOptions);
-
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => '');
-        throw new HttpError(
-          `HTTP ${response.status}: ${response.statusText}`,
-          response.status,
-          errorText
-        );
-      }
-
-      const text = await response.text();
-      if (!text) return null as T;
-      return JSON.parse(text) as T;
-    } finally {
-      clearTimeout(timeoutId);
+    if (res.status < 200 || res.status >= 300) {
+      throw new HttpError(
+        `HTTP ${res.status}: ${res.statusText}`,
+        res.status,
+        res.bodyText
+      );
     }
+
+    if (!res.bodyText) return null as T;
+    return JSON.parse(res.bodyText) as T;
   }
 
   async get<T>(path: string, options?: RequestOptions): Promise<T> {
@@ -90,11 +148,6 @@ class HttpClient {
     return this.request<T>('DELETE', path, undefined, options);
   }
 
-  /**
-   * requestRaw() — retorna a resposta HTTP bruta sem parsear JSON.
-   * Necessário para proxies SDP (WHIP/WHEP), ICE trickle, etc.
-   * Retorna status, headers, e body como string.
-   */
   async requestRaw(
     method: string,
     path: string,
@@ -104,51 +157,24 @@ class HttpClient {
     status: number;
     statusText: string;
     ok: boolean;
-    headers: Headers;
+    headers: Record<string, string>;
     bodyText: string;
   }> {
     const url = path.startsWith('http') ? path : `${this.baseUrl}${path}`;
     const timeout = options?.timeout ?? this.defaultTimeout;
+    const headers = { ...this.defaultHeaders, ...options?.headers };
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
+    const res = await httpRequest(method, url, headers, body, timeout);
 
-    try {
-      const headers: Record<string, string> = {
-        ...this.defaultHeaders,
-        ...options?.headers,
-      };
-
-      const fetchOptions: RequestInit = {
-        method,
-        headers,
-        signal: controller.signal,
-      };
-
-      if (body !== undefined && method !== 'GET') {
-        fetchOptions.body = typeof body === 'string' ? body : JSON.stringify(body);
-      }
-
-      const response = await fetch(url, fetchOptions);
-      const bodyText = await response.text();
-
-      return {
-        status: response.status,
-        statusText: response.statusText,
-        ok: response.ok,
-        headers: response.headers,
-        bodyText,
-      };
-    } finally {
-      clearTimeout(timeoutId);
-    }
+    return {
+      status: res.status,
+      statusText: res.statusText,
+      ok: res.status >= 200 && res.status < 300,
+      headers: res.headers,
+      bodyText: res.bodyText,
+    };
   }
 
-  /**
-   * requestBuffer() — retorna resposta binária como ArrayBuffer,
-   * com status/ok/headers para verificação.
-   * Necessário para proxy HLS/TS/flv.
-   */
   async requestBuffer(
     method: string,
     path: string,
@@ -158,44 +184,22 @@ class HttpClient {
     status: number;
     statusText: string;
     ok: boolean;
-    headers: Headers;
+    headers: Record<string, string>;
     buffer: ArrayBuffer;
   }> {
     const url = path.startsWith('http') ? path : `${this.baseUrl}${path}`;
     const timeout = options?.timeout ?? this.defaultTimeout;
+    const headers = { ...this.defaultHeaders, ...options?.headers };
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
+    const res = await httpRequest(method, url, headers, body, timeout, 'buffer');
 
-    try {
-      const headers: Record<string, string> = {
-        ...this.defaultHeaders,
-        ...options?.headers,
-      };
-
-      const fetchOptions: RequestInit = {
-        method,
-        headers,
-        signal: controller.signal,
-      };
-
-      if (body !== undefined && method !== 'GET') {
-        fetchOptions.body = typeof body === 'string' ? body : JSON.stringify(body);
-      }
-
-      const response = await fetch(url, fetchOptions);
-      const buffer = await response.arrayBuffer();
-
-      return {
-        status: response.status,
-        statusText: response.statusText,
-        ok: response.ok,
-        headers: response.headers,
-        buffer,
-      };
-    } finally {
-      clearTimeout(timeoutId);
-    }
+    return {
+      status: res.status,
+      statusText: res.statusText,
+      ok: res.status >= 200 && res.status < 300,
+      headers: res.headers,
+      buffer: res.buffer ? res.buffer.buffer as ArrayBuffer : new ArrayBuffer(0),
+    };
   }
 }
 

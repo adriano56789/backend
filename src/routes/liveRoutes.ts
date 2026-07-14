@@ -3,7 +3,7 @@ import express from 'express';
 import { ObjectId } from 'mongodb';
 import { getDb } from '../config/db';
 import { v4 as uuidv4 } from 'uuid';
-import { Streamer, User, Message, Followers, Friendship, Block, UserLevel, StreamKeyAssociation, GiftTransaction, StreamLike, Battle, LiveCard } from '../models/index';
+import { Streamer, User, Message, Followers, Friendship, Block, UserLevel, StreamKeyAssociation, GiftTransaction, StreamLike, Battle, LiveCard, LiveMessage } from '../models/index';
 import { getUserIdFromToken, generateJWT } from '../middleware/auth';
 import { ResponseHelper } from '../middleware/responseHelper';
 import { ENV } from '../config/env';
@@ -9170,6 +9170,23 @@ router.post('/streams/:id/live-message', async (req, res) => {
             message: 'Erro interno ao enviar mensagem',
             error: error instanceof Error ? error.message : String(error)
         });
+    }
+});
+
+
+// GET /api/streams/:id/live-messages - Buscar histórico de mensagens da live
+router.get("/streams/:id/live-messages", async (req, res) => {
+    try {
+        const { id } = req.params;
+        const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+        const messages = await LiveMessage.find({ streamId: id })
+            .sort({ timestamp: 1 })
+            .limit(limit)
+            .lean();
+        res.json({ success: true, messages });
+    } catch (error) {
+        console.error("[LIVE-MESSAGES-GET] Erro:", error);
+        res.status(500).json({ success: false, error: "Erro ao buscar mensagens" });
     }
 });
 
