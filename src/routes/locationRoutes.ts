@@ -227,8 +227,7 @@ router.get('/user', async (req, res) => {
     }
 });
 
-// GET /location/ip — geolocalização por IP
-router.get('/ip', async (req, res) => {
+async function sendIpLookupResponse(req: express.Request, res: express.Response) {
   try {
     const clientIp = req.headers['x-forwarded-for']?.toString().split(',')[0].trim() || req.ip || '127.0.0.1';
 
@@ -252,6 +251,9 @@ router.get('/ip', async (req, res) => {
     console.error('[Location/IP] Erro:', error);
     res.json({ success: false, data: null });
   }
-});
+}
+
+// GET /location/ip — geolocalização por IP
+router.get('/ip', sendIpLookupResponse);
 
 export default router;
