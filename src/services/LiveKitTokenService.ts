@@ -1,5 +1,5 @@
-import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
-import { DataPacket_Kind } from '@livekit/protocol';
+import { AccessToken, RoomServiceClient, EgressClient } from 'livekit-server-sdk';
+import { DataPacket_Kind, EncodingOptionsPreset, StreamOutput, StreamProtocol } from '@livekit/protocol';
 import { ENV } from '../config/env';
 
 // LiveKit server URL (HTTP API)
@@ -10,6 +10,13 @@ export const livekitUrl = ENV.LIVEKIT_URL;
 
 // RoomServiceClient singleton — reutilizado por todas as rotas
 export const roomService = new RoomServiceClient(
+  livekitServerUrl,
+  ENV.LIVEKIT_API_KEY,
+  ENV.LIVEKIT_API_SECRET
+);
+
+// EgressClient singleton — usado para iniciar/parar Egress para cada transmissão
+export const egressClient = new EgressClient(
   livekitServerUrl,
   ENV.LIVEKIT_API_KEY,
   ENV.LIVEKIT_API_SECRET
@@ -79,6 +86,58 @@ export async function ensureLiveKitRoom(streamId: string): Promise<string> {
     console.log(`[LIVEKIT-CHAT] Sala criada: ${roomName}`);
   }
   return roomName;
+}
+
+/**
+ * Envia uma mensagem de chat para todos os participantes de uma sala LiveKit.
+ * Usa DataPacket com tópico 'livechat' e entrega confiável.
+ */
+/**
+ * Inicia o Egress para uma transmissão ao vivo.
+ * Envia o áudio/vídeo da sala LiveKit para o SRS via RTMP, que gera HLS.
+ */
+export async function startLiveEgress(streamId: string): Promise<void> {
+  try {
+    const roomName = getLiveRoomName(streamId);
+    const srsRtmpUrl = `rtmp://srs:1935/live/${streamId}`;
+
+    await egressClient.startRoomCompositeEgress(roomName, {
+      stream: new StreamOutput({
+        urls: [srsRtmpUrl],
+        protocol: StreamProtocol.RTMP,
+      }),
+    }, {
+      layout: 'speaker',
+      encodingOptions: EncodingOptionsPreset.H264_720P_30,
+    });
+
+    console.log(`[EGRESS] Egress iniciado para room ${roomName} -> ${srsRtmpUrl}`);
+  } catch (err: any) {
+    console.warn(`[EGRESS] Falha ao iniciar egress para ${streamId}:`, err.message);
+  }
+}
+
+/**
+ * Para todos os Egress ativos de uma transmissão ao vivo.
+ */
+export async function stopLiveEgress(streamId: string): Promise<void> {
+  try {
+    const roomName = getLiveRoomName(streamId);
+    const egressList = await egressClient.listEgress({ roomName, active: true });
+
+    for (const egress of egressList) {
+      if (egress.egressId) {
+        await egressClient.stopEgress(egress.egressId);
+        console.log(`[EGRESS] Egress parado: ${egress.egressId} para room ${roomName}`);
+      }
+    }
+
+    if (egressList.length === 0) {
+      console.log(`[EGRESS] Nenhum egress ativo encontrado para room ${roomName}`);
+    }
+  } catch (err: any) {
+    console.warn(`[EGRESS] Falha ao parar egress para ${streamId}:`, err.message);
+  }
 }
 
 /**

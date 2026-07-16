@@ -1198,6 +1198,32 @@ io.on('connection', (socket) => {
         }
     });
 
+    // ── LIVE_STARTED / LIVE_ENDED: disparar LiveKit Egress ──
+    socket.on('live_started', async (data: any) => {
+        console.log(`📡 [IO-LIVE] live_started recebido: stream=${data.streamId || data.id}, userId=${data.userId || data.hostId}`);
+        try {
+            const streamId = data.streamId || data.id;
+            if (!streamId) { console.warn('⚠️ live_started sem streamId'); return; }
+            const { startLiveEgress: startEgress } = await import('./services/LiveKitTokenService');
+            startEgress(streamId);
+        } catch (err: any) {
+            console.error('❌ [EGRESS] Erro ao iniciar Egress via io:', err.message);
+        }
+    });
+
+    socket.on('live_ended', async (data: any) => {
+        console.log(`📡 [IO-LIVE] live_ended recebido: stream=${data.streamId}, userId=${data.userId}`);
+        try {
+            const streamId = data.streamId;
+            if (!streamId) { console.warn('⚠️ live_ended sem streamId'); return; }
+            const { stopLiveEgress: stopEgress } = await import('./services/LiveKitTokenService');
+            stopEgress(streamId);
+        } catch (err: any) {
+            console.error('❌ [EGRESS] Erro ao parar Egress via io:', err.message);
+        }
+    });
+    // ────────────────────────────────────────────────────────────
+
     // Eventos para amizades
     socket.on('friendship_created', async (data: { userId1: string; userId2: string; initiatedBy: string }) => {
         try {
@@ -1677,7 +1703,7 @@ if (isHttps) {
 const wsIo = initSocket(wsServer);
 
 // Eventos WebSocket como LiveGo
-wsIo.on('connection', (socket) => {
+wsIo.on('connection', async (socket) => {
     console.log(`🔌 [LIVEGO-WEBSOCKET] Client connected: ${socket.id}`);
 
     // Evento de informações básicas (como binfo do LiveGo) - Resposta BINÁRIA
@@ -1866,49 +1892,8 @@ wsIo.on('connection', (socket) => {
         }
     });
 
-    // Evento de live iniciada — broadcast para todos os usuários conectados
-    socket.on('live_started', async (data) => {
-        console.log(`📡 [LIVE] Live started by user ${data.userId}, stream: ${data.streamId}`);
-        try {
-            const user = await User.findOne({ id: data.userId }).lean();
-            if (user) {
-                const liveData = {
-                    id: data.streamId,
-                    hostId: data.userId,
-                    name: data.title || user.name,
-                    avatar: user.avatarUrl || '',
-                    category: data.category || 'popular',
-                    country: data.country || user.country || 'br',
-                    isLive: true,
-                    streamStatus: 'active',
-                    streamKey: data.streamId,
-                    startTime: new Date(),
-                    viewers: 0,
-                    tags: data.tags || [],
-                    isPrivate: data.isPrivate || false,
-                };
-                socket.broadcast.emit('new_live_stream', liveData);
-                console.log(`📡 [LIVE] new_live_stream broadcasted for ${data.streamId}`);
-            }
-        } catch (error) {
-            console.error(`❌ [LIVE] Error broadcasting live_started:`, error);
-        }
-    });
-
-    // Evento de live encerrada — broadcast para todos os usuários conectados
-    socket.on('live_ended', async (data) => {
-        console.log(`📡 [LIVE] Live ended by user ${data.userId}, stream: ${data.streamId}`);
-        try {
-            socket.broadcast.emit('live_stream_ended', {
-                streamId: data.streamId,
-                hostId: data.userId,
-                endedAt: new Date(),
-            });
-            console.log(`📡 [LIVE] live_stream_ended broadcasted for ${data.streamId}`);
-        } catch (error) {
-            console.error(`❌ [LIVE] Error broadcasting live_ended:`, error);
-        }
-    });
+    // Egress agora é disparado pelo handler do io principal (porta 443)
+    // O wsIo (porta 3001) não recebe live_started/live_ended do frontend
 
     // Eventos de entrada/saída de usuários na live
     socket.on('user_joined_live', (data) => {
