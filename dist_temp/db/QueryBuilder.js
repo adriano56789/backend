@@ -1,9 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.QueryBuilder = void 0;
-var DocumentProxy_1 = require("./DocumentProxy");
-var QueryBuilder = /** @class */ (function () {
-    function QueryBuilder(collection, filter, mode) {
+const DocumentProxy_1 = require("./DocumentProxy");
+class QueryBuilder {
+    constructor(collection, filter, mode) {
         this._projection = {};
         this._sort = {};
         this._limitValue = 0;
@@ -12,11 +12,10 @@ var QueryBuilder = /** @class */ (function () {
         this._filter = filter;
         this._mode = mode;
     }
-    QueryBuilder.prototype.select = function (fields) {
+    select(fields) {
         if (typeof fields === 'string') {
-            var parts = fields.split(/\s+/);
-            for (var _i = 0, parts_1 = parts; _i < parts_1.length; _i++) {
-                var p = parts_1[_i];
+            const parts = fields.split(/\s+/);
+            for (const p of parts) {
                 if (p.startsWith('-')) {
                     this._projection[p.slice(1)] = 0;
                 }
@@ -29,27 +28,27 @@ var QueryBuilder = /** @class */ (function () {
             Object.assign(this._projection, fields);
         }
         return this;
-    };
-    QueryBuilder.prototype.sort = function (sort) {
+    }
+    sort(sort) {
         this._sort = sort;
         return this;
-    };
-    QueryBuilder.prototype.limit = function (n) {
+    }
+    limit(n) {
         this._limitValue = n;
         return this;
-    };
-    QueryBuilder.prototype.skip = function (n) {
+    }
+    skip(n) {
         this._skipValue = n;
         return this;
-    };
-    QueryBuilder.prototype.lean = function () {
+    }
+    lean() {
         return this;
-    };
-    QueryBuilder.prototype.populate = function (field, select) {
+    }
+    populate(field, select) {
         return this;
-    };
-    QueryBuilder.prototype._buildOptions = function () {
-        var opts = {};
+    }
+    _buildOptions() {
+        const opts = {};
         if (Object.keys(this._projection).length > 0)
             opts.projection = this._projection;
         if (Object.keys(this._sort).length > 0)
@@ -59,37 +58,32 @@ var QueryBuilder = /** @class */ (function () {
         if (this._skipValue > 0)
             opts.skip = this._skipValue;
         return opts;
-    };
-    QueryBuilder.prototype._execFindOne = function () {
-        var _this = this;
-        var opts = this._buildOptions();
-        return this._collection.findOne(this._filter, opts).then(function (doc) {
+    }
+    _execFindOne() {
+        const opts = this._buildOptions();
+        return this._collection.findOne(this._filter, opts).then((doc) => {
             if (!doc)
                 return null;
-            return new DocumentProxy_1.DocumentProxy(_this._collection, { _id: doc._id }, doc, false);
+            return new DocumentProxy_1.DocumentProxy(this._collection, { _id: doc._id }, doc, false);
         });
-    };
-    QueryBuilder.prototype._execFind = function () {
-        var _this = this;
-        var opts = this._buildOptions();
-        return this._collection.find(this._filter, opts).toArray().then(function (docs) {
-            return docs.map(function (d) { return new DocumentProxy_1.DocumentProxy(_this._collection, { _id: d._id }, d, false); });
-        });
-    };
-    QueryBuilder.prototype.then = function (onfulfilled, onrejected) {
-        var promise = this._mode === 'findOne'
+    }
+    _execFind() {
+        const opts = this._buildOptions();
+        return this._collection.find(this._filter, opts).toArray().then((docs) => docs.map((d) => new DocumentProxy_1.DocumentProxy(this._collection, { _id: d._id }, d, false)));
+    }
+    then(onfulfilled, onrejected) {
+        const promise = this._mode === 'findOne'
             ? this._execFindOne()
             : this._execFind();
         return promise.then(onfulfilled, onrejected);
-    };
-    QueryBuilder.prototype.exec = function () {
+    }
+    exec() {
         return (this._mode === 'findOne'
             ? this._execFindOne()
             : this._execFind());
-    };
-    QueryBuilder.prototype.toArray = function () {
+    }
+    toArray() {
         return this._execFind();
-    };
-    return QueryBuilder;
-}());
+    }
+}
 exports.QueryBuilder = QueryBuilder;

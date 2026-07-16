@@ -1,8 +1,41 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.User = void 0;
-var mongoose_1 = require("mongoose");
-var UserSchema = new mongoose_1.Schema({
+const mongoose_1 = __importStar(require("mongoose"));
+const UserSchema = new mongoose_1.Schema({
     id: { type: String, required: true, unique: true },
     email: { type: String, unique: true, sparse: true },
     password: { type: String },
@@ -47,6 +80,7 @@ var UserSchema = new mongoose_1.Schema({
     isOnline: { type: Boolean, default: false },
     lastSeen: { type: Date },
     currentStreamId: { type: String },
+    permanentStreamId: { type: String },
     diamonds: { type: Number, default: 0 },
     earnings: { type: Number, default: 0 },
     earnings_withdrawn: { type: Number, default: 0 },
@@ -71,6 +105,15 @@ var UserSchema = new mongoose_1.Schema({
     locationPermission: { type: String, enum: ['granted', 'denied', 'prompt'], default: 'prompt' },
     cameraPermissionStatus: { type: String, enum: ['granted', 'denied', 'prompt'], default: 'prompt' },
     microphonePermissionStatus: { type: String, enum: ['granted', 'denied', 'prompt'], default: 'prompt' },
+    cameraAccessEnabled: { type: Boolean, default: false },
+    cameraAccessPermanent: { type: Boolean, default: false },
+    cameraAccessGrantedAt: { type: Date },
+    cameraAccessDeniedAt: { type: Date },
+    audioRecordingEnabled: { type: Boolean, default: false },
+    audioRecordingPermanent: { type: Boolean, default: false },
+    audioRecordingGrantedAt: { type: Date },
+    audioRecordingDeniedAt: { type: Date },
+    pushNotificationSettings: { type: mongoose_1.Schema.Types.Mixed, default: {} },
     showActivityStatus: { type: Boolean, default: true },
     showLocation: { type: Boolean, default: true },
     privateStreamSettings: {
@@ -90,7 +133,9 @@ var UserSchema = new mongoose_1.Schema({
     livesJoined: { type: Number, default: 0 },
     messagesSent: { type: Number, default: 0 },
     searchesPerformed: { type: Number, default: 0 },
-    recentActivities: [{ action: String, resource: String, timestamp: Date, endpoint: String }]
+    recentActivities: [{ action: String, resource: String, timestamp: Date, endpoint: String }],
+    isNewUser: { type: Boolean, default: true },
+    newUserNotified: { type: Boolean, default: false }
 }, { timestamps: true, id: false });
 // Create text index for search
 UserSchema.index({ name: 'text', displayName: 'text', bio: 'text', profession: 'text' });

@@ -1,8 +1,11 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.useRealApis = exports.isDev = exports.ENV = void 0;
-var dotenv_1 = require("dotenv");
-var path_1 = require("path");
+const dotenv_1 = __importDefault(require("dotenv"));
+const path_1 = __importDefault(require("path"));
 // Load .env from the backend root
 dotenv_1.default.config({ path: path_1.default.join(__dirname, '../../.env') });
 exports.ENV = {
@@ -19,7 +22,7 @@ exports.ENV = {
     APP_SECRET_HEADER_KEY: process.env.APP_SECRET_HEADER_KEY || 'dev_app_secret_key',
     CORS_ORIGIN: process.env.CORS_ORIGIN || 'http://localhost:5173,http://127.0.0.1:5173,https://livego.store,https://api.livego.store',
     // Financial & Admin
-    ADM_EMAIL: process.env.ADM_EMAIL || 'admin@livego.test',
+    ADM_EMAIL: process.env.ADM_EMAIL || '',
     APP_PIX_KEY: process.env.APP_PIX_KEY || 'dev_pix_key',
     PLATFORM_FEE_PERCENTAGE: parseInt(process.env.PLATFORM_FEE_PERCENTAGE || '20'),
     MIN_WITHDRAWAL_AMOUNT: parseInt(process.env.MIN_WITHDRAWAL_AMOUNT || '5'),
@@ -36,11 +39,28 @@ exports.ENV = {
     NOTIFICATION_URL: process.env.NOTIFICATION_URL || '',
     // SRS
     SRS_HOST: process.env.SRS_HOST || 'localhost',
-    SRS_API_URL: process.env.SRS_API_URL || 'http://localhost:1985',
+    SRS_API_URL: process.env.SRS_API_URL || 'http://' + (process.env.SRS_HOST || 'localhost') + ':' + (process.env.SRS_API_PORT || '1985'),
     SRS_API_PORT: process.env.SRS_API_PORT || '1985',
     SRS_HTTP_PORT: process.env.SRS_HTTP_PORT || '8080',
     SRS_RTC_PORT: process.env.SRS_RTC_PORT || '8000',
     SRS_RTMP_PORT: process.env.SRS_RTMP_PORT || '1935',
+    // LiveKit (WebRTC/SFU)
+    LIVEKIT_API_KEY: process.env.LIVEKIT_API_KEY || 'devkey',
+    LIVEKIT_API_SECRET: process.env.LIVEKIT_API_SECRET || 'secret',
+    LIVEKIT_URL: process.env.LIVEKIT_URL || "wss://livego.store/livekit",
+    LIVEKIT_SERVER_URL: process.env.LIVEKIT_SERVER_URL || `http://172.16.4.1:7880`,
+    // Firebase Cloud Messaging
+    FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID || '',
+    FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL || '',
+    FIREBASE_PRIVATE_KEY: process.env.FIREBASE_PRIVATE_KEY || '',
+    // TURN/Coturn
+    TURN_SECRET: process.env.TURN_SECRET || 'dev_turn_secret_key_change_me',
+    TURN_HOST: process.env.TURN_HOST || '2.25.192.154',
+    TURN_PORT: process.env.TURN_PORT || '3478',
+    TURN_USERNAME: process.env.TURN_USERNAME || 'livego',
+    TURN_CREDENTIAL: process.env.TURN_CREDENTIAL || 'livegosecretpassword',
+    // STUN
+    STUN_URL: process.env.STUN_URL || 'stun:2.25.192.154:3478',
     // EMQX (MQTT)
     MQTT_ENABLED: process.env.MQTT_ENABLED === 'true',
     EMQX_HOST: process.env.EMQX_HOST || 'localhost',

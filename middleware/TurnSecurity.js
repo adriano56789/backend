@@ -15,6 +15,9 @@ const turnSecurityMiddleware = (req, res, next) => {
         'http://localhost:3000',
         'https://localhost:3000',
         'https://72.60.249.175:3000',
+        'https://livego.store',
+        'https://api.livego.store',
+        'https://www.livego.store',
     ];
     const origin = req.headers.origin;
     const userAgent = req.headers['user-agent'];

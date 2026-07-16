@@ -844,7 +844,9 @@ router.get('/webhook/logs', async (req, res) => {
 });
 
 
-// POST /api/livekit/chat-token - Gerar token para chat da live (LiveKit Chat Channel)
+// POST /api/livekit/chat-token - Gerar token para sala live (unificado: mídia + chat + eventos)
+// Host recebe canPublish=true para publicar câmera/microfone.
+// Viewers recebem canPublish=false (somente subscribe + data).
 router.post('/chat-token', async (req, res) => {
     try {
         const userId = getUserIdFromToken(req);
@@ -857,13 +859,18 @@ router.post('/chat-token', async (req, res) => {
         }
         const liveRoomName = getLiveRoomName(streamId);
         await ensureLiveKitRoom(streamId);
+
+        // Detectar host: streamId é o ID do streamer (mesmo que hostId)
+        const isHost = userId === streamId;
+
         const token = await generateLiveKitToken(
             userId,
             liveRoomName,
             JSON.stringify({ type: 'livechat', streamId }),
-            { canPublish: false, canPublishData: true, canSubscribe: true }
+            { canPublish: isHost, canPublishData: true, canSubscribe: true }
         );
         const lkUrl = ENV.LIVEKIT_URL || 'wss://livego.store/livekit';
+        console.log(`[LIVEKIT-CHAT-TOKEN] streamId=${streamId} userId=${userId} isHost=${isHost}`);
         res.json({ success: true, token, serverUrl: lkUrl, roomName: liveRoomName });
     } catch (error: any) {
         console.error('[LIVEKIT-CHAT-TOKEN] Erro:', error.message);
