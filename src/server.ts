@@ -1925,9 +1925,34 @@ wsIo.on('connection', async (socket) => {
 });
 // ────────────────────────────────────────────────────────────────────
 
+// ── Bridge: espelhar eventos globais de io (porta 3000) → wsIo (porta 3001) ──
+// O frontend pode conectar no wsIo como fallback. Sem este bridge,
+// eventos como avatar_updated nunca chegariam ao celular.
+const GLOBAL_EVENTS_TO_BRIDGE = [
+  'avatar_updated',
+  'user_status_updated',
+  'user_avatar_protection_updated',
+  'diamonds_updated',
+  'earnings_updated',
+  'platform_earnings_updated',
+  'live_coins_updated',
+  'new_live',
+  'stream_started',
+  'stream_stopped',
+];
+const origGlobalEmit = io.emit.bind(io);
+io.emit = ((event: string, ...args: any[]) => {
+  // Repassar para wsIo se for evento global relevante
+  if (GLOBAL_EVENTS_TO_BRIDGE.includes(event)) {
+    try { wsIo.emit(event, ...args); } catch (_) {}
+  }
+  return origGlobalEmit(event, ...args);
+}) as typeof io.emit;
+
 wsServer.listen(wsPort, '127.0.0.1', () => {
     const protocol = isHttps ? 'https' : 'http';
     console.log(`🔌 WebSocket server (Socket.IO) started on ${protocol}://127.0.0.1:${wsPort}`);
     console.log(`🔐 Ready for ${isHttps ? 'secure ' : ''}WebSocket connections`);
     console.log(`📡 Following LiveGo pattern with real-time events`);
+    console.log(`🔁 [BRIDGE] Eventos globais espelhados de io → wsIo`);
 });
