@@ -4,6 +4,7 @@ import { ENV } from '../config/env';
 import { roomService, generateLiveKitToken, roomExists, getLiveRoomName, ensureLiveKitRoom } from '../services/LiveKitTokenService';
 import { getUserIdFromToken } from '../middleware/auth';
 import { Battle, CallInvitation, StreamParticipant, LiveKitWebhookLog } from '../models';
+import { egressService } from '../services/LiveKitEgressService';
 
 const router = express.Router();
 
@@ -876,5 +877,95 @@ router.post('/chat-token', async (req, res) => {
         console.error('[LIVEKIT-CHAT-TOKEN] Erro:', error.message);
         res.status(500).json({ success: false, error: error.message });
     }
+});
+
+
+// ========================================
+// LiveKit Egress — RTMP para SRS
+// ========================================
+
+/**
+ * POST /api/livekit/egress/start-rtmp
+ *
+ * Inicia um Egress RTMP para enviar o stream do LiveKit para o SRS.
+ * 
+ * Body:
+ *   - roomId: Nome da sala LiveKit (ex: live_streamId)
+ *   - streamId: ID do stream no SRS (ex: streamId)
+ *   - rtmpUrl: URL RTMP do SRS (opcional, usa padrão se não fornecido)
+ */
+router.post('/egress/start-rtmp', async (req, res) => {
+  try {
+    const { roomId, streamId, rtmpUrl } = req.body;
+    if (!roomId || !streamId) {
+      return res.status(400).json({ error: 'roomId and streamId are required' });
+    }
+
+    // Construir URL RTMP padrão se não fornecida
+    // Formato: rtmp://SRS_HOST:SRS_RTMP_PORT/live/streamId
+    const defaultRtmpUrl = `rtmp://${ENV.SRS_HOST || 'localhost'}:${ENV.SRS_RTMP_PORT || 1935}/live/${streamId}`;
+    const finalRtmpUrl = rtmpUrl || defaultRtmpUrl;
+
+    console.log(`[EGRESS] Iniciando RTMP Egress:`, { roomId, streamId, rtmpUrl: finalRtmpUrl });
+
+    const result = await egressService.startRTMPEgress(roomId, streamId, finalRtmpUrl);
+
+    if (result.success) {
+      res.json(result);
+    } else {
+      res.status(500).json(result);
+    }
+  } catch (error: any) {
+    console.error('[EGRESS] Erro ao iniciar RTMP Egress:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * POST /api/livekit/egress/stop
+ *
+ * Para um Egress em andamento.
+ * 
+ * Body:
+ *   - egressId: ID do Egress a parar
+ */
+router.post('/egress/stop', async (req, res) => {
+  try {
+    const { egressId } = req.body;
+    if (!egressId) {
+      return res.status(400).json({ error: 'egressId is required' });
+    }
+
+    console.log(`[EGRESS] Parando Egress: ${egressId}`);
+    const result = await egressService.stopEgress(egressId);
+
+    if (result.success) {
+      res.json(result);
+    } else {
+      res.status(500).json(result);
+    }
+  } catch (error: any) {
+    console.error('[EGRESS] Erro ao parar Egress:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/livekit/egress/list
+ *
+ * Lista todos os Egress ativos (útil para debug).
+ */
+router.get('/egress/list', async (req, res) => {
+  try {
+    const result = await egressService.listEgress();
+    if (result.success) {
+      res.json(result);
+    } else {
+      res.status(500).json(result);
+    }
+  } catch (error: any) {
+    console.error('[EGRESS] Erro ao listar Egress:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 export default router;

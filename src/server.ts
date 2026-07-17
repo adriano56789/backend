@@ -493,12 +493,8 @@ app.post('/api/analytics', (req, res) => {
     }
 });
 
-// Fallback para API - retornar 404 para endpoints não encontrados
-// Servir avatares enviados ANTES das rotas da API com CORS headers
-app.use('/uploads', (req, res, next) => {
-    res.header('Cross-Origin-Resource-Policy', 'cross-origin');
-    next();
-}, express.static(path.join(__dirname, '../uploads')));
+// /uploads/ é servido diretamente pelo Nginx (volume persistente fora do container)
+// O container NÃO deve servir nem armazenar arquivos de upload/avatar
 
 app.use('/api/*', (req, res) => {
     res.status(404).json({ error: `API endpoint not found: ${req.method} ${req.path}` });

@@ -94,7 +94,6 @@ services:
       - FRONTEND_URL=https://livego.store
       - BACKEND_URL=https://api.livego.store
       - SRS_HOST=srs
-      - SRS_API_PORT=1985
       - USE_DOCKER_FFMPEG=true
       - FFMPEG_DOCKER_API=http://ffmpeg:5000
       - CORS_ORIGIN=https://livego.store,https://www.livego.store,https://api.livego.store,https://rtc.livego.store
@@ -103,8 +102,13 @@ services:
       - MERCADO_PAGO_CLIENT_ID=8544166678866013
       - MERCADO_PAGO_CLIENT_SECRET=OvtQrTNHPFDNhptfkrldHwqQ9QjYzWhq
       - LIVEKIT_URL=wss://livego.store/livekit
+      - LIVEKIT_SERVER_URL=http://host.docker.internal:7880
       - LIVEKIT_API_KEY=dfd8670dd9bc2f158eb5da850fcb47778f19fc9c88ed8f76f2d1d34cd0d29c66
       - LIVEKIT_API_SECRET=8529e52ace6e923af0a1b72dffe29fc59372faa96b302c398c9142e197f7636d
+      - SRS_RTMP_PORT=1935
+      - SRS_API_PORT=1985
+      - SRS_HTTP_PORT=8080
+      - SRS_RTC_PORT=8000
       - TURN_HOST=2.25.192.154
       - TURN_PORT=3478
       - TURN_USERNAME=livego
@@ -117,6 +121,8 @@ services:
       - FIREBASE_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDTZre23gpyIWdJ\n7JOS//kXGAFbdrT04H1qLjN7KDGvbpZVudfDlqg4Gos+AR3wdKMVA59kE5/FPIWy\nGLk4IJLZMAdBWRENBQ4rhkYUV063HqOoFdrPfhlIAb3vHCgRHJrSDdeb7wfQsCDG\nV7POfWxb5/Nz4WrFvW+49XnwqCXfytPNk5JcDuq3OLI86H+Hw9BfKjF2xDRhtRna\nL7d+nVxKH9XtiHBFlyO+w9SyvjoBIW0tNaeyg/uVcrhJUAy+1TccCeKxMo3OhBP9\nOroGU8C0hzEYBBBPiw8yMPXe92feXoD2bF4nwev9P67I83iGW5eYuxYr2RVfE/Pn\nNgfkXwE7AgMBAAECggEAWbKyTenN1dpdiKzUeyGYb9eUL9pg8qxUGpsK5f1Kg6zx\nJeOqbMd+jfuZTFBOA0qCLfbxCRYYiyhgdA5wfKO5m2T5Fx2zEeqstgQNtTDMaf+a\nokXPp43SLU7r58pzJ7uS54DPFM9p6f7pkS8CUKHAOgjjsC4bz1ZPUtP5jwbRtzAD\nUxViCIEgWXna1wFbVtb57HgwlCjiDoZrGWOZXs5BM43nQhUBIPAlNJFaFH0Enyv3\nTSp/gOxlz7AjLkrsKLNl3MF6cpvOhotJSTCmuQtI8lxOYVgGjRZmhsT7Rehy22Dh\nyHjJBAcoI9dd7d5GAyAXXljCYeFVmFhAO+ovOheCEQKBgQD1uG4lgWsq7Cc+uQC8\nyQbu7oaUGH4x+rgp34MN+keWRc5kfmcQF9WODO0dxfLUK3vY7rws6L/s5IwXws9x\nFjqLeBQh45mYTxW6JvjdGlIoYAn6C21bdTQoG8ybLqdjmTFuWvFbGoQVyaUOfNzg\nmDJHv5xw1zva/MRjJzV2uS5GMQKBgQDcPr4FSl+KzA5SpV9Zm+mjdJsd87G5VE8Z\n5YWBi3IWQmmjepbw3iJgey5pNUhoNmz2JUd2CK1OjHairPlS+ZS5A/2kFEHHtS//\nzj1CvXgVNvefVJhwLIl5wh5siABbqBWxMsv4jcfj/g5us5dUKi88cl01bbG/sSiF\nfBkxNLPnKwKBgQDp1rn7t03laxdt+WFaR3TxrM0l4qk1pwPb1XlCtAusVoIz4Jb0\nGbqBlIuS6e5NO5SAvbEWi+kZ5+XqNtpzJFRSpdOC7LYe3CQxIyVyRLoq8jqMWpOX\nldIs2Ue95ogloIQKIUHPEUzh7yPExc7tbelrnk2ilTHBFQtP0OBwO4puAQKBgBn8\n2UUcinuBKmt8Ee0r5XyhBLCbEaxxk0fV+lPX1WVk/rwIegj/3QSPZGGLpPiO+3pr\n2avGyFRNZK47RMwSoQbXvrT+ouhiq8A+YKIgYyv1qXBGdho+VxZj3l0mCwzFn5Gi\nEclJSX3Qe3l6fW+z7pDuWas1P1UEHWjqxLo2osezAoGAf3rZYnSfVEKiGrytMRld\nugWhATuhaaG7R02Z+K2E6d5Hg/uGmexqnEiM/kE5jwaC87PuAWKmBb7y80VsxVHg\nLXjXoXGHlGnRDEfFtVPtZN+zAyUOSMy6RJBk6yiR0cTlXO9t3mN2PgcHJj+kPhPm\nGJbq8mzv5n0LgvFRSK5TFZk=\n-----END PRIVATE KEY-----
     volumes:
       - ./uploads:/app/uploads
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       mongodb:
         condition: service_healthy
