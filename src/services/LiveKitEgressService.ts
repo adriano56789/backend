@@ -1,22 +1,11 @@
 import { EgressClient } from 'livekit-server-sdk';
+import { StreamOutput, StreamProtocol } from '@livekit/protocol';
 import { ENV } from '../config/env';
-
-/**
- * LiveKit Egress Service
- * 
- * Responsável por iniciar e parar Egress RTMP para enviar streams do LiveKit para o SRS.
- * 
- * Arquitetura:
- * - LiveKit captura câmera/microfone do host
- * - Egress pega as tracks do LiveKit e envia via RTMP para o SRS
- * - SRS distribui via HLS para espectadores
- */
 
 class LiveKitEgressService {
   private egressClient: EgressClient;
 
   constructor() {
-    // EgressClient singleton
     this.egressClient = new EgressClient(
       ENV.LIVEKIT_SERVER_URL,
       ENV.LIVEKIT_API_KEY,
@@ -24,14 +13,6 @@ class LiveKitEgressService {
     );
   }
 
-  /**
-   * Inicia um Egress RTMP para enviar o stream de uma sala LiveKit para o SRS
-   * 
-   * @param roomId - Nome da sala LiveKit (ex: live_streamId)
-   * @param streamId - ID do stream no SRS (ex: streamId)
-   * @param rtmpUrl - URL RTMP do SRS (ex: rtmp://localhost:1935/live/streamId)
-   * @returns Egress ID e informações
-   */
   async startRTMPEgress(
     roomId: string,
     streamId: string,
@@ -48,19 +29,17 @@ class LiveKitEgressService {
     try {
       console.log(`[EGRESS] Iniciando RTMP Egress para sala ${roomId} -> SRS ${streamId}`);
 
-      // Usar roomCompositeEgress para capturar todas as tracks da sala
-      // Isso inclui câmera e microfone do host
-      const output: any = {
-        rtmp: true,
-        url: rtmpUrl,
-      };
+      const streamOutput = new StreamOutput({
+        protocol: StreamProtocol.RTMP,
+        urls: [rtmpUrl],
+      });
 
       const egressInfo = await this.egressClient.startRoomCompositeEgress(
         roomId,
-        output
+        streamOutput
       );
 
-      console.log(`[EGRESS] RTMP Egress iniciado com sucesso:`, {
+      console.log(`[EGRESS] RTMP Egress iniciado:`, {
         egressId: egressInfo.egressId,
         roomId,
         streamId,
