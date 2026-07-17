@@ -575,6 +575,14 @@ router.post('/webhook', async (req, res) => {
 
     console.log(`[LIVEKIT-WEBHOOK] 📨 Evento recebido: ${eventType} | sala: ${roomName || 'N/A'}`);
 
+    // Helper: extrair o ID real da stream removendo o prefixo da sala LiveKit
+    const extractStreamId = (lkRoomName: string): string => {
+      if (lkRoomName.startsWith('live_')) return lkRoomName.slice(5);
+      if (lkRoomName.startsWith('pk_')) return lkRoomName.slice(3);
+      if (lkRoomName.startsWith('call_')) return lkRoomName.slice(5);
+      return lkRoomName;
+    };
+
     // Helper: persistir log do evento no MongoDB (fire-and-forget — não bloqueia)
     const persistLog = (success: boolean, errorMsg?: string) => {
       LiveKitWebhookLog.create({
@@ -672,8 +680,23 @@ router.post('/webhook', async (req, res) => {
         }
       }
 
+      // Sala Live: live_<streamId>
+      if (roomName.startsWith('live_')) {
+        const streamId = roomName.slice(5);
+        console.log(`[LIVEKIT-WEBHOOK] 📡 Live finalizada: ${streamId} (sala ${roomName})`);
+
+        try {
+          const result = await StreamParticipant.deleteMany({ streamId: roomName });
+          console.log(`[LIVEKIT-WEBHOOK] ✅ ${result.deletedCount} participante(s) removido(s) da sala ${roomName}`);
+          persistLog(true);
+        } catch (dbErr: any) {
+          console.error('[LIVEKIT-WEBHOOK] ❌ Erro ao limpar participantes da live:', dbErr.message);
+          persistLog(false, dbErr.message);
+        }
+      }
+
       // Room finished sem prefixo conhecido — loga sucesso mesmo assim
-      if (!roomName.startsWith('pk_') && !roomName.startsWith('call_')) {
+      if (!roomName.startsWith('pk_') && !roomName.startsWith('call_') && !roomName.startsWith('live_')) {
         persistLog(true);
       }
 
@@ -687,14 +710,22 @@ router.post('/webhook', async (req, res) => {
         console.log(`[LIVEKIT-WEBHOOK] 👤 Participante entrou: ${participantIdentity} na sala ${roomName}`);
 
         try {
+          const cleanStreamId = extractStreamId(roomName);
+          const participantRole = roomName.startsWith('pk_')
+            ? 'pk_participant'
+            : roomName.startsWith('live_')
+              ? 'live_viewer'
+              : 'call_participant';
+
           await StreamParticipant.findOneAndUpdate(
             { streamId: roomName, userId: participantIdentity },
             {
               $set: {
                 streamId: roomName,
+                cleanStreamId,
                 userId: participantIdentity,
                 userName: participant.name || participantIdentity,
-                role: roomName.startsWith('pk_') ? 'pk_participant' : 'call_participant',
+                role: participantRole,
                 joinedAt: new Date(),
               }
             },
@@ -737,6 +768,15 @@ router.post('/webhook', async (req, res) => {
             streamId: roomName,
             userId: participantIdentity
           });
+
+          // Também remover por cleanStreamId se existir (fallback para registros antigos)
+          const cleanStreamId = extractStreamId(roomName);
+          if (cleanStreamId !== roomName) {
+            await StreamParticipant.deleteMany({
+              cleanStreamId,
+              userId: participantIdentity
+            }).catch(() => {});
+          }
 
           console.log(`[LIVEKIT-WEBHOOK] ✅ Participante ${participantIdentity} removido da sala ${roomName}`);
 
@@ -902,9 +942,17 @@ router.post('/egress/start-rtmp', async (req, res) => {
     }
 
     // Construir URL RTMP padrão se não fornecida
-    // Formato: rtmp://SRS_HOST:SRS_RTMP_PORT/live/streamId
-    const defaultRtmpUrl = `rtmp://${ENV.SRS_HOST || 'localhost'}:${ENV.SRS_RTMP_PORT || 1935}/live/${streamId}`;
+    // interno que o backend usa para se comunicar com SRS, mas o LiveKit
+    // roda na mesma máquina (host.docker.internal) e NÃO resolve nomes Docker.
+    //
+    // SRS_RTMP_HOST padrao: 'localhost' (LiveKit e SRS na mesma máquina)
+    // Docker: host.docker.internal
+    // Externa: IP público ou domínio
+    const rtmpHost = process.env.SRS_RTMP_HOST || 'localhost';
+    const defaultRtmpUrl = `rtmp://${rtmpHost}:${ENV.SRS_RTMP_PORT || 1935}/live/${streamId}`;
     const finalRtmpUrl = rtmpUrl || defaultRtmpUrl;
+
+    console.log('[EGRESS] ⚠️ Verifique se o LiveKit consegue alcançar o SRS no host:', rtmpHost);
 
     console.log(`[EGRESS] Iniciando RTMP Egress:`, { roomId, streamId, rtmpUrl: finalRtmpUrl });
 
@@ -968,4 +1016,203 @@ router.get('/egress/list', async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+/**
+ * GET /api/livekit/egress/status/:egressId
+ *
+ * Obtém o status atual de um Egress específico.
+ * Útil para polling do frontend para saber se o Egress está ativo.
+ *
+ * Estados possíveis:
+ *   - EGRESS_STARTING: inicializando
+ *   - EGRESS_ACTIVE: transmitindo ativamente
+ *   - EGRESS_ENDING: desligando
+ *   - EGRESS_COMPLETE: finalizado com sucesso
+ *   - EGRESS_FAILED: falhou (ver error no response)
+ *   - EGRESS_LIMIT_REACHED: parou por limite
+ */
+router.get('/egress/status/:egressId', async (req, res) => {
+  try {
+    const { egressId } = req.params;
+    if (!egressId) {
+      return res.status(400).json({ success: false, error: 'egressId is required' });
+    }
+
+    console.log(`[EGRESS] Consulta de status: ${egressId}`);
+    const result = await egressService.getEgressStatus(egressId);
+
+    if (result.success) {
+      res.json(result);
+    } else {
+      res.status(500).json(result);
+    }
+  } catch (error: any) {
+    console.error('[EGRESS] Erro ao consultar status do Egress:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/hls/validate/:streamId
+ *
+ * Valida se o pipeline HLS está funcionando para uma stream específica.
+ * Testa se o SRS está gerando o playlist .m3u8 e os segmentos .ts.
+ *
+ * Response:
+ *   - manifestOk: true se o .m3u8 foi encontrado
+ *   - segmentsOk: true se há segmentos .ts listados
+ *   - segmentCount: número de segmentos .ts
+ *   - manifestUrl: URL completa do .m3u8
+ *   - firstSegmentUrl: URL do primeiro segmento .ts
+ */
+router.get('/hls/validate/:streamId', async (req, res) => {
+  const { streamId } = req.params;
+  if (!streamId) {
+    return res.status(400).json({ success: false, error: 'streamId is required' });
+  }
+
+  try {
+    const srsHost = ENV.SRS_HOST || 'localhost';
+    const srsHttpPort = ENV.SRS_HTTP_PORT || 8080;
+    const normalizedId = streamId.startsWith('stream_') ? streamId : `stream_${streamId}`;
+    const manifestUrl = `http://${srsHost}:${srsHttpPort}/live/${normalizedId}.m3u8`;
+
+    console.log(`[HLS-VALIDATE] Testando manifest: ${manifestUrl}`);
+
+    // 1) Fetch do .m3u8
+    let manifestBody: string;
+    try {
+      const response = await fetch(manifestUrl, {
+        method: 'GET',
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!response.ok) {
+        console.warn(`[HLS-VALIDATE] Manifest retornou ${response.status} para ${streamId}`);
+        return res.json({
+          success: true,
+          streamId,
+          manifestOk: false,
+          segmentsOk: false,
+          segmentCount: 0,
+          manifestUrl,
+          statusCode: response.status,
+          statusText: response.statusText,
+          firstSegmentUrl: null,
+          message: `SRS retornou HTTP ${response.status} para o manifest. Egress pode não ter enviado mídia ainda.`,
+        });
+      }
+      manifestBody = await response.text();
+    } catch (fetchErr: any) {
+      console.warn(`[HLS-VALIDATE] Falha ao buscar manifest: ${fetchErr.message}`);
+      return res.json({
+        success: true,
+        streamId,
+        manifestOk: false,
+        segmentsOk: false,
+        segmentCount: 0,
+        manifestUrl,
+        statusCode: null,
+        statusText: fetchErr.message,
+        firstSegmentUrl: null,
+        message: `Não foi possível conectar ao SRS: ${fetchErr.message}. Verifique se o SRS está rodando e acessível.`,
+      });
+    }
+
+    // 2) Validar que é um playlist HLS válido
+    const isM3u8 = manifestBody.startsWith('#EXTM3U');
+    if (!isM3u8) {
+      return res.json({
+        success: true,
+        streamId,
+        manifestOk: false,
+        segmentsOk: false,
+        segmentCount: 0,
+        manifestUrl,
+        statusCode: 200,
+        firstSegmentUrl: null,
+        message: 'Manifest não é um playlist HLS válido (não começa com #EXTM3U)',
+      });
+    }
+
+    // 3) Extrair segmentos .ts
+    const tsSegments: string[] = [];
+    const lines = manifestBody.split('\n');
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.endsWith('.ts') && !trimmed.startsWith('#')) {
+        tsSegments.push(trimmed);
+      }
+    }
+
+    const segmentsOk = tsSegments.length > 0;
+    const firstSegmentUrl = segmentsOk
+      ? new URL(tsSegments[0], manifestUrl).toString()
+      : null;
+
+    console.log(`[HLS-VALIDATE] Resultado para ${streamId}: manifestOk=true, segments=${tsSegments.length}`);
+
+    res.json({
+      success: true,
+      streamId,
+      manifestOk: true,
+      segmentsOk,
+      segmentCount: tsSegments.length,
+      manifestUrl,
+      statusCode: 200,
+      firstSegmentUrl,
+      segments: tsSegments.slice(0, 5), // primeiros 5 segmentos para debug
+      message: segmentsOk
+        ? `Pipeline HLS operacional: ${tsSegments.length} segmentos .ts disponíveis`
+        : 'Manifest existe mas sem segmentos .ts - aguardando mídia do Egress',
+    });
+    // 4) Validar CORS e HTTPS no endpoint público
+    const backendUrl = process.env.BACKEND_URL || 'https://api.livego.store';
+    const publicBase = `${backendUrl.replace(/\/+$/, '')}/api/video/http`;
+    const publicManifestUrl = `${publicBase}/live/${normalizedId}.m3u8`;
+
+    let publicCorsOk = false;
+    let publicHttpsOk = false;
+    try {
+      const publicResp = await fetch(publicManifestUrl, {
+        method: 'GET',
+        signal: AbortSignal.timeout(5000),
+        headers: { 'Origin': 'https://livego.store' },
+      });
+      publicHttpsOk = publicResp.ok;
+      const corsHeader = publicResp.headers.get('access-control-allow-origin');
+      publicCorsOk = corsHeader === '*' || corsHeader === 'https://livego.store';
+      console.log(`[HLS-VALIDATE] HTTPS: ${publicHttpsOk ? '✅' : '❌'} CORS: ${publicCorsOk ? '✅' : '❌'} (${corsHeader || 'none'})`);
+    } catch (publicErr: any) {
+      console.warn(`[HLS-VALIDATE] HTTPS/CORS check falhou: ${publicErr.message}`);
+    }
+
+    res.json({
+      success: true,
+      streamId,
+      manifestOk: true,
+      segmentsOk,
+      segmentCount: tsSegments.length,
+      manifestUrl,
+      publicManifestUrl,
+      publicHttpsOk,
+      publicCorsOk,
+      statusCode: 200,
+      firstSegmentUrl,
+      segments: tsSegments.slice(0, 5),
+      message: segmentsOk
+        ? `Pipeline HLS operacional: ${tsSegments.length} segmentos .ts disponíveis. HTTPS: ${publicHttpsOk ? 'OK' : 'FALHA'}, CORS: ${publicCorsOk ? 'OK' : 'FALHA'}`
+        : 'Manifest existe mas sem segmentos .ts - aguardando mídia do Egress',
+    });
+  } catch (error: any) {
+    console.error('[HLS-VALIDATE] Erro:', error.message);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      streamId,
+      manifestOk: false,
+      segmentsOk: false,
+    });
+  }
+});
+
 export default router;

@@ -21,36 +21,46 @@ class OnlineTracker {
         await StreamParticipant_1.StreamParticipant.findOneAndUpdate({ streamId, userId }, {
             $set: { streamId, userId, role, userName, userAvatar, joinedAt: new Date() }
         }, { upsert: true, returnDocument: 'after' });
-        const [fans, visitors] = await Promise.all([
+        const [fans, visitors, viewers, liveViewers] = await Promise.all([
             StreamParticipant_1.StreamParticipant.countDocuments({ streamId, role: 'fan' }),
-            StreamParticipant_1.StreamParticipant.countDocuments({ streamId, role: 'visitor' })
+            StreamParticipant_1.StreamParticipant.countDocuments({ streamId, role: 'visitor' }),
+            StreamParticipant_1.StreamParticipant.countDocuments({ streamId, role: 'viewer' }),
+            StreamParticipant_1.StreamParticipant.countDocuments({ streamId, role: 'live_viewer' })
         ]);
+        const total = fans + visitors + viewers + liveViewers;
         // Persistir no documento da stream
-        await Streamer_1.Streamer.findOneAndUpdate({ id: streamId }, { $set: { onlineFans: fans, onlineVisitors: visitors } }).catch(() => { });
-        return { role, fans, visitors };
+        await Streamer_1.Streamer.findOneAndUpdate({ id: streamId }, { $set: { onlineFans: fans, onlineVisitors: visitors, onlineViewers: viewers, onlineLiveKitViewers: liveViewers, onlineTotal: total } }).catch(() => { });
+        return { role, fans, visitors, viewers, liveViewers, total };
     }
     async userLeave(streamId, userId) {
         await StreamParticipant_1.StreamParticipant.findOneAndDelete({ streamId, userId });
-        const [fans, visitors] = await Promise.all([
+        const [fans, visitors, viewers, liveViewers] = await Promise.all([
             StreamParticipant_1.StreamParticipant.countDocuments({ streamId, role: 'fan' }),
-            StreamParticipant_1.StreamParticipant.countDocuments({ streamId, role: 'visitor' })
+            StreamParticipant_1.StreamParticipant.countDocuments({ streamId, role: 'visitor' }),
+            StreamParticipant_1.StreamParticipant.countDocuments({ streamId, role: 'viewer' }),
+            StreamParticipant_1.StreamParticipant.countDocuments({ streamId, role: 'live_viewer' })
         ]);
-        await Streamer_1.Streamer.findOneAndUpdate({ id: streamId }, { $set: { onlineFans: fans, onlineVisitors: visitors } }).catch(() => { });
-        return { fans, visitors };
+        const total = fans + visitors + viewers + liveViewers;
+        await Streamer_1.Streamer.findOneAndUpdate({ id: streamId }, { $set: { onlineFans: fans, onlineVisitors: visitors, onlineViewers: viewers, onlineLiveKitViewers: liveViewers, onlineTotal: total } }).catch(() => { });
+        return { fans, visitors, viewers, liveViewers, total };
     }
     async getCounts(streamId) {
-        const [fans, visitors] = await Promise.all([
+        const [fans, visitors, viewers, liveViewers] = await Promise.all([
             StreamParticipant_1.StreamParticipant.countDocuments({ streamId, role: 'fan' }),
-            StreamParticipant_1.StreamParticipant.countDocuments({ streamId, role: 'visitor' })
+            StreamParticipant_1.StreamParticipant.countDocuments({ streamId, role: 'visitor' }),
+            StreamParticipant_1.StreamParticipant.countDocuments({ streamId, role: 'viewer' }),
+            StreamParticipant_1.StreamParticipant.countDocuments({ streamId, role: 'live_viewer' })
         ]);
-        return { fans, visitors, total: fans + visitors };
+        return { fans, visitors, viewers, liveViewers, total: fans + visitors + viewers + liveViewers };
     }
     async getAllCounts() {
-        const [fans, visitors] = await Promise.all([
+        const [fans, visitors, viewers, liveViewers] = await Promise.all([
             StreamParticipant_1.StreamParticipant.countDocuments({ role: 'fan' }),
-            StreamParticipant_1.StreamParticipant.countDocuments({ role: 'visitor' })
+            StreamParticipant_1.StreamParticipant.countDocuments({ role: 'visitor' }),
+            StreamParticipant_1.StreamParticipant.countDocuments({ role: 'viewer' }),
+            StreamParticipant_1.StreamParticipant.countDocuments({ role: 'live_viewer' })
         ]);
-        return { fans, visitors, total: fans + visitors };
+        return { fans, visitors, viewers, liveViewers, total: fans + visitors + viewers + liveViewers };
     }
     async getStreams() {
         const result = await StreamParticipant_1.StreamParticipant.distinct('streamId');

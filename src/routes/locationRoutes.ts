@@ -91,7 +91,15 @@ router.post('/update', async (req, res) => {
         }
 
         const { city, state, country: rawCountry, residence } = await reverseGeocode(latitude, longitude);
-        const country = normalizeCountryName(rawCountry || req.body.country || '');
+        const geocodedCountry = normalizeCountryName(rawCountry || req.body.country || '');
+
+        // 🔧 CORREÇÃO: Buscar o country atual do usuário para não sobrescrever escolha manual
+        const currentUserDoc = await User.findOne({ id: userId }).select('country').lean();
+        const existingCountry = (currentUserDoc as any)?.country;
+        // Só sobrescrever o país se o usuário ainda não tiver um definido (não for vazio/global)
+        const finalCountry = existingCountry && existingCountry !== 'global'
+            ? existingCountry   // Preservar escolha manual do usuário
+            : geocodedCountry;   // Usar detecção automática
 
         const user = await User.findOneAndUpdate(
             { id: userId },
@@ -102,7 +110,7 @@ router.post('/update', async (req, res) => {
                     longitude,
                     city,
                     state,
-                    country,
+                    country: finalCountry,
                     residence,
                     locationPermission: 'granted',
                     showLocation: true

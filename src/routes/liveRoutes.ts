@@ -7,7 +7,7 @@ import { Streamer, User, Message, Followers, Friendship, Block, UserLevel, Strea
 import { getUserIdFromToken, generateJWT } from '../middleware/auth';
 import { ResponseHelper } from '../middleware/responseHelper';
 import { ENV } from '../config/env';
-import { generateLiveKitToken } from '../services/LiveKitTokenService';
+import { generateLiveKitToken, ensureLiveKitRoom } from '../services/LiveKitTokenService';
 
 import { 
 
@@ -3110,33 +3110,18 @@ router.post('/streams/:id/publish', async (req, res) => {
             console.warn('[STREAMS-PUBLISH] Erro ao criar/atualizar LiveCard:', cardErr);
         }
 
-        // === NOTIFICAR SEGUIDORES ===
+        // === NOTIFICAR TODOS OS USUÁRIOS (FCM Push) ===
         try {
-            const followers = await Followers.find({
-                followingId: hostId,
-                isActive: true
-            }).select('followerId').lean();
-
-            if (followers.length > 0) {
-                const followerIds = followers.map((f: any) => f.followerId);
-
-                // Notificar seguidores via serviço centralizado
-                try {
-                    const { NotificationService } = await import('../services/NotificationService');
-                    await NotificationService.notifyLiveStarted(
-                        io,
-                        hostId,
-                        user.name || 'LiveGO',
-                        user.avatarUrl || '',
-                        id,
-                        followerIds
-                    );
-                } catch (notifErr) {
-                    console.warn('[STREAMS-PUBLISH] Erro ao notificar seguidores:', notifErr);
-                }
-            }
-        } catch (followErr) {
-            console.warn('[STREAMS-PUBLISH] Erro ao notificar seguidores:', followErr);
+            const { NotificationService } = await import('../services/NotificationService');
+            await NotificationService.notifyLiveStartedToAll(
+                hostId,
+                user.name || 'LiveGO',
+                user.avatarUrl || '',
+                id,
+                stream?.title || ''
+            );
+        } catch (notifErr) {
+            console.warn('[STREAMS-PUBLISH] Erro ao enviar notificação push:', notifErr);
         }
 
         res.json({ success: true, stream });
@@ -4232,11 +4217,7 @@ router.post('/live/end', async (req, res) => {
 
             });
 
-        }
-
-
-
-        // Buscar usu+�rio para encontrar stream ativa
+        }        // Buscar usuário para encontrar stream ativa
 
         const user = await findUserByAnyId(User, userId);
 
@@ -4246,7 +4227,7 @@ router.post('/live/end', async (req, res) => {
 
                 success: false,
 
-                message: 'Usu+�rio n+�o encontrado' 
+                message: 'Usuário não encontrado' 
 
             });
 
@@ -4254,7 +4235,7 @@ router.post('/live/end', async (req, res) => {
 
 
 
-        // Buscar stream ativa do usu+�rio
+        // Buscar stream ativa do usuário
 
         const activeStream: any = await Streamer.findOne({ 
 
@@ -4278,93 +4259,99 @@ router.post('/live/end', async (req, res) => {
 
         }
 
+        const streamId = typeof activeStream.id === 'string' ? activeStream.id : String(activeStream.id || '');
 
-
-        // Atualizar status da stream para encerrada
-
-        await Streamer.updateOne(
-
-            { id: activeStream.id },
-
-            {
-
-                $set: {
-
-                    isLive: false,
-
-                    streamStatus: 'ended',
-
-                    endTime: new Date()
-
+        // ── Etapa 1: Atualizar status da stream para encerrada ──
+        try {
+            await Streamer.updateOne(
+                { id: streamId },
+                {
+                    $set: {
+                        isLive: false,
+                        streamStatus: 'ended',
+                        endTime: new Date()
+                    }
                 }
+            );
+            console.log('[LIVE-END] ✅ Streamer.updateOne OK');
+        } catch (stepErr: any) {
+            console.error('[LIVE-END] ❌ Erro em Streamer.updateOne:', stepErr.message);
+        }
 
-            }
+        // ── Etapa 2: Atualizar status do usuário + persistir atividade ──
+        try {
+            await User.findOneAndUpdate(
+                { id: userId },
+                {
+                    $set: {
+                        isLive: false,
+                        isOnline: false,
+                        currentStreamId: null
+                    },
+                    $push: { recentActivities: { $each: [{
+                            action: 'live_end',
+                            resource: 'live_broadcast',
+                            timestamp: new Date(),
+                            endpoint: '/api/live/end'
+                        }], $slice: -50 } }
+                }
+            );
+            console.log('[LIVE-END] ✅ User.findOneAndUpdate OK');
+        } catch (stepErr: any) {
+            console.error('[LIVE-END] ❌ Erro em User.findOneAndUpdate:', stepErr.message);
+        }
 
-        );
-
-
-
-        // Atualizar status do usu+�rio + persistir atividade
-
-        await User.findOneAndUpdate(
-            { id: userId },
-            {
-                $set: {
-                    isLive: false,
-                    isOnline: false,
-                    currentStreamId: null
-                },
-                $push: { recentActivities: { $each: [{
-                        action: 'live_end',
-                        resource: 'live_broadcast',
-                        timestamp: new Date(),
-                        endpoint: '/api/live/end'
-                    }], $slice: -50 } }
-            }
-        );
-
-        // Notificar viewers via Socket.IO
+        // ── Etapa 3: Notificar viewers via Socket.IO ──
         const io = req.app.get('io');
         if (io) {
-            io.to(activeStream.id).emit('stream_ended', {
-                streamId: activeStream.id,
-                hostId: userId,
-                timestamp: new Date()
-            });
-            io.emit('stream_ended', {
-                streamId: activeStream.id,
-                hostId: userId
-            });
-        }
-
-        // Encerrar PK battle ativa se existir
-        const activeBattle: any = await Battle.findOne({
-            $or: [
-                { streamerA: userId },
-                { streamerB: userId }
-            ],
-            status: 'active'
-        });
-        if (activeBattle) {
-            const now = new Date();
-            await Battle.findOneAndUpdate({ _id: activeBattle._id }, {
-                status: 'finished',
-                endedAt: now,
-                winner: null
-            });
-            if (io) {
-                io.emit('pk_battle_end', {
-                    battleId: activeBattle._id.toString(),
-                    winner: null,
-                    reason: 'streamer_ended_live'
+            try {
+                io.to(streamId).emit('stream_ended', {
+                    streamId: streamId,
+                    hostId: userId,
+                    timestamp: new Date()
                 });
+                io.emit('stream_ended', {
+                    streamId: streamId,
+                    hostId: userId
+                });
+                console.log('[LIVE-END] ✅ Socket.IO emit OK');
+            } catch (stepErr: any) {
+                console.error('[LIVE-END] ❌ Erro em Socket.IO emit:', stepErr.message);
             }
-            console.log(`[LIVE-END] PK Battle ${activeBattle._id} encerrada por fim da live`);
         }
 
-        console.log(`[LIVE-END] Live encerrada: ${activeStream.id} para usu+�rio ${userId}`);
+        // ── Etapa 4: Encerrar PK battle ativa se existir ──
+        try {
+            const activeBattle: any = await Battle.findOne({
+                $or: [
+                    { streamerA: userId },
+                    { streamerB: userId },
+                    { streamerA: streamId },
+                    { streamerB: streamId }
+                ],
+                status: 'active'
+            }).lean();
+            if (activeBattle) {
+                const now = new Date();
+                await Battle.findOneAndUpdate({ _id: activeBattle._id }, {
+                    status: 'finished',
+                    endedAt: now,
+                    winner: null
+                });
+                if (io) {
+                    io.emit('pk_battle_end', {
+                        battleId: activeBattle._id.toString(),
+                        winner: null,
+                        reason: 'streamer_ended_live'
+                    });
+                }
+                console.log('[LIVE-END] ✅ PK Battle', activeBattle._id, 'encerrada por fim da live');
+            }
+        } catch (battleErr: any) {
+            console.warn('[LIVE-END] ⚠️ Erro ao buscar/encerrar PK Battle (ignorado):', battleErr.message);
+        }
 
-        // Atualizar LiveCard para ended
+        // ── Etapa 5: Atualizar LiveCard para ended ──
         try {
             await LiveCard.findOneAndUpdate(
                 { hostId: userId },
@@ -4375,14 +4362,17 @@ router.post('/live/end', async (req, res) => {
                     updatedAt: new Date()
                 } }
             );
-        } catch (cardErr) {
-            console.warn('[LIVE-END] Erro ao atualizar LiveCard:', cardErr);
+            console.log('[LIVE-END] ✅ LiveCard atualizado');
+        } catch (cardErr: any) {
+            console.warn('[LIVE-END] ⚠️ Erro ao atualizar LiveCard:', cardErr.message);
         }
+
+        console.log('[LIVE-END] ✅ Live encerrada:', streamId, 'para usuário', userId);
 
         res.json({
             success: true,
             stream: {
-                id: activeStream.id,
+                id: streamId,
                 isLive: false,
                 streamStatus: 'ended',
                 endTime: new Date()
@@ -4391,15 +4381,16 @@ router.post('/live/end', async (req, res) => {
 
 
 
-    } catch (error) {
+    } catch (error: any) {
 
-        console.error('[LIVE-END] Erro:', error);
+        console.error('[LIVE-END] ❌ Erro NÃO TRATADO:', error?.message || error, error?.stack || '');
 
         res.status(500).json({ 
 
             success: false,
 
-            message: 'Erro interno ao encerrar live'
+            message: 'Erro interno ao encerrar live',
+            error: error?.message || 'Unknown error'
 
         });
 
@@ -6874,7 +6865,7 @@ router.post('/lives/:id/end', async (req, res) => {
 
             { id: realId },
 
-            {
+            { $set: {
 
                 isLive: false,
 
@@ -6882,7 +6873,7 @@ router.post('/lives/:id/end', async (req, res) => {
 
                 endTime: new Date()
 
-            }
+            } }
 
         );
 
@@ -9086,15 +9077,21 @@ router.get('/lives/:room/livekit-token', async (req, res) => {
   const isPublisher = req.query.publisher === 'true';
 
   try {
+    // Extrair streamId do room (remove prefixo 'live_' se presente)
+    const streamId = room.startsWith('live_') ? room.slice(5) : room;
+    
+    // Garantir que a sala existe no LiveKit (consistência com /chat-token)
+    const liveRoomName = await ensureLiveKitRoom(streamId);
+
     const extraGrants = isPublisher
       ? { canPublish: true, canPublishData: true, canSubscribe: true }
       : { canPublish: false, canPublishData: true, canSubscribe: true };
-    const token = await generateLiveKitToken(identity, room, undefined, extraGrants);
+    const token = await generateLiveKitToken(identity, liveRoomName, undefined, extraGrants);
     res.json({
       success: true,
       token,
       identity,
-      room,
+      room: liveRoomName,
       serverUrl: ENV.LIVEKIT_URL,
       livekitUrl: ENV.LIVEKIT_URL,
     });

@@ -189,6 +189,56 @@ export class NotificationService {
     });
   }
 
+  /**
+   * Envia notificação push de live_started para TODOS os usuários que têm device token,
+   * independente de seguir o streamer.
+   * Usado pelo socket.on('live_started') para notificar todos os usuários do app.
+   */
+  static async notifyLiveStartedToAll(
+    hostId: string,
+    hostName: string,
+    hostAvatar: string,
+    streamId: string,
+    streamTitle?: string,
+  ): Promise<void> {
+    const message = `${hostName || 'Alguém'} está ao vivo!`;
+
+    try {
+      // Buscar TODOS os device tokens (não apenas de seguidores)
+      const allTokens = await DeviceToken.find({}).select('token userId').lean();
+      const tokenList: string[] = allTokens.map((t: any) => t.token);
+
+      if (tokenList.length === 0) {
+        console.log('[NOTIFICATION] Nenhum device token encontrado para push de live_started');
+        return;
+      }
+
+      console.log(`[NOTIFICATION] Enviando live_started push para ${tokenList.length} dispositivos`);
+
+      // Firebase sendEachForMulticast aceita no máximo 500 tokens por chamada
+      const CHUNK_SIZE = 500;
+      for (let i = 0; i < tokenList.length; i += CHUNK_SIZE) {
+        const chunk = tokenList.slice(i, i + CHUNK_SIZE);
+        await sendPushNotificationToMultiple(chunk, {
+          title: hostName || 'LiveGO',
+          body: streamTitle || message,
+          data: {
+            type: 'live_started',
+            streamKey: streamId,
+            streamId,
+            hostId,
+            hostName: hostName || '',
+            hostAvatar: hostAvatar || '',
+            click_action: 'OPEN_STREAM',
+          },
+        });
+        console.log(`[NOTIFICATION] Lote ${Math.floor(i / CHUNK_SIZE) + 1} de ${Math.ceil(tokenList.length / CHUNK_SIZE)} enviado`);
+      }
+    } catch (err) {
+      console.warn('[NOTIFICATION] Erro ao enviar live_started push para todos:', err);
+    }
+  }
+
   static async notifyPhotoLiked(
     io: any,
     photoOwnerId: string,

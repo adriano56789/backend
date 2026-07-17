@@ -1,5 +1,5 @@
 import { EgressClient } from 'livekit-server-sdk';
-import { StreamOutput, StreamProtocol } from '@livekit/protocol';
+import { StreamOutput, StreamProtocol, EncodingOptionsPreset } from '@livekit/protocol';
 import { ENV } from '../config/env';
 
 class LiveKitEgressService {
@@ -36,7 +36,11 @@ class LiveKitEgressService {
 
       const egressInfo = await this.egressClient.startRoomCompositeEgress(
         roomId,
-        streamOutput
+        streamOutput,
+        {
+          layout: 'speaker',
+          encodingOptions: EncodingOptionsPreset.H264_720P_30,
+        }
       );
 
       console.log(`[EGRESS] RTMP Egress iniciado:`, {
@@ -88,6 +92,66 @@ class LiveKitEgressService {
       };
     } catch (error: any) {
       console.error('[EGRESS] Erro ao parar Egress:', error.message);
+      return {
+        success: false,
+        error: error.message,
+        egressId,
+      };
+    }
+  }
+
+  /**
+   * Obtém o status atual de um Egress específico
+   *
+   * @param egressId - ID do Egress a consultar
+   * @returns Status detalhado do Egress
+   */
+  async getEgressStatus(egressId: string): Promise<{
+    success: boolean;
+    egressId?: string;
+    roomId?: string;
+    status?: string;
+    error?: string;
+    startedAt?: number;
+    endedAt?: number;
+    details?: any;
+  }> {
+    try {
+      console.log(`[EGRESS] Consultando status do Egress: ${egressId}`);
+      const allEgresses = await this.egressClient.listEgress();
+      const egressInfo: any = allEgresses.find((e: any) => e.egressId === egressId);
+
+      if (!egressInfo) {
+        return {
+          success: false,
+          error: `Egress ${egressId} não encontrado`,
+          egressId,
+        };
+      }
+
+      const statusStr = String(egressInfo.status || 'unknown');
+
+      console.log(`[EGRESS] Status do Egress ${egressId}:`, {
+        status: statusStr,
+        roomName: egressInfo.roomName,
+        startedAt: egressInfo.startedAt,
+        endedAt: egressInfo.endedAt,
+        error: egressInfo.error,
+      });
+
+      return {
+        success: true,
+        egressId: egressInfo.egressId,
+        roomId: egressInfo.roomName,
+        status: statusStr,
+        startedAt: egressInfo.startedAt ? Number(egressInfo.startedAt) : undefined,
+        endedAt: egressInfo.endedAt ? Number(egressInfo.endedAt) : undefined,
+        details: {
+          error: egressInfo.error,
+        },
+      };
+    } catch (error: any) {
+      console.error('[EGRESS] Erro ao consultar status do Egress:', error.message);
       return {
         success: false,
         error: error.message,

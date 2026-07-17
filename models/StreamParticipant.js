@@ -37,11 +37,13 @@ exports.StreamParticipant = void 0;
 const mongoose_1 = __importStar(require("mongoose"));
 const StreamParticipantSchema = new mongoose_1.Schema({
     streamId: { type: String, required: true, index: true },
+    cleanStreamId: { type: String, index: true },
     userId: { type: String, required: true },
-    role: { type: String, enum: ['fan', 'visitor', 'host'], required: true },
+    role: { type: String, enum: ['fan', 'visitor', 'host', 'viewer', 'live_viewer', 'pk_participant', 'call_participant'], required: true },
     userName: { type: String, default: '' },
     userAvatar: { type: String, default: '' },
     joinedAt: { type: Date, default: Date.now }
 });
 StreamParticipantSchema.index({ streamId: 1, userId: 1 }, { unique: true });
+StreamParticipantSchema.index({ cleanStreamId: 1, userId: 1 });
 exports.StreamParticipant = mongoose_1.default.model('StreamParticipant', StreamParticipantSchema);

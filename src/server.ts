@@ -1194,16 +1194,55 @@ io.on('connection', (socket) => {
         }
     });
 
-    // ── LIVE_STARTED / LIVE_ENDED: disparar LiveKit Egress ──
+    // ── LIVE_STARTED: disparar LiveKit Egress + FCM push para todos os usuários ──
     socket.on('live_started', async (data: any) => {
         console.log(`📡 [IO-LIVE] live_started recebido: stream=${data.streamId || data.id}, userId=${data.userId || data.hostId}`);
         try {
             const streamId = data.streamId || data.id;
+            const hostId = data.userId || data.hostId;
             if (!streamId) { console.warn('⚠️ live_started sem streamId'); return; }
+
+            // 1) Iniciar Egress RTMP (LiveKit → SRS)
             const { startLiveEgress: startEgress } = await import('./services/LiveKitTokenService');
-            startEgress(streamId);
+            startEgress(streamId).catch((err: any) =>
+                console.error('❌ [EGRESS] Erro ao iniciar Egress:', err.message)
+            );
+
+            // 2) Notificar TODOS os usuários via FCM push (live_started)
+            try {
+                const { NotificationService } = await import('./services/NotificationService');
+                const { User, Streamer } = await import('./models/index');
+
+                // Buscar nome/avatar do streamer
+                let hostName = data.userName || 'LiveGO';
+                let hostAvatar = '';
+                let streamTitle = '';
+
+                if (hostId) {
+                    const userDoc = await User.findOne({ id: hostId }).select('name avatarUrl').lean();
+                    if (userDoc) {
+                        hostName = (userDoc as any).name || hostName;
+                        hostAvatar = (userDoc as any).avatarUrl || '';
+                    }
+                    const streamDoc = await Streamer.findOne({ id: streamId }).select('message').lean();
+                    if (streamDoc) {
+                        streamTitle = (streamDoc as any).message || '';
+                    }
+                }
+
+                await NotificationService.notifyLiveStartedToAll(
+                    hostId || streamId,
+                    hostName,
+                    hostAvatar,
+                    streamId,
+                    streamTitle,
+                );
+                console.log('[FCM] Notificação live_started enviada para todos os dispositivos');
+            } catch (notifErr: any) {
+                console.error('❌ [FCM] Erro ao enviar notificação live_started:', notifErr.message);
+            }
         } catch (err: any) {
-            console.error('❌ [EGRESS] Erro ao iniciar Egress via io:', err.message);
+            console.error('❌ [IO-LIVE] Erro geral:', err.message);
         }
     });
 

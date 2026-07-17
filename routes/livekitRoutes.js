@@ -501,6 +501,16 @@ router.post('/webhook', async (req, res) => {
         const roomSid = event.room?.sid;
         const participant = event.participant;
         console.log(`[LIVEKIT-WEBHOOK] 📨 Evento recebido: ${eventType} | sala: ${roomName || 'N/A'}`);
+        // Helper: extrair o ID real da stream removendo o prefixo da sala LiveKit
+        const extractStreamId = (lkRoomName) => {
+            if (lkRoomName.startsWith('live_'))
+                return lkRoomName.slice(5);
+            if (lkRoomName.startsWith('pk_'))
+                return lkRoomName.slice(3);
+            if (lkRoomName.startsWith('call_'))
+                return lkRoomName.slice(5);
+            return lkRoomName;
+        };
         // Helper: persistir log do evento no MongoDB (fire-and-forget — não bloqueia)
         const persistLog = (success, errorMsg) => {
             models_1.LiveKitWebhookLog.create({
@@ -580,8 +590,22 @@ router.post('/webhook', async (req, res) => {
                     persistLog(false, dbErr.message);
                 }
             }
+            // Sala Live: live_<streamId>
+            if (roomName.startsWith('live_')) {
+                const streamId = roomName.slice(5);
+                console.log(`[LIVEKIT-WEBHOOK] 📡 Live finalizada: ${streamId} (sala ${roomName})`);
+                try {
+                    const result = await models_1.StreamParticipant.deleteMany({ streamId: roomName });
+                    console.log(`[LIVEKIT-WEBHOOK] ✅ ${result.deletedCount} participante(s) removido(s) da sala ${roomName}`);
+                    persistLog(true);
+                }
+                catch (dbErr) {
+                    console.error('[LIVEKIT-WEBHOOK] ❌ Erro ao limpar participantes da live:', dbErr.message);
+                    persistLog(false, dbErr.message);
+                }
+            }
             // Room finished sem prefixo conhecido — loga sucesso mesmo assim
-            if (!roomName.startsWith('pk_') && !roomName.startsWith('call_')) {
+            if (!roomName.startsWith('pk_') && !roomName.startsWith('call_') && !roomName.startsWith('live_')) {
                 persistLog(true);
             }
             return res.status(200).json({ received: true });
@@ -592,12 +616,19 @@ router.post('/webhook', async (req, res) => {
                 const participantIdentity = participant.identity;
                 console.log(`[LIVEKIT-WEBHOOK] 👤 Participante entrou: ${participantIdentity} na sala ${roomName}`);
                 try {
+                    const cleanStreamId = extractStreamId(roomName);
+                    const participantRole = roomName.startsWith('pk_')
+                        ? 'pk_participant'
+                        : roomName.startsWith('live_')
+                            ? 'live_viewer'
+                            : 'call_participant';
                     await models_1.StreamParticipant.findOneAndUpdate({ streamId: roomName, userId: participantIdentity }, {
                         $set: {
                             streamId: roomName,
+                            cleanStreamId,
                             userId: participantIdentity,
                             userName: participant.name || participantIdentity,
-                            role: roomName.startsWith('pk_') ? 'pk_participant' : 'call_participant',
+                            role: participantRole,
                             joinedAt: new Date(),
                         }
                     }, { upsert: true });
@@ -634,6 +665,14 @@ router.post('/webhook', async (req, res) => {
                         streamId: roomName,
                         userId: participantIdentity
                     });
+                    // Também remover por cleanStreamId se existir (fallback para registros antigos)
+                    const cleanStreamId = extractStreamId(roomName);
+                    if (cleanStreamId !== roomName) {
+                        await models_1.StreamParticipant.deleteMany({
+                            cleanStreamId,
+                            userId: participantIdentity
+                        }).catch(() => { });
+                    }
                     console.log(`[LIVEKIT-WEBHOOK] ✅ Participante ${participantIdentity} removido da sala ${roomName}`);
                     // Notificar via WebSocket
                     const io = req.app.get('io');
