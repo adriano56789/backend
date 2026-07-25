@@ -179,7 +179,12 @@ router.post('/', async (req, res) => {
             return res.status(200).json({ code: 0 });
         }
 
-        // ─── on_unpublish / stream ended ──────────────────────────────────
+        // ─── on_unpublish (REMOVED AUTO-END) ────────────────────────────────
+        // ⚠️ REMOVIDO: Não finalizar a stream quando o SRS reporta unpublish.
+        // A WebRTC/WHIP pode cair por vários motivos (background, rede, etc.)
+        // mas isso NÃO significa que a live acabou. O broadcaster pode reconectar.
+        // A stream SÓ deve ser encerrada pelo dono ao clicar "Encerrar Transmissão".
+        // Se a stream reconectar, o on_publish acima já atualiza os dados.
         if (action === 'on_unpublish' || action === 'unpublish' || event.includes('stream ended') || event.includes('stream stopped') || event.includes('live stream ended') || event.includes('on unpublish')) {
             if (streamKey && streamKey.endsWith('_transcoded')) {
                 console.log(`[WEBHOOK-SRS] ⏭️ Stream transcodificada ignorada: ${streamKey}`);
@@ -190,45 +195,8 @@ router.post('/', async (req, res) => {
                 return res.status(200).json({ code: 0 });
             }
 
-            if (streamKey && reconnectionTimers.has(streamKey)) {
-                return res.status(200).json({ code: 0 });
-            }
-
-            if (streamKey) {
-                const timer = setTimeout(async () => {
-                    const updated = await Streamer.findOneAndUpdate(
-                        { id: streamKey, isLive: true },
-                        { $set: { isLive: false, streamStatus: 'ended', endTime: new Date() } }
-                    );
-
-                    if (updated) {
-                        await User.findOneAndUpdate(
-                            { id: updated.hostId },
-                            { $set: { isLive: false, currentStreamId: null } }
-                        );
-
-                        await LiveCard.findOneAndUpdate(
-                            { hostId: updated.hostId },
-                            { $set: { isLive: false, streamStatus: 'ended', endTime: new Date(), updatedAt: new Date() } }
-                        );
-
-                        const io = req.app.get('io');
-                        if (io) {
-                            io.emit('card_removed', { streamId: streamKey, hostId: updated.hostId, timestamp: new Date().toISOString() });
-                            io.emit('stream_ended', { streamId: streamKey, hostId: updated.hostId, timestamp: new Date().toISOString() });
-                            io.emit('stream_stopped', { streamId: streamKey, hostId: updated.hostId, timestamp: new Date().toISOString() });
-                            io.emit('live_stream_ended', { streamId: streamKey, message: 'Transmissão encerrada', timestamp: new Date().toISOString() });
-                            io.emit('online_users_updated', { streamId: streamKey, count: 0 });
-                            // viewers_count_updated substituído por online_users_updated
-                        }
-                    }
-                    reconnectionTimers.delete(streamKey);
-                }, RECONNECT_WINDOW_MS);
-
-                reconnectionTimers.set(streamKey, timer);
-            }
-
-            console.log(`[WEBHOOK-SRS] Stream encerrada (com grace period): ${streamKey}`);
+            // Apenas logar o evento — não finalizar a stream
+            console.log(`[WEBHOOK-SRS] ⚡ WHIP desconectou (on_unpublish) para stream=${streamKey} — live mantida ativa, aguardando reconexão`);
             return res.status(200).json({ code: 0 });
         }
 
