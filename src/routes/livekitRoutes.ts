@@ -1219,4 +1219,104 @@ router.get('/hls/validate/:streamId', async (req, res) => {
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════
+// 📡 ROOM METADATA — Sincronização de estado da sala
+// Docs: https://docs.livekit.io/transport/data/state/room-metadata/
+// ═══════════════════════════════════════════════════════════════════
+
+// PUT /api/livekit/rooms/:roomName/metadata - Atualizar Room Metadata (APENAS API OFICIAL)
+// Docs: https://docs.livekit.io/transport/data/state/room-metadata/
+router.put('/rooms/:roomName/metadata', async (req, res) => {
+  const { roomName } = req.params;
+  const { metadata } = req.body;
+  if (!metadata || typeof metadata !== 'object') {
+    return res.status(400).json({ error: 'metadata object is required' });
+  }
+  try {
+    if (!(await roomExists(roomName))) {
+      return res.status(404).json({ error: 'Room not found on LiveKit server' });
+    }
+    // updateRoomMetadata() aceita uma string JSON e sincroniza para todos os clientes
+    // via RoomEvent.RoomMetadataChanged
+    await roomService.updateRoomMetadata(roomName, JSON.stringify(metadata));
+    console.log(`[LIVEKIT] Room metadata atualizada: ${roomName}`, JSON.stringify(metadata));
+    res.json({ success: true, roomName, metadata });
+  } catch (error: any) {
+    console.error('[LIVEKIT] Erro ao atualizar room metadata:', error.message);
+    res.status(502).json({ success: false, error: `Falha ao atualizar room metadata: ${error.message}` });
+  }
+});
+
+// PUT /api/livekit/rooms/:roomName/participants/:identity - Atualizar participante
+router.put('/rooms/:roomName/participants/:identity', async (req, res) => {
+  const { roomName, identity } = req.params;
+  const { metadata, permission } = req.body;
+  try {
+    if (!(await roomExists(roomName))) {
+      return res.status(404).json({ error: 'Room not found on LiveKit server' });
+    }
+    await roomService.updateParticipant(roomName, identity, {
+      metadata: metadata || undefined,
+      permission: permission || undefined,
+    });
+    console.log(`[LIVEKIT] Participante atualizado: ${identity} na sala ${roomName}`);
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('[LIVEKIT] Erro ao atualizar participante:', error.message);
+    res.status(502).json({ success: false, error: `Falha ao atualizar participante: ${error.message}` });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 📡 ROOM CONFIG — Reference by ID pattern
+// Docs: https://docs.livekit.io/transport/data/state/room-metadata/#size-limits
+// ═══════════════════════════════════════════════════════════════════
+
+// GET /api/livekit/room-config/:configId - Buscar configuração completa da sala
+// O configId é um ID real no MongoDB (streamId ou _id).
+// Dados grandes ficam no DB, apenas o ID fica no Room Metadata (limite 512 KiB).
+router.get('/room-config/:configId', async (req, res) => {
+  const { configId } = req.params;
+  if (!configId) {
+    return res.status(400).json({ error: 'configId is required' });
+  }
+  try {
+    const mongoose = require('mongoose');
+    const db = mongoose.connection.db;
+    if (!db) {
+      return res.status(503).json({ success: false, error: 'Database not connected' });
+    }
+    const collection = db.collection('streamsessions');
+    // Buscar por streamId ou _id (MongoDB não lança erro para _id inválido — apenas não acha)
+    const config = await collection.findOne({
+      $or: [
+        { streamId: configId },
+        { _id: configId },
+      ],
+    });
+    if (!config) {
+      return res.status(404).json({ success: false, error: 'Config not found' });
+    }
+    res.json({
+      success: true,
+      config: {
+        id: config._id.toString(),
+        streamId: config.streamId,
+        hostId: config.hostId,
+        startTime: config.startTime,
+        viewers: config.viewers,
+        coins: config.coins,
+        giftsReceived: config.giftsReceived,
+        messagesCount: config.messagesCount,
+        peakViewers: config.peakViewers,
+        followers: config.followers,
+        members: config.members,
+      },
+    });
+  } catch (error: any) {
+    console.error('[LIVEKIT] Erro ao buscar room config:', error.message);
+    res.status(502).json({ success: false, error: `Falha ao buscar config: ${error.message}` });
+  }
+});
+
 export default router;
