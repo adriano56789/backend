@@ -71,28 +71,26 @@ class NotificationService {
         }
     }
     static async notifyGiftReceived(io, toUserId, fromUserId, fromUserName, giftId, giftName, giftIcon, quantity, totalValue, streamId) {
+        // ═══════════════════════════════════════════════════════════════════
+        // NOTIFICAÇÃO DE PRESENTE — APENAS via LiveKit WebSocket
+        // Firebase FCM NÃO é usado para presentes!
+        // Presentes em tempo real são transmitidos exclusivamente pelo 
+        // LiveKit DataChannel (sala compartilhada da transmissão).
+        // ═══════════════════════════════════════════════════════════════════
         const enabled = await this.isGiftNotificationEnabled(toUserId, giftId);
         if (!enabled) {
-            console.log(`[NOTIFICATION] Notificação de presente suprimida para ${toUserId} (gift ${giftName})`);
             return;
         }
         const message = `${fromUserName} enviou ${quantity}x ${giftName}`;
         await this.createLiveNotification({ userId: toUserId, streamerId: fromUserId, streamId, message });
+        // Apenas notificação no app (sininho) — SEM FCM push
         this.emitSocket(io, toUserId, {
             type: 'gift_received', fromUserId, fromUserName, fromUserAvatar: '',
             giftName, giftIcon, quantity, totalValue,
             streamId: streamId || '', message,
         });
-        await this.sendFcm(toUserId, {
-            title: '🎁 Presente recebido!',
-            body: message,
-            data: {
-                type: 'gift_received', fromUserId, fromUserName,
-                giftName, giftIcon: giftIcon || '',
-                quantity: String(quantity), totalValue: String(totalValue),
-                streamId: streamId || '', click_action: 'OPEN_GIFT',
-            },
-        });
+        // ❌ FCM removido — presente é evento de transmissão, não push notification
+        // O presente chega em tempo real via LiveKit WebSocket
     }
     static async notifyNewFollower(io, toUserId, followerId, followerName, followerAvatar) {
         const message = `${followerName} começou a seguir você`;

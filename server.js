@@ -1168,11 +1168,7 @@ io.on('connection', (socket) => {
     socket.on('send_message', (data) => {
         socket.to(data.roomId).emit('receive_message', data.message);
     });
-    socket.on('send_gift', (data) => {
-        if (data.streamId) {
-            io.to(data.streamId).emit('gift_received', data);
-        }
-    });
+    // REMOVIDO: send_gift — presente agora via LiveKit DataChannel (não Socket.IO)
     // Eventos para atualizações em tempo real
     socket.on('update_user_stats', async (data) => {
         try {

@@ -1,0 +1,335 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+// @ts-nocheck
+const express_1 = __importDefault(require("express"));
+const index_1 = require("../models/index");
+const activityHelpers_1 = require("../utils/activityHelpers");
+const chatPermission_1 = require("../utils/chatPermission");
+const router = express_1.default.Router();
+// GET /api/conversations - Listar todas as conversas do usuário
+router.get('/', async (req, res) => {
+    try {
+        const { userId } = req.query;
+        if (!userId) {
+            return res.status(400).json({
+                success: false,
+                error: 'userId é obrigatório'
+            });
+        }
+        console.log(`🔍 Buscando conversas para usuário: ${userId}`);
+        // Persistir atividade de consulta de conversas
+        await (0, activityHelpers_1.pushRecentActivity)(userId, {
+            action: 'conversations_listed',
+            resource: 'conversation',
+            endpoint: '/api/conversations'
+        });
+        // Buscar chats onde o usuário participa
+        const chats = await index_1.Chat.find({
+            participants: userId,
+            isActive: true
+        }).sort({ 'lastMessage.timestamp': -1 });
+        // Enriquecer com detalhes dos participantes
+        const chatsWithDetails = await Promise.all(chats.map(async (chat) => {
+            const otherParticipants = chat.participants.filter((p) => p !== userId);
+            const participantDetails = await index_1.User.find({
+                id: { $in: otherParticipants }
+            }).select('id name avatarUrl');
+            const unreadCount = await index_1.ChatMessage.countDocuments({
+                conversationId: chat.id,
+                receiverId: userId,
+                isRead: false
+            });
+            return {
+                id: chat.id,
+                type: chat.type,
+                title: chat.title,
+                participants: participantDetails,
+                lastMessage: chat.lastMessage,
+                unreadCount,
+                isActive: chat.isActive,
+                createdAt: chat.createdAt,
+                updatedAt: chat.updatedAt
+            };
+        }));
+        res.json({
+            success: true,
+            data: chatsWithDetails,
+            count: chatsWithDetails.length
+        });
+    }
+    catch (error) {
+        console.error('❌ Erro ao buscar conversas:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Erro ao buscar conversas',
+            details: error instanceof Error ? error.message : 'Erro desconhecido'
+        });
+    }
+});
+// GET /api/conversations/:id - Buscar conversa específica
+router.get('/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { userId } = req.query;
+        if (!userId) {
+            return res.status(400).json({
+                success: false,
+                error: 'userId é obrigatório'
+            });
+        }
+        console.log(`🔍 Buscando conversa: ${id} para usuário: ${userId}`);
+        // Persistir atividade de consulta de conversa específica
+        await (0, activityHelpers_1.pushRecentActivity)(userId, {
+            action: 'conversation_viewed',
+            resource: 'conversation',
+            endpoint: '/api/conversations/:id'
+        });
+        const chat = await index_1.Chat.findOne({
+            id,
+            participants: userId,
+            isActive: true
+        });
+        if (!chat) {
+            return res.status(404).json({
+                success: false,
+                error: 'Conversa não encontrada'
+            });
+        }
+        // Buscar detalhes dos participantes
+        const participantDetails = await index_1.User.find({
+            id: { $in: chat.participants }
+        }).select('id name avatarUrl');
+        const unreadCount = await index_1.ChatMessage.countDocuments({
+            conversationId: chat.id,
+            receiverId: userId,
+            isRead: false
+        });
+        const chatWithDetails = {
+            id: chat.id,
+            type: chat.type,
+            title: chat.title,
+            participants: participantDetails,
+            lastMessage: chat.lastMessage,
+            unreadCount,
+            isActive: chat.isActive,
+            createdAt: chat.createdAt,
+            updatedAt: chat.updatedAt
+        };
+        res.json({
+            success: true,
+            data: chatWithDetails
+        });
+    }
+    catch (error) {
+        console.error('❌ Erro ao buscar conversa:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Erro ao buscar conversa',
+            details: error instanceof Error ? error.message : 'Erro desconhecido'
+        });
+    }
+});
+// GET /api/conversations/:id/messages - Buscar mensagens de uma conversa
+router.get('/:id/messages', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { userId, page = 1, limit = 50 } = req.query;
+        if (!userId) {
+            return res.status(400).json({
+                success: false,
+                error: 'userId é obrigatório'
+            });
+        }
+        console.log(`🔍 Buscando mensagens da conversa: ${id} para usuário: ${userId}`);
+        // Verificar se usuário tem acesso à conversa
+        const chat = await index_1.Chat.findOne({
+            id,
+            participants: userId,
+            isActive: true
+        });
+        if (!chat) {
+            return res.status(404).json({
+                success: false,
+                error: 'Conversa não encontrada'
+            });
+        }
+        // Calcular offset para paginação
+        const offset = (Number(page) - 1) * Number(limit);
+        // Buscar mensagens
+        const messages = await index_1.ChatMessage.find({
+            conversationId: id
+        })
+            .sort({ sentAt: -1 })
+            .skip(offset)
+            .limit(Number(limit));
+        // Buscar detalhes dos remetentes
+        const messagesWithSenders = await Promise.all(messages.map(async (message) => {
+            const sender = await index_1.User.findOne({ id: message.senderId }).select('id name avatarUrl');
+            return {
+                id: message.id,
+                conversationId: message.conversationId,
+                senderId: message.senderId,
+                receiverId: message.receiverId,
+                content: message.content,
+                messageType: message.messageType,
+                isRead: message.isRead,
+                readAt: message.readAt,
+                sentAt: message.sentAt,
+                sender: sender || { id: message.senderId, name: 'Usuário', avatarUrl: '' }
+            };
+        }));
+        // Inverter ordem para mostrar mais recentes por último
+        const orderedMessages = messagesWithSenders.reverse();
+        // Marcar mensagens não lidas como lidas
+        await index_1.ChatMessage.updateMany({
+            conversationId: id,
+            receiverId: userId,
+            isRead: false
+        }, {
+            $set: {
+                isRead: true,
+                readAt: new Date()
+            }
+        });
+        res.json({
+            success: true,
+            data: {
+                messages: orderedMessages,
+                chat: {
+                    id: chat.id,
+                    type: chat.type,
+                    title: chat.title,
+                    participants: chat.participants
+                },
+                pagination: {
+                    page: Number(page),
+                    limit: Number(limit),
+                    offset,
+                    hasMore: messages.length === Number(limit)
+                }
+            }
+        });
+    }
+    catch (error) {
+        console.error('❌ Erro ao buscar mensagens:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Erro ao buscar mensagens',
+            details: error instanceof Error ? error.message : 'Erro desconhecido'
+        });
+    }
+});
+// POST /api/conversations - Criar nova conversa
+router.post('/', async (req, res) => {
+    try {
+        const { userId, participantIds, type = 'private', title } = req.body;
+        if (!userId || !participantIds || participantIds.length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'userId e participantIds são obrigatórios'
+            });
+        }
+        console.log(`💬 Criando conversa: ${type} com ${participantIds.length} participantes`);
+        // Verificar se já existe conversa privada entre os participantes
+        if (type === 'private' && participantIds.length === 1) {
+            const existingChat = await index_1.Chat.findOne({
+                type: 'private',
+                participants: { $all: [userId, ...participantIds] },
+                isActive: true
+            });
+            if (existingChat) {
+                return res.json({
+                    success: true,
+                    data: existingChat,
+                    message: 'Conversa já existe'
+                });
+            }
+            // Validar permissão de mensagem do destinatário
+            const receiverId = participantIds[0];
+            const permCheck = await (0, chatPermission_1.canSendMessage)(userId, receiverId);
+            if (!permCheck.allowed) {
+                return res.status(403).json({ success: false, error: permCheck.reason, code: 'CHAT_PERMISSION_DENIED' });
+            }
+        }
+        // Criar nova conversa com upsert automático
+        const participants = [userId, ...participantIds];
+        const chatId = `chat_${type}_${userId}_${participantIds.join('_')}_${Date.now()}`;
+        const newChat = await index_1.Chat.findOneAndUpdate({ id: chatId }, {
+            $set: {
+                id: chatId,
+                participants,
+                type,
+                title: type === 'group' ? title : undefined,
+                isActive: true
+            }
+        }, {
+            upsert: true, // Criar se não existir
+            returnDocument: 'after'
+        });
+        // Persistir atividade de criação de conversa para todos participantes
+        await Promise.all(participants.map(async (participantId) => {
+            await (0, activityHelpers_1.pushRecentActivity)(participantId, {
+                action: type === 'group' ? 'group_conversation_created' : 'private_conversation_created',
+                resource: 'conversation',
+                endpoint: '/api/conversations'
+            });
+        }));
+        console.log(`✅ Conversa criada: ${chatId}`);
+        res.status(201).json({
+            success: true,
+            data: newChat,
+            message: 'Conversa criada com sucesso'
+        });
+    }
+    catch (error) {
+        console.error('❌ Erro ao criar conversa:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Erro ao criar conversa',
+            details: error instanceof Error ? error.message : 'Erro desconhecido'
+        });
+    }
+});
+// DELETE /api/conversations/:id - Arquivar conversa (soft delete)
+router.delete('/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { userId } = req.query;
+        if (!userId) {
+            return res.status(400).json({
+                success: false,
+                error: 'userId é obrigatório'
+            });
+        }
+        console.log(`🗑️ Arquivando conversa: ${id} para usuário: ${userId}`);
+        const chat = await index_1.Chat.findOneAndUpdate({ id, participants: userId }, { $set: { isActive: false, updatedAt: new Date() } }, { returnDocument: 'after' });
+        if (!chat) {
+            return res.status(404).json({
+                success: false,
+                error: 'Conversa não encontrada'
+            });
+        }
+        // Persistir atividade de arquivamento de conversa
+        await (0, activityHelpers_1.pushRecentActivity)(userId, {
+            action: 'conversation_archived',
+            resource: 'conversation',
+            endpoint: '/api/conversations/:id'
+        });
+        res.json({
+            success: true,
+            message: 'Conversa arquivada com sucesso'
+        });
+    }
+    catch (error) {
+        console.error('❌ Erro ao arquivar conversa:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Erro ao arquivar conversa',
+            details: error instanceof Error ? error.message : 'Erro desconhecido'
+        });
+    }
+});
+exports.default = router;

@@ -46,6 +46,9 @@ export async function generateLiveKitToken(
     room,
     canPublishData: true,
     canSubscribe: true,
+    // Para salas de live principal, a publicação de mídia é via WHIP/SRS, não LiveKit.
+    // Garantir que canPublish seja false para todos os participantes na sala principal.
+    canPublish: room.startsWith("live_") ? false : (extraGrants?.canPublish ?? false),
     ...extraGrants,
   });
   return at.toJwt();

@@ -216,50 +216,13 @@ const initSocket = (server) => {
                 }
             }
         });
-        // Eventos JSON existentes (mantidos para compatibilidade)
-        socket.on('send_chat_message', async (data) => {
-            console.log(` [CHAT] Chat message received:`, data);
-            // Garantir que o remetente está na sala da stream
-            if (data.streamId) {
-                socket.join(data.streamId);
-            }
-            // 1. Persistir mensagem no LiveMessage
-            try {
-                const { LiveMessage } = await Promise.resolve().then(() => __importStar(require('./models/index')));
-                await LiveMessage.create({
-                    streamId: data.streamId,
-                    userId: data.userId,
-                    userName: data.userName || 'Usuário',
-                    avatarUrl: data.userAvatar || '',
-                    level: data.userLevel || 1,
-                    text: data.message || '',
-                    timestamp: new Date()
-                }).catch(err => console.warn('[CHAT] Erro ao persistir live_message:', err));
-            }
-            catch (err) {
-                console.warn('[CHAT] Erro ao importar LiveMessage:', err);
-            }
-            // 2. Emitir evento JSON live_message para todos na stream (incluindo remetente)
-            const messagePayload = {
-                userId: data.userId,
-                userName: data.userName || 'Usuário',
-                avatarUrl: data.userAvatar || '',
-                level: data.userLevel || 1,
-                text: data.message || '',
-                timestamp: new Date().toISOString()
-            };
-            localIo.to(data.streamId).emit('live_message', messagePayload);
-            // 3. Codificar usando Protobuf e enviar como binário (para compatibilidade)
-            const buffer = ProtobufService_1.BackendProtobufService.encodeChatEvent(data.streamId, data.userId, data.userName, data.userAvatar, data.message);
-            if (buffer) {
-                // Broadcast como binário para todos na stream
-                // (io.emit monkey-patched em server.ts publica automaticamente no MQTT)
-                localIo.to(data.streamId).emit('binary_data', buffer);
-                console.log(` [PROTOBUF] Chat message encoded and broadcasted:`, buffer.length, 'bytes');
-            }
-            console.log(` [CHAT] live_message JSON broadcasted to stream ${data.streamId}`);
-        });
-        socket.on('send_gift', async (data) => {
+        // ═══════════════════════════════════════════════════════════════════
+        // REMOVIDO: send_chat_message — chat da stream agora via LiveKit DataChannel
+        // REMOVIDO: send_gift — presente agora via LiveKit DataChannel + REST API
+        // REMOVIDO: user_joined — entrada na sala agora via LiveKit onParticipantConnected
+        // ═══════════════════════════════════════════════════════════════════
+        // Eventos de seguimento
+        socket.on('follow_user', async (data) => {
             console.log(`🎁 [GIFT] Evento recebido: Presente ${data.giftName} (x${data.quantity}) de ${data.fromUserId} para ${data.toUserId}`);
             // Garantir que o remetente está na sala da stream
             if (data.streamId) {

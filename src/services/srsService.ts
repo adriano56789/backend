@@ -8,7 +8,6 @@ class SRSService {
 
   constructor() {}
 
-  // Métodos utilitários para construir URLs
   getWebRTCPublishUrl(streamId: string): string {
     return `webrtc://${this.getWebRTCHost()}/live/${streamId}`;
   }
@@ -17,41 +16,41 @@ class SRSService {
     return `webrtc://${this.getWebRTCHost()}/live/${streamId}`;
   }
 
+  /**
+   * Retorna URL HLS via Nginx (HTTPS).
+   * Ex: https://api.livego.store/api/video/http/live/stream_xxx.m3u8
+   */
   getHlsUrl(streamId: string): string {
-    const normalizedId = streamId.startsWith('stream_') ? streamId : `stream_${streamId}`;
-    return `http://${ENV.SRS_HOST}:${ENV.SRS_HTTP_PORT}/live/${normalizedId}.m3u8`;
+    return this._buildPublicUrl(streamId, 'm3u8');
   }
 
+  /**
+   * Retorna URL FLV via Nginx (HTTPS).
+   * Ex: https://api.livego.store/api/video/http/live/stream_xxx.flv
+   */
   getFlvUrl(streamId: string): string {
+    return this._buildPublicUrl(streamId, 'flv');
+  }
+
+  private _buildPublicUrl(streamId: string, ext: string): string {
     const normalizedId = streamId.startsWith('stream_') ? streamId : `stream_${streamId}`;
-    return `http://${ENV.SRS_HOST}:${ENV.SRS_HTTP_PORT}/live/${normalizedId}.flv`;
+    return `${ENV.SRS_PUBLIC_URL}/live/${normalizedId}.${ext}`;
   }
 
   private getWebRTCHost(): string {
     return ENV.SRS_HOST;
   }
 
-  /**
-   * Sanitiza SDP para envio ao SRS.
-   * Remove apenas linhas PROBLEMÁTICAS comprovadas.
-   * NÃO remove transport-cc — SRS precisa dessa extensão
-   * para gerar o answer com codecs adequados.
-   * NÃO deve ser usado em respostas SDP do SRS.
-   */
   public sanitizeSDP(sdp: string): string {
     const lines = sdp.replace(/\r\n/g, '\n').split('\n');
     const newLines: string[] = [];
-
     for (const line of lines) {
       const trimmed = line.trim();
       if (trimmed === '') continue;
       if (trimmed.includes('extmap-allow-mixed')) continue;
-      // NOTA: transport-cc NÃO é removido — SRS precisa desta extensão
-      // para negociar codecs corretamente no WHEP answer
       if (trimmed.includes('goog-remb')) continue;
       newLines.push(trimmed);
     }
-
     return newLines.join('\r\n') + '\r\n';
   }
 
@@ -64,7 +63,6 @@ class SRSService {
         responseType: 'text',
         validateStatus: () => true,
       });
-
       if (response.status >= 200 && response.status < 300) {
         const sdp = response.data as string;
         let sessionid = '';
@@ -92,7 +90,6 @@ class SRSService {
         responseType: 'text',
         validateStatus: () => true,
       });
-
       if (response.status >= 200 && response.status < 300) {
         const sdp = response.data as string;
         let sessionid = '';
@@ -114,10 +111,7 @@ class SRSService {
   public async stop(sessionId: string): Promise<{ code: number; desc: string }> {
     try {
       const url = `${this.getApiUrl()}/rtc/v1/whip/${encodeURIComponent(sessionId)}`;
-      const response = await axios.delete(url, {
-        timeout: 10000,
-        validateStatus: () => true,
-      });
+      const response = await axios.delete(url, { timeout: 10000, validateStatus: () => true });
       return {
         code: response.status >= 200 && response.status < 300 ? 0 : -1,
         desc: response.status >= 200 && response.status < 300 ? 'Session stopped' : `Stop failed: ${response.status}`,

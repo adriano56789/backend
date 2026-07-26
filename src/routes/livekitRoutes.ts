@@ -3,7 +3,7 @@ import { WebhookReceiver } from 'livekit-server-sdk';
 import { ENV } from '../config/env';
 import { roomService, generateLiveKitToken, roomExists, getLiveRoomName, ensureLiveKitRoom } from '../services/LiveKitTokenService';
 import { getUserIdFromToken } from '../middleware/auth';
-import { Battle, CallInvitation, StreamParticipant, LiveKitWebhookLog } from '../models';
+import { Battle, CallInvitation, StreamParticipant, LiveKitWebhookLog, Streamer } from '../models';
 import { egressService } from '../services/LiveKitEgressService';
 
 const router = express.Router();
@@ -737,12 +737,19 @@ router.post('/webhook', async (req, res) => {
           // Notificar via WebSocket
           const io = req.app.get('io');
           if (io) {
-            io.to(roomName).emit('livekit_participant_joined', {
+            const participantPayload = {
               room: roomName,
               identity: participantIdentity,
               name: participant.name || participantIdentity,
               timestamp: new Date().toISOString()
-            });
+            };
+            // Emitir para sala com prefixo live_ (roomName = live_<streamId>)
+            io.to(roomName).emit('livekit_participant_joined', participantPayload);
+            // Emitir também para sala sem prefixo (sockets podem ter entrado pelo streamId direto)
+            const cleanStreamId = extractStreamId(roomName);
+            if (cleanStreamId && cleanStreamId !== roomName) {
+              io.to(cleanStreamId).emit('livekit_participant_joined', participantPayload);
+            }
           }
 
           persistLog(true);
@@ -901,8 +908,9 @@ router.post('/chat-token', async (req, res) => {
         const liveRoomName = getLiveRoomName(streamId);
         await ensureLiveKitRoom(streamId);
 
-        // Detectar host: streamId é o ID do streamer (mesmo que hostId)
-        const isHost = userId === streamId;
+        // Detectar host: consultar Streamer no DB para comparar hostId
+        const streamer = await Streamer.findOne({ id: streamId }).lean();
+        const isHost = !!streamer && String(streamer.hostId) === String(userId);
 
         const token = await generateLiveKitToken(
             userId,
@@ -941,18 +949,14 @@ router.post('/egress/start-rtmp', async (req, res) => {
       return res.status(400).json({ error: 'roomId and streamId are required' });
     }
 
-    // Construir URL RTMP padrão se não fornecida
-    // interno que o backend usa para se comunicar com SRS, mas o LiveKit
-    // roda na mesma máquina (host.docker.internal) e NÃO resolve nomes Docker.
-    //
-    // SRS_RTMP_HOST padrao: 'localhost' (LiveKit e SRS na mesma máquina)
-    // Docker: host.docker.internal
-    // Externa: IP público ou domínio
-    const rtmpHost = process.env.SRS_RTMP_HOST || 'localhost';
+    // O LiveKit Egress (app-egress) precisa alcançar o SRS pelo IP público ou host.
+    // SRS_HOST já está definido como o IP público da VPS (2.25.192.154) no .env
+    // Isso garante que o container app-egress consiga fazer push RTMP para o SRS.
+    const rtmpHost = process.env.SRS_HOST || process.env.SRS_RTMP_HOST || '2.25.192.154';
     const defaultRtmpUrl = `rtmp://${rtmpHost}:${ENV.SRS_RTMP_PORT || 1935}/live/${streamId}`;
     const finalRtmpUrl = rtmpUrl || defaultRtmpUrl;
 
-    console.log('[EGRESS] ⚠️ Verifique se o LiveKit consegue alcançar o SRS no host:', rtmpHost);
+    console.log('[EGRESS] RTMP Egress → SRS host:', rtmpHost, 'URL:', finalRtmpUrl);
 
     console.log(`[EGRESS] Iniciando RTMP Egress:`, { roomId, streamId, rtmpUrl: finalRtmpUrl });
 
