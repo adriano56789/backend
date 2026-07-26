@@ -823,19 +823,13 @@ router.get('/room-config/:configId', async (req, res) => {
             return res.status(503).json({ success: false, error: 'Database not connected' });
         }
         const collection = db.collection('streamsessions');
-        // Buscar por streamId ou _id
-        let config = null;
-        try {
-            config = await collection.findOne({
-                $or: [
-                    { streamId: configId },
-                    { _id: configId }
-                ]
-            });
-        } catch (_) {
-            // Se configId não for um ObjectId válido, a query com _id falha
-            config = await collection.findOne({ streamId: configId });
-        }
+        // Buscar por streamId ou _id (MongoDB não lança erro para _id inválido — apenas não acha)
+        const config = await collection.findOne({
+            $or: [
+                { streamId: configId },
+                { _id: configId }
+            ]
+        });
         if (!config) {
             return res.status(404).json({ success: false, error: 'Config not found' });
         }
