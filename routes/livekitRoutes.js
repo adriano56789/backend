@@ -9,7 +9,7 @@ const env_1 = require("../config/env");
 const LiveKitTokenService_1 = require("../services/LiveKitTokenService");
 const auth_1 = require("../middleware/auth");
 const models_1 = require("../models");
-const mongoose_1 = require("mongoose");
+const mongoose_1 = __importDefault(require("mongoose"));
 const router = express_1.default.Router();
 // GET /api/livekit/token - Gerar token de acesso
 router.get('/token', async (req, res) => {
