@@ -168,6 +168,7 @@ io.to = ((room: string | string[]) => {
 }) as typeof io.to;
 
 app.set('io', io);
+(global as any).io = io;
 console.log('🔁 [MQTT] Proxy configurado (monkey-patch io.emit/io.to)');
 
 // Conectar ao EMQX (apenas se habilitado e não bloquear o startup)

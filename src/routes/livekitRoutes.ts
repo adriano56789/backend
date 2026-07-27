@@ -529,299 +529,419 @@ router.post('/call/end', async (req, res) => {
 });
 
 // ========================================
-// LiveKit Webhook — Eventos assíncronos do LiveKit Server
+// LiveKit Webhook — Delivery, retries & idempotência
 // ========================================
+// Docs: https://docs.livekit.io/intro/basics/rooms-participants-tracks/webhooks-events/
+//
+// LiveKit envia webhooks com at-least-once delivery. Duplicatas são garantidas.
+// Cada evento tem um campo `id` (UUID) que usamos como chave de deduplicação.
+//
+// Fluxo:
+//   1. Validar assinatura JWT (WebhookReceiver)
+//   2. Verificar idempotência (eventId unique index no MongoDB)
+//   3. Retornar 2xx imediatamente
+//   4. Processar assíncronamente (fire-and-forget)
 
 const webhookReceiver = new WebhookReceiver(
   ENV.LIVEKIT_API_KEY,
   ENV.LIVEKIT_API_SECRET
 );
 
+// Helper: extrair o ID real da stream removendo o prefixo da sala LiveKit
+const extractStreamId = (lkRoomName: string): string => {
+  if (lkRoomName.startsWith('live_')) return lkRoomName.slice(5);
+  if (lkRoomName.startsWith('pk_')) return lkRoomName.slice(3);
+  if (lkRoomName.startsWith('call_')) return lkRoomName.slice(5);
+  return lkRoomName;
+};
+
+/**
+ * Processa um evento de webhook do LiveKit.
+ * Chamado de forma assíncrona (fire-and-forget) após o 200 ser retornado.
+ * Cada handler é idempotente: executar duas vezes produz o mesmo resultado.
+ */
+async function processWebhookEvent(event: any): Promise<void> {
+  const eventType = event.event as string;
+  const roomName = event.room?.name as string;
+  const participant = event.participant as any;
+
+  // ─── room_started ─────────────────────────────────────────────────────
+  if (eventType === 'room_started') {
+    if (!roomName) return;
+
+    console.log(`[LIVEKIT-WEBHOOK] 🏠 Sala iniciada: ${roomName} (sid: ${event.room?.sid || 'N/A'})`);
+
+    // Sala PK: pk_<battleId> — marcar battle como active se necessário
+    if (roomName.startsWith('pk_')) {
+      const battleId = roomName.slice(3);
+      try {
+        const updated = await Battle.findOneAndUpdate(
+          { _id: battleId as any, status: { $ne: 'active' } },
+          { $set: { status: 'active', startedAt: new Date() } },
+          { returnDocument: 'after' }
+        );
+        if (updated) {
+          console.log(`[LIVEKIT-WEBHOOK] ✅ PK Battle ${battleId} marcada como active`);
+        }
+      } catch (dbErr: any) {
+        console.error('[LIVEKIT-WEBHOOK] ❌ Erro ao processar room_started (PK):', dbErr.message);
+      }
+    }
+
+    // Sala Call: call_<invitationId> — marcar convite como active
+    if (roomName.startsWith('call_')) {
+      const invitationId = roomName.slice(5);
+      try {
+        await CallInvitation.findOneAndUpdate(
+          { id: invitationId, status: { $ne: 'active' } },
+          { $set: { status: 'active', updatedAt: new Date() } }
+        );
+        console.log(`[LIVEKIT-WEBHOOK] ✅ CallInvitation ${invitationId} marcada como active`);
+      } catch (dbErr: any) {
+        console.error('[LIVEKIT-WEBHOOK] ❌ Erro ao processar room_started (Call):', dbErr.message);
+      }
+    }
+
+    // Sala Live: log
+    if (roomName.startsWith('live_')) {
+      console.log(`[LIVEKIT-WEBHOOK] 📡 Sala live ${roomName.slice(5)} iniciada`);
+    }
+
+    return;
+  }
+
+  // ─── room_finished ────────────────────────────────────────────────────
+  if (eventType === 'room_finished') {
+    if (!roomName) return;
+
+    // Sala PK: pk_<battleId>
+    if (roomName.startsWith('pk_')) {
+      const battleId = roomName.slice(3);
+      console.log(`[LIVEKIT-WEBHOOK] 🏆 PK Battle finalizada: ${battleId}`);
+      try {
+        const updated = await Battle.findOneAndUpdate(
+          { _id: battleId as any, status: { $ne: 'finished' } },
+          { $set: { status: 'finished', endedAt: new Date() } },
+          { returnDocument: 'after' }
+        );
+        if (updated) {
+          console.log(`[LIVEKIT-WEBHOOK] ✅ PK Battle ${battleId} marcada como finished`);
+          const io = (global as any).io;
+          if (io) {
+            io.to(`battle_${battleId}`).emit('pk_battle_ended', {
+              battleId,
+              winner: (updated as any).winner,
+              heartsA: (updated as any).heartsA,
+              heartsB: (updated as any).heartsB,
+              timestamp: new Date().toISOString()
+            });
+          }
+        }
+      } catch (dbErr: any) {
+        console.error('[LIVEKIT-WEBHOOK] ❌ Erro ao processar room_finished (PK):', dbErr.message);
+      }
+    }
+
+    // Sala Call: call_<invitationId>
+    if (roomName.startsWith('call_')) {
+      const invitationId = roomName.slice(5);
+      console.log(`[LIVEKIT-WEBHOOK] 📞 Chamada finalizada: ${invitationId}`);
+      try {
+        await CallInvitation.findOneAndUpdate(
+          { id: invitationId, status: { $ne: 'ended' } },
+          { $set: { status: 'ended', updatedAt: new Date() } }
+        );
+        console.log(`[LIVEKIT-WEBHOOK] ✅ CallInvitation ${invitationId} marcada como ended`);
+        const io = (global as any).io;
+        if (io) {
+          io.emit('call_ended', {
+            invitationId,
+            timestamp: new Date().toISOString()
+          });
+        }
+      } catch (dbErr: any) {
+        console.error('[LIVEKIT-WEBHOOK] ❌ Erro ao processar room_finished (Call):', dbErr.message);
+      }
+    }
+
+    // Sala Live: live_<streamId>
+    if (roomName.startsWith('live_')) {
+      console.log(`[LIVEKIT-WEBHOOK] 📡 Live finalizada: ${roomName.slice(5)}`);
+      try {
+        const result = await StreamParticipant.deleteMany({ streamId: roomName });
+        console.log(`[LIVEKIT-WEBHOOK] ✅ ${result.deletedCount} participante(s) removido(s) da sala ${roomName}`);
+      } catch (dbErr: any) {
+        console.error('[LIVEKIT-WEBHOOK] ❌ Erro ao limpar participantes (room_finished):', dbErr.message);
+      }
+    }
+
+    return;
+  }
+
+  // ─── participant_joined ───────────────────────────────────────────────
+  if (eventType === 'participant_joined') {
+    if (!roomName || !participant?.identity) return;
+
+    const participantIdentity = participant.identity as string;
+    console.log(`[LIVEKIT-WEBHOOK] 👤 Participante entrou: ${participantIdentity} na sala ${roomName}`);
+
+    try {
+      const cleanStreamId = extractStreamId(roomName);
+      const participantRole = roomName.startsWith('pk_')
+        ? 'pk_participant'
+        : roomName.startsWith('live_')
+          ? 'live_viewer'
+          : 'call_participant';
+
+      // Upsert idempotente: atualiza joinedAt a cada entrega duplicada
+      await StreamParticipant.findOneAndUpdate(
+        { streamId: roomName, userId: participantIdentity },
+        {
+          $set: {
+            streamId: roomName,
+            cleanStreamId,
+            userId: participantIdentity,
+            userName: participant.name || participantIdentity,
+            role: participantRole,
+            joinedAt: new Date(),
+          }
+        },
+        { upsert: true }
+      );
+
+      console.log(`[LIVEKIT-WEBHOOK] ✅ Participante ${participantIdentity} registrado na sala ${roomName}`);
+
+      const io = (global as any).io;
+      if (io) {
+        const participantPayload = {
+          room: roomName,
+          identity: participantIdentity,
+          name: participant.name || participantIdentity,
+          timestamp: new Date().toISOString()
+        };
+        io.to(roomName).emit('livekit_participant_joined', participantPayload);
+        if (cleanStreamId && cleanStreamId !== roomName) {
+          io.to(cleanStreamId).emit('livekit_participant_joined', participantPayload);
+        }
+      }
+    } catch (dbErr: any) {
+      console.error('[LIVEKIT-WEBHOOK] ❌ Erro ao registrar participante:', dbErr.message);
+    }
+
+    return;
+  }
+
+  // ─── participant_left ──────────────────────────────────────────────────
+  if (eventType === 'participant_left') {
+    if (!roomName || !participant?.identity) return;
+
+    const participantIdentity = participant.identity as string;
+    console.log(`[LIVEKIT-WEBHOOK] 👋 Participante saiu: ${participantIdentity} da sala ${roomName}`);
+
+    try {
+      // Delete idempotente: deletar algo que não existe é um no-op
+      await StreamParticipant.deleteOne({
+        streamId: roomName,
+        userId: participantIdentity
+      });
+
+      const cleanStreamId = extractStreamId(roomName);
+      if (cleanStreamId !== roomName) {
+        await StreamParticipant.deleteMany({
+          cleanStreamId,
+          userId: participantIdentity
+        }).catch(() => {});
+      }
+
+      console.log(`[LIVEKIT-WEBHOOK] ✅ Participante ${participantIdentity} removido da sala ${roomName}`);
+
+      const io = (global as any).io;
+      if (io) {
+        io.to(roomName).emit('livekit_participant_left', {
+          room: roomName,
+          identity: participantIdentity,
+          timestamp: new Date().toISOString()
+        });
+      }
+    } catch (dbErr: any) {
+      console.error('[LIVEKIT-WEBHOOK] ❌ Erro ao remover participante:', dbErr.message);
+    }
+
+    return;
+  }
+
+  // ─── participant_connection_aborted ────────────────────────────────────
+  if (eventType === 'participant_connection_aborted') {
+    if (!roomName || !participant?.identity) return;
+
+    const participantIdentity = participant.identity as string;
+    console.log(`[LIVEKIT-WEBHOOK] ⚡ Conexão abortada: ${participantIdentity} da sala ${roomName}`);
+
+    try {
+      await StreamParticipant.deleteOne({
+        streamId: roomName,
+        userId: participantIdentity
+      });
+
+      const cleanStreamId = extractStreamId(roomName);
+      if (cleanStreamId !== roomName) {
+        await StreamParticipant.deleteMany({
+          cleanStreamId,
+          userId: participantIdentity
+        }).catch(() => {});
+      }
+
+      console.log(`[LIVEKIT-WEBHOOK] ✅ Participante ${participantIdentity} removido (connection_aborted) da sala ${roomName}`);
+
+      const io = (global as any).io;
+      if (io) {
+        io.to(roomName).emit('livekit_participant_left', {
+          room: roomName,
+          identity: participantIdentity,
+          reason: 'connection_aborted',
+          timestamp: new Date().toISOString()
+        });
+      }
+    } catch (dbErr: any) {
+      console.error('[LIVEKIT-WEBHOOK] ❌ Erro ao remover participante (abort):', dbErr.message);
+    }
+
+    return;
+  }
+
+  // ─── track_published ───────────────────────────────────────────────────
+  if (eventType === 'track_published') {
+    const trackInfo = (event as any).track || {};
+    console.log(`[LIVEKIT-WEBHOOK] 🎙️ Track publicada: ${trackInfo.sid || 'N/A'} (${trackInfo.kind || 'unknown'}) por ${participant?.identity || 'N/A'} em ${roomName || 'N/A'}`);
+    return;
+  }
+
+  // ─── track_unpublished ─────────────────────────────────────────────────
+  if (eventType === 'track_unpublished') {
+    const trackInfo = (event as any).track || {};
+    console.log(`[LIVEKIT-WEBHOOK] 🔇 Track removida: ${trackInfo.sid || 'N/A'} (${trackInfo.kind || 'unknown'}) por ${participant?.identity || 'N/A'} em ${roomName || 'N/A'}`);
+    return;
+  }
+
+  // ─── Outros eventos ────────────────────────────────────────────────────
+  console.log(`[LIVEKIT-WEBHOOK] ℹ️ Evento não processado: ${eventType}`);
+}
+
 /**
  * POST /api/livekit/webhook
  *
- * Recebe eventos do LiveKit Server (room_finished, participant_joined, etc.)
- * e sincroniza com o banco de dados.
+ * Recebe eventos do LiveKit Server.
+ *
+ * Fluxo (conforme docs oficiais):
+ *   1. Validar assinatura JWT (WebhookReceiver com API_KEY/API_SECRET)
+ *   2. Insert atômico do eventId (dedup lock) — estado "pending"
+ *   3. Retornar 2xx IMEDIATAMENTE
+ *   4. Processar assíncronamente (fire-and-forget)
+ *   5. Atualizar log com sucesso/erro real após processamento
  *
  * Headers esperados:
  *   Authorization: <JWT assinado com a API Secret>
  *   Content-Type: application/webhook+json
+ *
+ * Docs: https://docs.livekit.io/intro/basics/rooms-participants-tracks/webhooks-events/#delivery-and-retries
  */
 router.post('/webhook', async (req, res) => {
   try {
+    // ── 1. Validar Authorization header ──
     const authHeader = req.headers.authorization;
     if (!authHeader) {
       console.warn('[LIVEKIT-WEBHOOK] ❌ Authorization header ausente');
       return res.status(401).json({ error: 'Missing Authorization header' });
     }
 
-    // Validar assinatura do webhook usando WebhookReceiver
+    // ── 2. Validar assinatura JWT ──
     let event: any;
     try {
       const rawBody = (req as any).rawBody || JSON.stringify(req.body);
-      event = await webhookReceiver.receive(
-        rawBody,
-        authHeader
-      );
+      event = await webhookReceiver.receive(rawBody, authHeader);
     } catch (err: any) {
       console.warn('[LIVEKIT-WEBHOOK] ❌ Assinatura inválida:', err.message);
       return res.status(401).json({ error: 'Invalid webhook signature' });
     }
 
     const eventType = event.event as string;
+    const eventId = (event as any).id as string;
     const roomName = event.room?.name as string;
-    const roomSid = event.room?.sid as string;
     const participant = event.participant as any;
 
-    console.log(`[LIVEKIT-WEBHOOK] 📨 Evento recebido: ${eventType} | sala: ${roomName || 'N/A'}`);
+    if (!eventType || !eventId) {
+      console.warn('[LIVEKIT-WEBHOOK] ❌ Evento sem event type ou id');
+      return res.status(400).json({ error: 'Missing event or id field' });
+    }
 
-    // Helper: extrair o ID real da stream removendo o prefixo da sala LiveKit
-    const extractStreamId = (lkRoomName: string): string => {
-      if (lkRoomName.startsWith('live_')) return lkRoomName.slice(5);
-      if (lkRoomName.startsWith('pk_')) return lkRoomName.slice(3);
-      if (lkRoomName.startsWith('call_')) return lkRoomName.slice(5);
-      return lkRoomName;
-    };
+    console.log(`[LIVEKIT-WEBHOOK] 📨 ${eventType} | id: ${eventId} | sala: ${roomName || 'N/A'}`);
 
-    // Helper: persistir log do evento no MongoDB (fire-and-forget — não bloqueia)
-    const persistLog = (success: boolean, errorMsg?: string) => {
-      LiveKitWebhookLog.create({
+    // ── 3. Idempotência: insert atômico do eventId ──
+    //    Unique index garante que só uma entrega passa daqui.
+    //    Se o eventId já existe → duplicata → ignorar.
+    //    O log é criado com success: false (pending) — será atualizado após processamento.
+    let logDoc: any;
+    try {
+      logDoc = await LiveKitWebhookLog.create({
+        eventId,
         event: eventType,
         roomName: roomName || undefined,
-        roomSid: roomSid || undefined,
+        roomSid: event.room?.sid || undefined,
         participantIdentity: participant?.identity || undefined,
         participantName: participant?.name || undefined,
-        success,
-        error: errorMsg,
+        success: false,
+        duplicate: false,
         rawEvent: {
           event: eventType,
+          id: eventId,
           room: event.room ? { sid: event.room.sid, name: event.room.name } : undefined,
           participant: participant ? { identity: participant.identity, name: participant.name } : undefined,
-          id: (event as any).id,
           createdAt: (event as any).createdAt,
         },
         processedAt: new Date(),
-      }).catch((logErr: any) =>
-        console.error('[LIVEKIT-WEBHOOK] ❌ Erro ao persistir log:', logErr.message)
-      );
-    };
-
-    // ─── room_finished ────────────────────────────────────────────────────
-    if (eventType === 'room_finished') {
-      if (!roomName) {
-        console.warn('[LIVEKIT-WEBHOOK] room_finished sem room.name');
-        persistLog(true);
-        return res.status(200).json({ received: true });
+      });
+    } catch (dbErr: any) {
+      // Duplicate key error (code 11000) = evento já processado
+      if (dbErr.code === 11000) {
+        console.log(`[LIVEKIT-WEBHOOK] 🔁 Evento duplicado ignorado: ${eventType} (id: ${eventId})`);
+        return res.status(200).json({ received: true, duplicate: true });
       }
-
-      // Sala PK: pk_<battleId>
-      if (roomName.startsWith('pk_')) {
-        const battleId = roomName.slice(3);
-        console.log(`[LIVEKIT-WEBHOOK] 🏆 PK Battle finalizada: ${battleId} (sala ${roomName})`);
-
-        try {
-          const updated = await Battle.findOneAndUpdate(
-            { _id: battleId as any, status: { $ne: 'finished' } },
-            { $set: { status: 'finished', endedAt: new Date() } },
-            { returnDocument: 'after' }
-          );
-
-          if (updated) {
-            console.log(`[LIVEKIT-WEBHOOK] ✅ PK Battle ${battleId} marcada como finished`);
-
-            // Notificar via WebSocket
-            const io = req.app.get('io');
-            if (io) {
-              io.to(`battle_${battleId}`).emit('pk_battle_ended', {
-                battleId,
-                winner: (updated as any).winner,
-                heartsA: (updated as any).heartsA,
-                heartsB: (updated as any).heartsB,
-                timestamp: new Date().toISOString()
-              });
-            }
-          } else {
-            console.log(`[LIVEKIT-WEBHOOK] ℹ️ PK Battle ${battleId} já estava finalizada ou não encontrada`);
-          }
-
-          persistLog(true);
-        } catch (dbErr: any) {
-          console.error('[LIVEKIT-WEBHOOK] ❌ Erro ao atualizar Battle:', dbErr.message);
-          persistLog(false, dbErr.message);
-        }
-      }
-
-      // Sala Call: call_<invitationId>
-      if (roomName.startsWith('call_')) {
-        const invitationId = roomName.slice(5);
-        console.log(`[LIVEKIT-WEBHOOK] 📞 Chamada finalizada: ${invitationId} (sala ${roomName})`);
-
-        try {
-          await CallInvitation.findOneAndUpdate(
-            { id: invitationId, status: { $ne: 'ended' } },
-            { $set: { status: 'ended', updatedAt: new Date() } }
-          );
-
-          console.log(`[LIVEKIT-WEBHOOK] ✅ CallInvitation ${invitationId} marcada como ended`);
-
-          // Notificar via WebSocket
-          const io = req.app.get('io');
-          if (io) {
-            io.emit('call_ended', {
-              invitationId,
-              timestamp: new Date().toISOString()
-            });
-          }
-
-          persistLog(true);
-        } catch (dbErr: any) {
-          console.error('[LIVEKIT-WEBHOOK] ❌ Erro ao atualizar CallInvitation:', dbErr.message);
-          persistLog(false, dbErr.message);
-        }
-      }
-
-      // Sala Live: live_<streamId>
-      if (roomName.startsWith('live_')) {
-        const streamId = roomName.slice(5);
-        console.log(`[LIVEKIT-WEBHOOK] 📡 Live finalizada: ${streamId} (sala ${roomName})`);
-
-        try {
-          const result = await StreamParticipant.deleteMany({ streamId: roomName });
-          console.log(`[LIVEKIT-WEBHOOK] ✅ ${result.deletedCount} participante(s) removido(s) da sala ${roomName}`);
-          persistLog(true);
-        } catch (dbErr: any) {
-          console.error('[LIVEKIT-WEBHOOK] ❌ Erro ao limpar participantes da live:', dbErr.message);
-          persistLog(false, dbErr.message);
-        }
-      }
-
-      // Room finished sem prefixo conhecido — loga sucesso mesmo assim
-      if (!roomName.startsWith('pk_') && !roomName.startsWith('call_') && !roomName.startsWith('live_')) {
-        persistLog(true);
-      }
-
-      return res.status(200).json({ received: true });
+      // Outro erro de DB — logar mas retornar 200 (não re-enviar)
+      console.error('[LIVEKIT-WEBHOOK] ❌ Erro ao registrar evento:', dbErr.message);
     }
 
-    // ─── participant_joined ───────────────────────────────────────────────
-    if (eventType === 'participant_joined') {
-      if (roomName && participant?.identity) {
-        const participantIdentity = participant.identity as string;
-        console.log(`[LIVEKIT-WEBHOOK] 👤 Participante entrou: ${participantIdentity} na sala ${roomName}`);
+    // ── 4. Retornar 200 IMEDIATAMENTE ──
+    res.status(200).json({ received: true });
 
-        try {
-          const cleanStreamId = extractStreamId(roomName);
-          const participantRole = roomName.startsWith('pk_')
-            ? 'pk_participant'
-            : roomName.startsWith('live_')
-              ? 'live_viewer'
-              : 'call_participant';
-
-          await StreamParticipant.findOneAndUpdate(
-            { streamId: roomName, userId: participantIdentity },
-            {
-              $set: {
-                streamId: roomName,
-                cleanStreamId,
-                userId: participantIdentity,
-                userName: participant.name || participantIdentity,
-                role: participantRole,
-                joinedAt: new Date(),
-              }
-            },
-            { upsert: true }
+    // ── 5. Processar assincronamente (fire-and-forget) ──
+    //    Após processamento, atualizar o log com success: true ou success: false + error
+    processWebhookEvent(event)
+      .then(async () => {
+        // Processamento OK — atualizar log com sucesso real
+        if (logDoc) {
+          await LiveKitWebhookLog.updateOne(
+            { _id: logDoc._id },
+            { $set: { success: true, processedAt: new Date() } }
+          ).catch((err: any) =>
+            console.error('[LIVEKIT-WEBHOOK] ❌ Erro ao atualizar log (success):', err.message)
           );
-
-          console.log(`[LIVEKIT-WEBHOOK] ✅ Participante ${participantIdentity} registrado na sala ${roomName}`);
-
-          // Notificar via WebSocket
-          const io = req.app.get('io');
-          if (io) {
-            const participantPayload = {
-              room: roomName,
-              identity: participantIdentity,
-              name: participant.name || participantIdentity,
-              timestamp: new Date().toISOString()
-            };
-            // Emitir para sala com prefixo live_ (roomName = live_<streamId>)
-            io.to(roomName).emit('livekit_participant_joined', participantPayload);
-            // Emitir também para sala sem prefixo (sockets podem ter entrado pelo streamId direto)
-            const cleanStreamId = extractStreamId(roomName);
-            if (cleanStreamId && cleanStreamId !== roomName) {
-              io.to(cleanStreamId).emit('livekit_participant_joined', participantPayload);
-            }
-          }
-
-          persistLog(true);
-        } catch (dbErr: any) {
-          console.error('[LIVEKIT-WEBHOOK] ❌ Erro ao registrar participante:', dbErr.message);
-          persistLog(false, dbErr.message);
         }
-      } else {
-        persistLog(true);
-      }
-
-      return res.status(200).json({ received: true });
-    }
-
-    // ─── participant_left ──────────────────────────────────────────────────
-    if (eventType === 'participant_left') {
-      if (roomName && participant?.identity) {
-        const participantIdentity = participant.identity as string;
-        console.log(`[LIVEKIT-WEBHOOK] 👋 Participante saiu: ${participantIdentity} da sala ${roomName}`);
-
-        try {
-          await StreamParticipant.deleteOne({
-            streamId: roomName,
-            userId: participantIdentity
-          });
-
-          // Também remover por cleanStreamId se existir (fallback para registros antigos)
-          const cleanStreamId = extractStreamId(roomName);
-          if (cleanStreamId !== roomName) {
-            await StreamParticipant.deleteMany({
-              cleanStreamId,
-              userId: participantIdentity
-            }).catch(() => {});
-          }
-
-          console.log(`[LIVEKIT-WEBHOOK] ✅ Participante ${participantIdentity} removido da sala ${roomName}`);
-
-          // Notificar via WebSocket
-          const io = req.app.get('io');
-          if (io) {
-            io.to(roomName).emit('livekit_participant_left', {
-              room: roomName,
-              identity: participantIdentity,
-              timestamp: new Date().toISOString()
-            });
-          }
-
-          persistLog(true);
-        } catch (dbErr: any) {
-          console.error('[LIVEKIT-WEBHOOK] ❌ Erro ao remover participante:', dbErr.message);
-          persistLog(false, dbErr.message);
+      })
+      .catch(async (err: any) => {
+        // Processamento falhou — registrar erro real no log
+        console.error(`[LIVEKIT-WEBHOOK] ❌ Erro no processamento de ${eventType}:`, err.message);
+        if (logDoc) {
+          await LiveKitWebhookLog.updateOne(
+            { _id: logDoc._id },
+            { $set: { success: false, error: err.message, processedAt: new Date() } }
+          ).catch((logErr: any) =>
+            console.error('[LIVEKIT-WEBHOOK] ❌ Erro ao atualizar log (error):', logErr.message)
+          );
         }
-      } else {
-        persistLog(true);
-      }
-
-      return res.status(200).json({ received: true });
-    }
-
-    // ─── Outros eventos (track_published, etc.) ────────────────────────────────
-    console.log(`[LIVEKIT-WEBHOOK] ℹ️ Evento ignorado: ${eventType}`);
-    persistLog(true);
-    return res.status(200).json({ received: true, event: eventType });
+      });
 
   } catch (error: any) {
     console.error('[LIVEKIT-WEBHOOK] ❌ Erro geral:', error.message);
-    await LiveKitWebhookLog.create({
-      event: 'error',
-      success: false,
-      error: error.message,
-      processedAt: new Date(),
-    }).catch(() => {});
     // Sempre retornar 200 para evitar re-envios do LiveKit
     return res.status(200).json({ received: true });
   }
@@ -838,6 +958,8 @@ router.post('/webhook', async (req, res) => {
  *   event         - Filtrar por tipo de evento (ex: room_finished)
  *   roomName      - Filtrar por nome da sala (ex: pk_abc123)
  *   success       - Filtrar por sucesso (true/false)
+ *   duplicate     - Filtrar por duplicatas (true/false)
+ *   eventId       - Filtrar por ID do evento (UUID)
  */
 router.get('/webhook/logs', async (req, res) => {
   try {
@@ -856,6 +978,12 @@ router.get('/webhook/logs', async (req, res) => {
     }
     if (req.query.success !== undefined) {
       filter.success = req.query.success === 'true';
+    }
+    if (req.query.duplicate !== undefined) {
+      filter.duplicate = req.query.duplicate === 'true';
+    }
+    if (req.query.eventId) {
+      filter.eventId = req.query.eventId as string;
     }
 
     // Filtrar por data

@@ -1,3 +1,5 @@
 /Makefile
 /objs/
 /tmp/
+node_modules/
+nul
