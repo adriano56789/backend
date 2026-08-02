@@ -39,7 +39,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const models_1 = require("../models");
 const env_1 = require("../config/env");
-const LiveKitTokenService_1 = require("../services/LiveKitTokenService");
 const FfmpegService_1 = require("../services/FfmpegService");
 const router = express_1.default.Router();
 const activeMixers = new Map();
@@ -211,39 +210,6 @@ router.post('/start', async (req, res) => {
             }
         }, pkDuration);
         battleTimers.set(battle._id.toString(), autoEndTimer);
-        // ─── LiveKit: criar sala PK e gerar tokens para ambos ───
-        let livekitRoom = null;
-        let challengerToken = null;
-        let opponentToken = null;
-        try {
-            livekitRoom = `pk_${battle._id}`;
-            // Verificar se sala já existe (via listRooms)
-            let roomExistsFlag = false;
-            try {
-                const existingRooms = await LiveKitTokenService_1.roomService.listRooms();
-                roomExistsFlag = existingRooms.some(r => r.name === livekitRoom);
-            }
-            catch (_) { }
-            if (!roomExistsFlag) {
-                await LiveKitTokenService_1.roomService.createRoom({
-                    name: livekitRoom,
-                    emptyTimeout: 600,
-                    maxParticipants: 10,
-                });
-                console.log(`[PK-LIVEKIT] Sala criada: ${livekitRoom}`);
-            }
-            // Gerar tokens para ambos os streamers (ambos podem publicar)
-            [challengerToken, opponentToken] = await Promise.all([
-                (0, LiveKitTokenService_1.generateLiveKitToken)(challengerId, livekitRoom, JSON.stringify({ type: 'pk', role: 'broadcaster' }), { canPublish: true }),
-                (0, LiveKitTokenService_1.generateLiveKitToken)(opponentId, livekitRoom, JSON.stringify({ type: 'pk', role: 'broadcaster' }), { canPublish: true }),
-            ]);
-            console.log(`[PK-LIVEKIT] Tokens gerados para ${challengerId} e ${opponentId}`);
-        }
-        catch (lkErr) {
-            console.error('[PK-LIVEKIT] Erro ao configurar sala LiveKit:', lkErr.message);
-            // Não falha a PK se o LiveKit falhar — segue com SRS/FFmpeg
-        }
-        const io = req.app.get('io');
         if (io) {
             [challengerId, opponentId].forEach(uid => {
                 io.to(`user_${uid}`).emit('pk_battle_start', {
@@ -251,13 +217,7 @@ router.post('/start', async (req, res) => {
                     streamerA: challengerId,
                     streamerB: opponentId,
                     durationSeconds: durationSeconds || 300,
-                    startedAt: battle.startedAt,
-                    livekit: livekitRoom ? {
-                        room: livekitRoom,
-                        livekitUrl: env_1.ENV.LIVEKIT_URL,
-                        serverUrl: env_1.ENV.LIVEKIT_SERVER_URL,
-                        tokens: { challenger: challengerToken, opponent: opponentToken }
-                    } : null
+                    startedAt: battle.startedAt,
                 });
             });
         }
@@ -265,16 +225,7 @@ router.post('/start', async (req, res) => {
         res.json({
             success: true,
             battleId: battle._id.toString(),
-            battle: populated,
-            livekit: livekitRoom ? {
-                room: livekitRoom,
-                livekitUrl: env_1.ENV.LIVEKIT_URL,
-                serverUrl: env_1.ENV.LIVEKIT_SERVER_URL,
-                tokens: {
-                    challenger: challengerToken,
-                    opponent: opponentToken,
-                }
-            } : null
+            battle: populated,
         });
     }
     catch (error) {

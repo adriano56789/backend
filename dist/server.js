@@ -91,16 +91,12 @@ const transactionProtectionRoutes_1 = __importDefault(require("./routes/transact
 const zoomRoutes_1 = __importDefault(require("./routes/zoomRoutes"));
 const userStatusRoutes_1 = __importDefault(require("./routes/userStatusRoutes"));
 const levelRoutes_1 = __importDefault(require("./routes/levelRoutes")); // NOVO - Sistema de Nível
-const virtualIPRoutes_1 = __importDefault(require("./routes/virtualIPRoutes")); // NOVO - Sistema de IP Virtual
 const base64ConversionRoutes_1 = __importDefault(require("./routes/base64ConversionRoutes")); // NOVO - Sistema de Conversão Base64
 const likesRoutes_1 = __importDefault(require("./routes/likesRoutes")); // NOVO - Sistema de Likes
-// livekitRoutes — APENAS para chamadas de vídeo e batalhas PK (NÃO para transmissão pública)
-// Transmissão pública usa SRS + FFmpeg (WHIP/WHEP/RTMP/HLS)
 const callInvitationRoutes_1 = __importDefault(require("./routes/callInvitationRoutes")); // NOVO - Sistema de convites de chamada na live
 const activityRoutes_1 = __importDefault(require("./routes/activityRoutes")); // NOVO - Sistema de Atividades
 const videoStreamRoutes_1 = __importDefault(require("./routes/videoStreamRoutes")); // NOVO - API de Streaming de Vídeo
 const srsRoutes_1 = __importDefault(require("./routes/srsRoutes"));
-const livekitRoutes_1 = __importDefault(require("./routes/livekitRoutes")); // LiveKit: PK + Chamadas de vídeo
 const appVersionRoutes_1 = __importDefault(require("./routes/appVersionRoutes")); // NOVO - Sistema de controle de versão
 const debugRoutes_1 = __importDefault(require("./routes/debugRoutes"));
 const crudRoutes_1 = __importDefault(require("./routes/crudRoutes"));
@@ -114,7 +110,6 @@ const UserStatusManager_1 = __importDefault(require("./middleware/UserStatusMana
 const notificationRoutes_1 = __importDefault(require("./routes/notificationRoutes"));
 const firebaseService_1 = require("./services/firebaseService");
 const blockBase64_1 = require("./middleware/blockBase64");
-const MqttBridge_1 = require("./services/MqttBridge");
 // REMOVIDO: Módulos inexistentes
 // import { initializeDatabase } from './scripts/initDatabase'; // NOVO - Inicialização automática
 // import { withdrawalCronJob } from './scripts/withdrawalCronJob'; // NOVO - Cron job de saques
@@ -161,69 +156,8 @@ else {
 }
 const io = (0, socket_1.initSocket)(server);
 const port = env_1.ENV.PORT;
-const wsPort = env_1.ENV.WS_PORT;
-// Monkey-patch io.emit e io.to (SÍNCRONO — aplicado imediatamente)
-const origEmit = io.emit.bind(io);
-io.emit = ((event, ...args) => {
-    if (MqttBridge_1.mqttBridge.isConnected()) {
-        MqttBridge_1.mqttBridge.publish('livego/global', { event, data: args }).catch(() => { });
-    }
-    return origEmit(event, ...args);
-});
-const origTo = io.to.bind(io);
-io.to = ((room) => {
-    const broadcastOp = origTo(room);
-    const origBroadcastEmit = broadcastOp.emit.bind(broadcastOp);
-    broadcastOp.emit = ((event, ...args) => {
-        if (MqttBridge_1.mqttBridge.isConnected()) {
-            if (event === 'binary_data' && args[0] instanceof ArrayBuffer) {
-                const b64 = Buffer.from(new Uint8Array(args[0])).toString('base64');
-                MqttBridge_1.mqttBridge.publish(`livego/room/${room}`, { event, binaryBase64: b64, _room: room }).catch(() => { });
-            }
-            else {
-                MqttBridge_1.mqttBridge.publish(`livego/room/${room}`, { event, data: args, _room: room }).catch(() => { });
-            }
-        }
-        return origBroadcastEmit(event, ...args);
-    });
-    return broadcastOp;
-});
 app.set('io', io);
-console.log('🔁 [MQTT] Proxy configurado (monkey-patch io.emit/io.to)');
-// Conectar ao EMQX (apenas se habilitado e não bloquear o startup)
-if (env_1.ENV.MQTT_ENABLED) {
-    MqttBridge_1.mqttBridge.connect().then(() => {
-        console.log('🔌 [MQTT] Conectado ao EMQX');
-        // Só inscrever depois de conectado
-        // NOTA: usar origEmit/origTo (métodos ORIGINAIS antes do monkey-patch)
-        // para evitar loop infinito (re-publicação no MQTT ao re-emitir localmente)
-        MqttBridge_1.mqttBridge.subscribe('livego/room/+', (msg) => {
-            if (msg.instanceId === MqttBridge_1.mqttBridge.instanceId)
-                return;
-            const payload = msg.payload;
-            const room = payload._room || msg.topic.split('/')[2];
-            if (payload.binaryBase64) {
-                const buf = Buffer.from(payload.binaryBase64, 'base64');
-                origTo(room).emit(payload.event, buf);
-            }
-            else {
-                origTo(room).emit(payload.event, ...(payload.data || []));
-            }
-        });
-        MqttBridge_1.mqttBridge.subscribe('livego/global', (msg) => {
-            if (msg.instanceId === MqttBridge_1.mqttBridge.instanceId)
-                return;
-            origEmit(msg.payload.event, ...(msg.payload.data || []));
-        });
-        console.log('🔁 [MQTT] Subscribes configurados');
-    }).catch((err) => {
-        console.error('❌ [MQTT] Falha ao conectar ao EMQX:', err.message);
-        console.warn('⚠️ [MQTT] Backend continuará sem distribuição MQTT');
-    });
-}
-else {
-    console.log('ℹ️ [MQTT] Distribuição MQTT desativada (MQTT_ENABLED=false)');
-}
+global.io = io;
 (0, db_1.connectDB)().then(async () => {
     await (0, ActivityHooks_1.initializeActivityHooks)();
     ActivityEventService_1.activityEventService.initialize(io);
@@ -455,10 +389,8 @@ app.use('/api/withdrawals', withdrawalRoutes_1.default); // Rotas de saques via 
 app.use('/api/transaction-protection', transactionProtectionRoutes_1.default); // Rotas de proteção contra bloqueios abusivos
 app.use('/api/level', levelRoutes_1.default); // NOVO - Sistema de Nível
 app.use('/api', userStatusRoutes_1.default); // Rotas de status online do usuário
-app.use('/api/virtual-ip', virtualIPRoutes_1.default); // NOVO - Sistema de IP Virtual
 app.use('/api/convert', base64ConversionRoutes_1.default); // NOVO - Sistema de Conversão Base64
 app.use('/convert', base64ConversionRoutes_1.default); // COMPATIBILITY - Allow direct /convert access
-app.use('/api/virtual-room', virtualIPRoutes_1.default); // NOVO - Sistema de Salas Virtuais
 app.use('/api/call-invitation', callInvitationRoutes_1.default); // NOVO - Sistema de convites de chamada na live
 app.use('/api/version', appVersionRoutes_1.default); // NOVO - Sistema de controle de versão
 app.use('/api/crud', crudRoutes_1.default); // NOVO - CRUD completo para MongoDB
@@ -467,7 +399,6 @@ app.use('/api/settings/:id', (0, idValidation_1.validateAndConvertUserId)('id'))
 // app.use('/api/level/:userId', validateAndConvertUserId('userId')); // REMOVIDO - causa erro MONGODB_ID_EXPOSED
 app.use('/api/zoom/user/:userId', (0, idValidation_1.validateAndConvertUserId)('userId'));
 app.use('/api/zoom', zoomRoutes_1.default);
-app.use('/api/livekit', livekitRoutes_1.default); // NOVO - Salas LiveKit
 app.use('/api', turnRoutes_1.default); // NOVO - Credenciais TURN
 app.use('/api', stunRoutes_1.default); // STUN servers
 app.use('/api/srs', srsRoutes_1.default); // Callbacks do SRS PRIMEIRO (evita conflito com routes genéricos)
@@ -526,19 +457,12 @@ app.get('/', (req, res) => {
     });
 });
 // --- WebSocket Logic ---
-// Importar o gerenciador de IPs virtuais
-const VirtualIPManager_1 = require("./services/VirtualIPManager");
 // Map baseado em userId para evitar duplicatas e controlar múltiplas conexões
 const onlineUsers = new Map();
 // Map para rastrear qual socket pertence a qual usuário
 const socketToUser = new Map();
 io.on('connection', (socket) => {
     console.log(`🔌 New WebSocket connection: ${socket.id}`);
-    // Obter IP real do cliente
-    const realIP = socket.handshake.address ||
-        socket.handshake.headers['x-forwarded-for'] ||
-        socket.handshake.headers['x-real-ip'] ||
-        'unknown';
     async function handleJoinStream(streamId) {
         const userId = socket.data.userId;
         if (!userId || !streamId) {
@@ -554,12 +478,6 @@ io.on('connection', (socket) => {
             }
         }
         console.log(`👤 Usuário ${userId} entrando na stream ${streamId} (socket: ${socket.id})`);
-        const virtualUser = VirtualIPManager_1.virtualIPManager.registerUser(userId, realIP, socket.id);
-        let virtualRoom = VirtualIPManager_1.virtualIPManager.getRoomByStreamId(streamId);
-        if (!virtualRoom) {
-            virtualRoom = VirtualIPManager_1.virtualIPManager.createRoom(streamId, userId);
-        }
-        VirtualIPManager_1.virtualIPManager.joinRoom(userId, virtualRoom.roomId);
         socketToUser.set(socket.id, userId);
         let userEntry = onlineUsers.get(userId);
         const isFirstConnection = !userEntry;
@@ -716,30 +634,6 @@ io.on('connection', (socket) => {
         try {
             const userId = socketToUser.get(socket.id);
             if (userId) {
-                // 🔥 NOVO: Remover do sistema virtual
-                const virtualUser = VirtualIPManager_1.virtualIPManager.getUser(userId);
-                if (virtualUser) {
-                    // Remover da sala virtual se estiver em alguma
-                    if (virtualUser.currentRoom) {
-                        const virtualRoom = VirtualIPManager_1.virtualIPManager.getRoom(virtualUser.currentRoom);
-                        if (virtualRoom) {
-                            VirtualIPManager_1.virtualIPManager.leaveRoom(userId, virtualRoom.roomId);
-                            // Notificar sobre saída da sala virtual
-                            const participants = VirtualIPManager_1.virtualIPManager.getRoomParticipants(virtualRoom.roomId);
-                            io.to(virtualRoom.streamId).emit('virtual_participants_updated', {
-                                streamId: virtualRoom.streamId,
-                                roomCode: virtualRoom.roomCode,
-                                participants,
-                                count: participants.length
-                            });
-                        }
-                    }
-                    // Remover socket do usuário virtual
-                    const userRemoved = VirtualIPManager_1.virtualIPManager.removeSocket(userId, socket.id);
-                    if (userRemoved) {
-                        console.log(`🗑️ Usuário ${userId} removido completamente do sistema virtual`);
-                    }
-                }
                 const { User } = await Promise.resolve().then(() => __importStar(require('./models/index')));
             }
             // VALIDAÇÃO CRÍTICA: Se não há usuário associado, apenas limpar
@@ -1094,7 +988,7 @@ io.on('connection', (socket) => {
             console.error('❌ Erro ao notificar unfollow:', error);
         }
     });
-    // ── LIVE_STARTED: disparar LiveKit Egress + FCM push para todos os usuários ──
+    // ── LIVE_STARTED: notificar TODOS os usuários via FCM push ──
     socket.on('live_started', async (data) => {
         console.log(`📡 [IO-LIVE] live_started recebido: stream=${data.streamId || data.id}, userId=${data.userId || data.hostId}`);
         try {
@@ -1104,10 +998,7 @@ io.on('connection', (socket) => {
                 console.warn('⚠️ live_started sem streamId');
                 return;
             }
-            // 1) Iniciar Egress RTMP (LiveKit → SRS)
-            const { startLiveEgress: startEgress } = await Promise.resolve().then(() => __importStar(require('./services/LiveKitTokenService')));
-            startEgress(streamId).catch((err) => console.error('❌ [EGRESS] Erro ao iniciar Egress:', err.message));
-            // 2) Notificar TODOS os usuários via FCM push (live_started)
+            // Notificar TODOS os usuários via FCM push (live_started)
             try {
                 const { NotificationService } = await Promise.resolve().then(() => __importStar(require('./services/NotificationService')));
                 const { User, Streamer } = await Promise.resolve().then(() => __importStar(require('./models/index')));
@@ -1139,18 +1030,6 @@ io.on('connection', (socket) => {
     });
     socket.on('live_ended', async (data) => {
         console.log(`📡 [IO-LIVE] live_ended recebido: stream=${data.streamId}, userId=${data.userId}`);
-        try {
-            const streamId = data.streamId;
-            if (!streamId) {
-                console.warn('⚠️ live_ended sem streamId');
-                return;
-            }
-            const { stopLiveEgress: stopEgress } = await Promise.resolve().then(() => __importStar(require('./services/LiveKitTokenService')));
-            stopEgress(streamId);
-        }
-        catch (err) {
-            console.error('❌ [EGRESS] Erro ao parar Egress via io:', err.message);
-        }
     });
     // ────────────────────────────────────────────────────────────
     // Eventos para amizades
@@ -1167,32 +1046,6 @@ io.on('connection', (socket) => {
         }
         catch (error) {
             console.error('❌ Erro ao notificar amizade:', error);
-        }
-    });
-    // 🔥 NOVO: Evento para encerrar sala virtual quando transmissão termina
-    socket.on('end_virtual_room', async (data) => {
-        try {
-            const { streamId } = data;
-            if (!streamId) {
-                console.warn('⚠️ end_virtual_room: streamId não fornecido');
-                return;
-            }
-            // Encontrar sala virtual pelo streamId
-            const virtualRoom = VirtualIPManager_1.virtualIPManager.getRoomByStreamId(streamId);
-            if (virtualRoom) {
-                console.log(`🏁 Encerrando sala virtual ${virtualRoom.roomCode} para stream ${streamId}`);
-                // Notificar todos os participantes sobre encerramento
-                io.to(streamId).emit('virtual_room_ended', {
-                    streamId,
-                    roomCode: virtualRoom.roomCode,
-                    message: 'Transmissão encerrada'
-                });
-                // Encerrar sala virtual
-                VirtualIPManager_1.virtualIPManager.endRoom(virtualRoom.roomId);
-            }
-        }
-        catch (error) {
-            console.error('❌ Erro ao encerrar sala virtual:', error);
         }
     });
     // Legados - manter para compatibilidade
@@ -1443,34 +1296,32 @@ io.on('connection', (socket) => {
                 text,
                 timestamp: new Date()
             };
-            // Broadcast também via LiveKit Chat Channel (canal adicional de distribuição)
+            // 💾 Persistir no MongoDB (TTL de 24h via índice expireAfterSeconds) e obter o id
+            // para que o broadcast inclua o id e o cliente faça dedupe com o sync inicial REST.
             try {
-                const { sendLiveKitChatMessage, ensureLiveKitRoom } = await Promise.resolve().then(() => __importStar(require('./services/LiveKitTokenService')));
-                await ensureLiveKitRoom(streamId);
-                await sendLiveKitChatMessage(streamId, {
-                    type: 'chat',
+                const liveMessage = await index_1.LiveMessage.create({
+                    streamId,
                     userId,
                     userName: messagePayload.userName,
                     avatarUrl: messagePayload.avatarUrl,
                     level: messagePayload.level,
+                    activeFrameId: messagePayload.activeFrameId,
                     text,
-                    timestamp: messagePayload.timestamp.toISOString(),
+                    timestamp: messagePayload.timestamp,
                 });
+                messagePayload.id = liveMessage.id;
             }
-            catch (lkErr) {
-                console.warn('[LIVEKIT-CHAT] Erro ao enviar via LiveKit:', lkErr);
+            catch (persistErr) {
+                console.error('❌ Erro ao persistir live_message:', persistErr);
             }
-            // Persistir no MongoDB (TTL de 24h via índice expireAfterSeconds)
-            index_1.LiveMessage.create({
-                streamId,
-                userId,
-                userName: messagePayload.userName,
-                avatarUrl: messagePayload.avatarUrl,
-                level: messagePayload.level,
-                activeFrameId: messagePayload.activeFrameId,
-                text,
-                timestamp: messagePayload.timestamp,
-            });
+            // ⚡ Broadcast em tempo real via Socket.IO — sala da stream (join_stream → socket.join(streamId))
+            // O frontend escuta o evento 'live_message'. Inclui o remetente (dedupe no client).
+            try {
+                io.to(streamId).emit('live_message', messagePayload);
+            }
+            catch (ioErr) {
+                console.warn('[SOCKET-LIVE-MESSAGE] Erro ao emitir socket:', ioErr);
+            }
         }
         catch (error) {
             console.error('❌ Erro ao processar send_live_message:', error);
@@ -1570,202 +1421,6 @@ io.on('connection', (socket) => {
 });
 // REMOVIDO: getIO duplicado (já existe em socket.ts e server.ts)
 // export const getIO = () => io;
-// Iniciar servidor WebSocket na porta 3001 separadamente
-let wsServer;
-if (isHttps) {
-    const httpsOptions = {
-        cert: fs_1.default.readFileSync(certPath),
-        key: fs_1.default.readFileSync(keyPath),
-    };
-    wsServer = https_1.default.createServer(httpsOptions);
-}
-else {
-    wsServer = http_1.default.createServer();
-}
-const wsIo = (0, socket_1.initSocket)(wsServer);
-// Eventos WebSocket como LiveGo
-wsIo.on('connection', async (socket) => {
-    console.log(`🔌 [LIVEGO-WEBSOCKET] Client connected: ${socket.id}`);
-    // Evento de informações básicas (como binfo do LiveGo) - Resposta BINÁRIA
-    // Evento de join de sala (stream)
-    socket.on('join_stream', (streamId) => {
-        console.log(`🎥 [STREAM] Client ${socket.id} joined stream: ${streamId}`);
-        socket.join(streamId);
-        // Enviar informações do stream para o cliente
-    });
-    // Evento de leave de sala
-    socket.on('leave_stream', (streamId) => {
-        console.log(`🎥 [STREAM] Client ${socket.id} left stream: ${streamId}`);
-        socket.leave(streamId);
-    });
-    // Heartbeat como Buzzcast
-    socket.on('ping', () => {
-        socket.emit('pong', { timestamp: Date.now() });
-    });
-    // Tratamento de mensagens binárias
-    socket.on('binary_data', (data) => {
-        console.log(`📦 [BINARY] Received binary data from ${socket.id}:`, data.length);
-        // Broadcast do dado binário para a sala
-        socket.rooms.forEach(room => {
-            if (room !== socket.id) {
-                wsIo.to(room).emit('binary_data', data);
-            }
-        });
-    });
-    // Eventos de chat em tempo real (integrado com banco)
-    socket.on('send_chat_message', async (data) => {
-        console.log(`💬 [CHAT] Message from ${socket.id}:`, data);
-        try {
-            const { streamId, userId, userName, userAvatar, message, userLevel } = data;
-            if (!streamId || !userId || !message) {
-                console.warn(`⚠️ [CHAT] Dados inválidos:`, { streamId, userId, message });
-                return;
-            }
-            // Salvar no LiveMessage (coleção correta para mensagens de live)
-            const liveMessage = await index_1.LiveMessage.create({
-                streamId,
-                userId,
-                userName: userName || 'Usuário',
-                avatarUrl: userAvatar || '',
-                level: userLevel || 1,
-                text: message,
-                timestamp: new Date()
-            });
-            const chatData = {
-                id: liveMessage.id,
-                userId,
-                userName: userName || 'Usuário',
-                avatarUrl: userAvatar || '',
-                level: userLevel || 1,
-                text: message,
-                timestamp: liveMessage.timestamp?.getTime() || Date.now()
-            };
-            console.log(`💬 [CHAT] Real message saved and broadcasted: ${message}`);
-        }
-        catch (error) {
-            console.error(`❌ [CHAT] Error saving message:`, error);
-        }
-    });
-    // Eventos de presentes/gifts em tempo real (integrado com banco)
-    socket.on('send_gift', async (data) => {
-        console.log(`🎁 [GIFT] Gift from ${socket.id}:`, data);
-        try {
-            // Importar helpers de ID
-            const { getRealUserId, validateRealId } = require('../utils/idHelper');
-            // Validar e converter para IDs reais
-            const realFromUserId = validateRealId(data.fromUserId);
-            const realToUserId = validateRealId(data.toUserId);
-            // Salvar no banco de dados
-            const Gift = require('../models/Gift');
-            const User = require('../models/User');
-            // Atualizar diamantes do usuário (usando ID real)
-            await User.findOneAndUpdate({ identification: realFromUserId }, {
-                $inc: { diamonds: -(data.giftPrice * data.quantity) }
-            });
-            // Atualizar ganhos do streamer (usando ID real)
-            await User.findOneAndUpdate({ identification: realToUserId }, {
-                $inc: { totalGifts: data.giftPrice * data.quantity }
-            });
-            const giftRecord = new Gift({
-                streamId: data.streamId,
-                fromUserId: realFromUserId, // ID real da API
-                fromUserName: data.fromUserName,
-                fromUserAvatar: data.fromUserAvatar,
-                toUserId: realToUserId, // ID real da API
-                toUserName: data.toUserName,
-                giftId: data.giftId,
-                giftName: data.giftName,
-                giftIcon: data.giftIcon,
-                giftPrice: data.giftPrice,
-                quantity: data.quantity,
-                totalValue: data.giftPrice * data.quantity,
-                timestamp: new Date()
-            });
-            await giftRecord.save();
-            const giftData = {
-                id: giftRecord._id,
-                fromUserId: realFromUserId, // ID real da API no evento
-                fromUserName: data.fromUserName,
-                fromUserAvatar: data.fromUserAvatar,
-                toUserId: realToUserId, // ID real da API no evento
-                toUserName: data.toUserName,
-                giftId: data.giftId,
-                giftName: data.giftName,
-                giftIcon: data.giftIcon,
-                giftPrice: data.giftPrice,
-                quantity: data.quantity,
-                totalValue: data.giftPrice * data.quantity,
-                timestamp: giftRecord.timestamp.getTime()
-            };
-            wsIo.to(data.streamId).emit('new_gift', giftData);
-            wsIo.to(data.streamId).emit('live_gift_received', {
-                from: {
-                    id: data.fromUserId,
-                    name: data.fromUserName,
-                    avatarUrl: data.fromUserAvatar,
-                    level: data.fromUserLevel || 1
-                },
-                toUser: {
-                    id: data.toUserId,
-                    name: data.toUserName
-                },
-                gift: {
-                    name: data.giftName,
-                    price: data.giftPrice,
-                    icon: data.giftIcon || '🎁',
-                    category: data.giftCategory || 'Popular'
-                },
-                quantity: data.quantity,
-                totalValue: data.giftPrice * data.quantity,
-                roomId: data.streamId,
-                streamId: data.streamId,
-                timestamp: new Date().toISOString()
-            });
-            console.log(`🎁 [GIFT] Real gift processed: ${data.giftName} x${data.quantity} (${data.totalValue} diamonds)`);
-        }
-        catch (error) {
-            console.error(`❌ [GIFT] Error processing gift:`, error);
-        }
-    });
-    // Eventos de status da transmissão (integrado com banco)
-    socket.on('stream_status_update', async (data) => {
-        console.log(`📡 [STREAM] Status update from ${socket.id}:`, data);
-        try {
-            // Atualizar no banco de dados
-            const Stream = require('../models/Stream');
-            await Stream.findOneAndUpdate({ _id: data.streamId }, { $set: { status: data.status, viewers: data.viewers, lastActivity: new Date() } });
-            const statusData = {
-                streamId: data.streamId,
-                status: data.status,
-                viewers: data.viewers,
-                timestamp: Date.now()
-            };
-            console.log(`📡 [STREAM] Real status updated: ${data.status} for stream ${data.streamId}`);
-        }
-        catch (error) {
-            console.error(`❌ [STREAM] Error updating status:`, error);
-        }
-    });
-    // Egress agora é disparado pelo handler do io principal (porta 443)
-    // O wsIo (porta 3001) não recebe live_started/live_ended do frontend
-    // Eventos de entrada/saída de usuários na live
-    socket.on('user_joined_live', (data) => {
-        console.log(`👤 [USER] User joined live:`, data);
-        const userData = {
-            userId: data.userId,
-            userName: data.userName,
-            userAvatar: data.userAvatar,
-            userLevel: data.userLevel || 1,
-            streamId: data.streamId,
-            timestamp: Date.now()
-        };
-        socket.to(data.streamId).emit('user_joined', userData);
-        console.log(`👤 [USER] ${userData.userName} joined stream ${userData.streamId}`);
-    });
-    socket.on('disconnect', (reason) => {
-        console.log(`🔌 [WEBSOCKET] Client disconnected: ${socket.id} - Reason: ${reason}`);
-    });
-});
 // ─── Orphan Process Signals ────────────────────────────────────────
 ['SIGINT', 'SIGTERM', 'exit'].forEach((signal) => {
     process.on(signal, () => {
@@ -1775,36 +1430,3 @@ wsIo.on('connection', async (socket) => {
     });
 });
 // ────────────────────────────────────────────────────────────────────
-// ── Bridge: espelhar eventos globais de io (porta 3000) → wsIo (porta 3001) ──
-// O frontend pode conectar no wsIo como fallback. Sem este bridge,
-// eventos como avatar_updated nunca chegariam ao celular.
-const GLOBAL_EVENTS_TO_BRIDGE = [
-    'avatar_updated',
-    'user_status_updated',
-    'user_avatar_protection_updated',
-    'diamonds_updated',
-    'earnings_updated',
-    'platform_earnings_updated',
-    'live_coins_updated',
-    'new_live',
-    'stream_started',
-    'stream_stopped',
-];
-const origGlobalEmit = io.emit.bind(io);
-io.emit = ((event, ...args) => {
-    // Repassar para wsIo se for evento global relevante
-    if (GLOBAL_EVENTS_TO_BRIDGE.includes(event)) {
-        try {
-            wsIo.emit(event, ...args);
-        }
-        catch (_) { }
-    }
-    return origGlobalEmit(event, ...args);
-});
-wsServer.listen(wsPort, '127.0.0.1', () => {
-    const protocol = isHttps ? 'https' : 'http';
-    console.log(`🔌 WebSocket server (Socket.IO) started on ${protocol}://127.0.0.1:${wsPort}`);
-    console.log(`🔐 Ready for ${isHttps ? 'secure ' : ''}WebSocket connections`);
-    console.log(`📡 Following LiveGo pattern with real-time events`);
-    console.log(`🔁 [BRIDGE] Eventos globais espelhados de io → wsIo`);
-});

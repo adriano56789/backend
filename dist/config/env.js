@@ -11,7 +11,6 @@ exports.ENV = {
     NODE_ENV: process.env.NODE_ENV || "development",
     USE_REAL_APIS: process.env.USE_REAL_APIS === "true",
     PORT: parseInt(process.env.PORT || "3000"),
-    WS_PORT: parseInt(process.env.WS_PORT || "3001"),
     // MongoDB
     MONGODB_URI: process.env.MONGODB_URI || "",
     MONGODB_NAME: process.env.MONGODB_NAME || "api",
@@ -48,11 +47,6 @@ exports.ENV = {
     SRS_RTMP_PORT: process.env.SRS_RTMP_PORT || "1935",
     // SRS - URL HTTPS pública para HLS/FLV (via proxy Nginx)
     SRS_PUBLIC_URL: (process.env.SRS_PUBLIC_URL || process.env.BACKEND_URL || "https://api.livego.store").replace(/\/+$/, "") + "/api/video/http",
-    // LiveKit
-    LIVEKIT_API_KEY: process.env.LIVEKIT_API_KEY || "devkey",
-    LIVEKIT_API_SECRET: process.env.LIVEKIT_API_SECRET || "secret",
-    LIVEKIT_URL: process.env.LIVEKIT_URL || "wss://livego.store/livekit",
-    LIVEKIT_SERVER_URL: process.env.LIVEKIT_SERVER_URL || "http://172.16.4.1:7880",
     // Firebase Cloud Messaging
     FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID || "",
     FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL || "",

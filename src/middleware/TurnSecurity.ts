@@ -2,28 +2,61 @@ import { Request, Response, NextFunction } from 'express';
 import { ENV } from '../config/env';
 
 /**
+ * Lista de domínios confiáveis (extraídos do CORS_ORIGIN + padrões conhecidos)
+ * Usa pattern matching em vez de match exato para aceitar subdomínios e variações.
+ */
+function buildTrustedDomains(): string[] {
+  const corsOrigins = (ENV.CORS_ORIGIN || '').split(',').map(o => o.trim()).filter(Boolean);
+  const domains = [
+    // Extrair domínios das origens configuradas (ex: "https://livego.store" → "livego.store")
+    ...corsOrigins.map(o => {
+      try { return new URL(o).hostname; } catch { return o; }
+    }),
+    // Domínios padrão de produção
+    'livego.store',
+    'www.livego.store',
+    'api.livego.store',
+    // Localhost para desenvolvimento
+    'localhost',
+    '127.0.0.1',
+  ];
+  // Deduplicar
+  return [...new Set(domains)];
+}
+
+/**
+ * Verifica se a origin está em um domínio confiável.
+ * Aceita qualquer subdomínio de um domínio confiável.
+ */
+function isTrustedOrigin(origin: string, trustedDomains: string[]): boolean {
+  try {
+    const hostname = new URL(origin).hostname.toLowerCase();
+    return trustedDomains.some(domain => {
+      // Match exato
+      if (hostname === domain.toLowerCase()) return true;
+      // Match de subdomínio (ex: app.livego.store → livego.store)
+      if (hostname.endsWith('.' + domain.toLowerCase())) return true;
+      return false;
+    });
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Middleware para proteger credenciais TURN em produção
  * Evita uso não autorizado do servidor TURN
- * Usa as mesmas origens configuradas no CORS_ORIGIN do env.ts
+ * Usa pattern matching de domínios em vez de comparação exata de origins.
  */
 export const turnSecurityMiddleware = (req: Request, res: Response, next: NextFunction) => {
-    // Usar origens configuradas no ENV em vez de hardcoded
-    const corsOrigins = ENV.CORS_ORIGIN.split(',').map(o => o.trim());
-    const allowedOrigins = [
-        ...corsOrigins,
-        'http://localhost:3000',
-        'https://localhost:3000',
-        'https://72.60.249.175:3000',
-    ];
-
+    const trustedDomains = buildTrustedDomains();
     const origin = req.headers.origin;
     const userAgent = req.headers['user-agent'];
 
-    // Validação de origem (se presente - mobile apps não enviam origin)
-    if (origin && !allowedOrigins.includes(origin)) {
-        // Verificar se é uma origem localhost (genérica)
-        const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
-        if (!isLocalhost) {
+    // Validação de origem (se presente)
+    // Mobile apps (WebView, React Native, etc.) podem não enviar origin
+    if (origin) {
+        if (!isTrustedOrigin(origin, trustedDomains)) {
             console.warn(`[TURN-SECURITY] Origin não permitido: ${origin}`);
             return res.status(403).json({
                 success: false,

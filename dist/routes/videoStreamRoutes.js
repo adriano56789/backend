@@ -660,7 +660,13 @@ router.post('/rtc/v1/play', async (req, res) => {
 // O frontend DEVE chamar POST /api/turn/credentials para obter credenciais TURN válidas.
 router.get('/rtc/ice-servers', (req, res) => {
     const { TURN_HOST, TURN_PORT } = env_1.ENV;
-    const BACKEND_URL = process.env.BACKEND_URL || '';
+    // Usar ENV.BACKEND_URL (que tem valor consistente) em vez de process.env diretamente
+    const backendUrl = (env_1.ENV.BACKEND_URL || process.env.BACKEND_URL || '').replace(/\/+$/, '');
+    // Se BACKEND_URL estiver configurado como raiz (ex: https://livego.store),
+    // o endpoint TURN será /api/turn/credentials sob essa URL
+    const turnEndpoint = backendUrl
+        ? `${backendUrl}/api/turn/credentials`
+        : '/api/turn/credentials';
     res.json({
         success: true,
         iceServers: [
@@ -671,7 +677,7 @@ router.get('/rtc/ice-servers', (req, res) => {
             { urls: `stun:${TURN_HOST}:${TURN_PORT}` },
             // TURN - o frontend deve obter credenciais via POST /api/turn/credentials
         ],
-        turnCredentialsEndpoint: `${BACKEND_URL}/api/turn/credentials`,
+        turnCredentialsEndpoint: turnEndpoint,
     });
 });
 // Helper para construir URL base do SRS — usa ENV.SRS_API_URL centralizado

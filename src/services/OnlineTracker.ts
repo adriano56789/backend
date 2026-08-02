@@ -36,7 +36,7 @@ class OnlineTracker {
         // Persistir no documento da stream
         await Streamer.findOneAndUpdate(
             { id: streamId },
-            { $set: { onlineFans: fans, onlineVisitors: visitors, onlineViewers: viewers, onlineLiveKitViewers: liveViewers, onlineTotal: total } }
+            { $set: { onlineFans: fans, onlineVisitors: visitors, onlineViewers: viewers, onlineTotal: total } }
         ).catch(() => {});
 
         return { role, fans, visitors, viewers, liveViewers, total };
@@ -55,7 +55,7 @@ class OnlineTracker {
 
         await Streamer.findOneAndUpdate(
             { id: streamId },
-            { $set: { onlineFans: fans, onlineVisitors: visitors, onlineViewers: viewers, onlineLiveKitViewers: liveViewers, onlineTotal: total } }
+            { $set: { onlineFans: fans, onlineVisitors: visitors, onlineViewers: viewers, onlineTotal: total } }
         ).catch(() => {});
 
         return { fans, visitors, viewers, liveViewers, total };

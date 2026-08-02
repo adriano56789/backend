@@ -40,8 +40,6 @@ const express_1 = __importDefault(require("express"));
 const models_1 = require("../models");
 const auth_1 = require("../middleware/auth");
 const activityHelpers_1 = require("../utils/activityHelpers");
-const LiveKitTokenService_1 = require("../services/LiveKitTokenService");
-const env_1 = require("../config/env");
 const router = express_1.default.Router();
 async function broadcastGuestList(roomId, io) {
     const activeGuests = await models_1.CallInvitation.find({ roomId, status: 'accepted' }).lean();
@@ -92,40 +90,12 @@ router.post('/invite', async (req, res) => {
             status: 'pending'
         });
         const invitationId = invitation._id.toString();
-        const livekitRoom = `call_${invitationId}`;
-        // Criar sala LiveKit para a chamada bidirecional
-        try {
-            if (!(await (0, LiveKitTokenService_1.roomExists)(livekitRoom))) {
-                await LiveKitTokenService_1.roomService.createRoom({
-                    name: livekitRoom,
-                    emptyTimeout: 600,
-                    maxParticipants: 10,
-                });
-                console.log(`[LiveKit-Call] Sala criada: ${livekitRoom}`);
-            }
-        }
-        catch (lkErr) {
-            console.error('[LiveKit-Call] Erro ao criar sala:', lkErr);
-        }
-        invitation.livekitRoom = livekitRoom;
-        await invitation.save();
         await Promise.all([
             (0, activityHelpers_1.pushRecentActivity)(hostId, { action: 'call_invite_sent', resource: 'video_call', endpoint: '/api/call-invitation/invite' }),
             (0, activityHelpers_1.pushRecentActivity)(guestId, { action: 'call_invite_received', resource: 'video_call', endpoint: '/api/call-invitation/invite' })
         ]);
-        // Gerar token do host com permissões bidirecionais
-        let hostToken = '';
-        try {
-            hostToken = await (0, LiveKitTokenService_1.generateLiveKitToken)(hostId, livekitRoom, JSON.stringify({ name: req.user?.name || 'Host', type: 'call', invitationId, role: 'host' }), { canPublish: true });
-            invitation.hostLiveKitToken = hostToken;
-            await invitation.save();
-        }
-        catch (lkErr) {
-            console.error('[LiveKit-Call] Erro ao gerar token do host:', lkErr);
-        }
         const io = req.app.get('io');
         if (io) {
-            const livekitUrl = env_1.ENV.LIVEKIT_URL;
             io.to(`user_${guestId}`).emit('call_invitation', {
                 type: 'invitation_received',
                 invitation: {
@@ -135,8 +105,6 @@ router.post('/invite', async (req, res) => {
                     roomId: invitation.roomId,
                     streamId: invitation.streamId,
                     streamTitle: stream.name,
-                    livekitRoom,
-                    livekitUrl,
                     guest: {
                         id: guest.id, name: guest.name, avatarUrl: guest.avatarUrl || '',
                         level: guest.level || 1, diamonds: guest.diamonds || 0,
@@ -161,7 +129,7 @@ router.post('/invite', async (req, res) => {
         // Notificação centralizada via NotificationService (LiveNotification + socket + FCM)
         try {
             const { NotificationService } = await Promise.resolve().then(() => __importStar(require('../services/NotificationService')));
-            await NotificationService.notifyCallInvitation(io, guestId, hostId, invitation.hostName, invitationId, invitation.roomId, invitation.streamId, livekitRoom);
+            await NotificationService.notifyCallInvitation(io, guestId, hostId, invitation.hostName, invitationId, invitation.roomId, invitation.streamId);
         }
         catch (notifErr) {
             console.error('[CallInvitation] Erro NotificationService:', notifErr);
@@ -203,30 +171,6 @@ router.post('/respond', async (req, res) => {
         const io = req.app.get('io');
         if (response === 'accept' && io) {
             const guestUser = await models_1.User.findOne({ id: userId });
-            const livekitRoom = invitation.livekitRoom || `call_${invitationId}`;
-            // Garantir que a sala LiveKit existe
-            try {
-                if (!(await (0, LiveKitTokenService_1.roomExists)(livekitRoom))) {
-                    await LiveKitTokenService_1.roomService.createRoom({ name: livekitRoom, emptyTimeout: 600, maxParticipants: 10 });
-                }
-            }
-            catch (_) { }
-            // Gerar tokens com permissões bidirecionais para ambos
-            let hostToken = invitation.hostLiveKitToken || '';
-            let guestToken = invitation.guestLiveKitToken || '';
-            try {
-                if (!hostToken) {
-                    hostToken = await (0, LiveKitTokenService_1.generateLiveKitToken)(invitation.hostId, livekitRoom, JSON.stringify({ name: invitation.hostName, type: 'call', invitationId, role: 'host' }), { canPublish: true });
-                    invitation.hostLiveKitToken = hostToken;
-                }
-                guestToken = await (0, LiveKitTokenService_1.generateLiveKitToken)(invitation.guestId, livekitRoom, JSON.stringify({ name: invitation.guestName, type: 'call', invitationId, role: 'guest' }), { canPublish: true });
-                invitation.guestLiveKitToken = guestToken;
-                await invitation.save();
-            }
-            catch (lkErr) {
-                console.error('[LiveKit-Call] Erro ao gerar tokens bidirecionais:', lkErr);
-            }
-            const livekitUrl = env_1.ENV.LIVEKIT_URL;
             io.to(`user_${invitation.hostId}`).emit('call_invitation', {
                 type: 'invitation_accepted',
                 invitation: {
@@ -235,9 +179,6 @@ router.post('/respond', async (req, res) => {
                     guestName: invitation.guestName,
                     guestAvatar: guestUser?.avatarUrl || '',
                     roomId: invitation.roomId,
-                    livekitRoom,
-                    livekitUrl,
-                    livekitToken: hostToken
                 }
             });
             io.to(`user_${invitation.hostId}`).emit('guest_invitation_accepted', {
@@ -246,9 +187,6 @@ router.post('/respond', async (req, res) => {
                 guestName: invitation.guestName,
                 hostId: invitation.hostId,
                 roomId: invitation.roomId,
-                livekitRoom,
-                livekitUrl,
-                livekitToken: hostToken
             });
             io.to(`user_${userId}`).emit('call_invitation', {
                 type: 'call_joined',
@@ -256,9 +194,6 @@ router.post('/respond', async (req, res) => {
                     id: invitation._id.toString(),
                     roomId: invitation.roomId,
                     streamId: invitation.streamId,
-                    livekitRoom,
-                    livekitUrl,
-                    livekitToken: guestToken
                 }
             });
             // Broadcast multi-guest
@@ -279,7 +214,7 @@ router.post('/respond', async (req, res) => {
             // Notificação centralizada via NotificationService
             try {
                 const { NotificationService } = await Promise.resolve().then(() => __importStar(require('../services/NotificationService')));
-                await NotificationService.notifyCallResponded(io, invitation.hostId, invitation.guestId, invitation.guestName, invitation._id.toString(), 'accepted', invitation.roomId, livekitRoom);
+                await NotificationService.notifyCallResponded(io, invitation.hostId, invitation.guestId, invitation.guestName, invitation._id.toString(), 'accepted', invitation.roomId);
             }
             catch (notifErr) {
                 console.error('[CallInvitation] Erro NotificationService accept:', notifErr);

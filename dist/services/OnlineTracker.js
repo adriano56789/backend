@@ -29,7 +29,7 @@ class OnlineTracker {
         ]);
         const total = fans + visitors + viewers + liveViewers;
         // Persistir no documento da stream
-        await Streamer_1.Streamer.findOneAndUpdate({ id: streamId }, { $set: { onlineFans: fans, onlineVisitors: visitors, onlineViewers: viewers, onlineLiveKitViewers: liveViewers, onlineTotal: total } }).catch(() => { });
+        await Streamer_1.Streamer.findOneAndUpdate({ id: streamId }, { $set: { onlineFans: fans, onlineVisitors: visitors, onlineViewers: viewers, onlineTotal: total } }).catch(() => { });
         return { role, fans, visitors, viewers, liveViewers, total };
     }
     async userLeave(streamId, userId) {
@@ -41,7 +41,7 @@ class OnlineTracker {
             StreamParticipant_1.StreamParticipant.countDocuments({ streamId, role: 'live_viewer' })
         ]);
         const total = fans + visitors + viewers + liveViewers;
-        await Streamer_1.Streamer.findOneAndUpdate({ id: streamId }, { $set: { onlineFans: fans, onlineVisitors: visitors, onlineViewers: viewers, onlineLiveKitViewers: liveViewers, onlineTotal: total } }).catch(() => { });
+        await Streamer_1.Streamer.findOneAndUpdate({ id: streamId }, { $set: { onlineFans: fans, onlineVisitors: visitors, onlineViewers: viewers, onlineTotal: total } }).catch(() => { });
         return { fans, visitors, viewers, liveViewers, total };
     }
     async getCounts(streamId) {

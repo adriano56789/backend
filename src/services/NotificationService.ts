@@ -419,7 +419,6 @@ export class NotificationService {
     invitationId: string,
     roomId: string,
     streamId: string,
-    livekitRoom: string,
   ): Promise<void> {
     if (toUserId === fromUserId) return;
     const message = `${fromUserName} está te chamando!`;
@@ -434,7 +433,6 @@ export class NotificationService {
       fromUserName,
       roomId,
       streamId,
-      livekitRoom,
       message,
     });
 
@@ -449,7 +447,6 @@ export class NotificationService {
         fromUserName,
         roomId,
         streamId,
-        livekitRoom,
         click_action: 'OPEN_INVITE',
       },
     });
@@ -463,7 +460,6 @@ export class NotificationService {
     invitationId: string,
     response: 'accepted' | 'declined',
     roomId?: string,
-    livekitRoom?: string,
   ): Promise<void> {
     if (toUserId === responderId) return;
 
@@ -482,7 +478,6 @@ export class NotificationService {
       responderId,
       responderName,
       roomId: roomId || '',
-      livekitRoom: livekitRoom || '',
       message,
     });
 
@@ -496,7 +491,6 @@ export class NotificationService {
         responderId,
         responderName,
         roomId: roomId || '',
-        livekitRoom: livekitRoom || '',
         click_action: 'OPEN_LIVE',
       },
     });

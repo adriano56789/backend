@@ -96,13 +96,11 @@ const levelRoutes_1 = __importDefault(require("./routes/levelRoutes")); // NOVO 
 const virtualIPRoutes_1 = __importDefault(require("./routes/virtualIPRoutes")); // NOVO - Sistema de IP Virtual
 const base64ConversionRoutes_1 = __importDefault(require("./routes/base64ConversionRoutes")); // NOVO - Sistema de Conversão Base64
 const likesRoutes_1 = __importDefault(require("./routes/likesRoutes")); // NOVO - Sistema de Likes
-// livekitRoutes — APENAS para chamadas de vídeo e batalhas PK (NÃO para transmissão pública)
 // Transmissão pública usa SRS + FFmpeg (WHIP/WHEP/RTMP/HLS)
 const callInvitationRoutes_1 = __importDefault(require("./routes/callInvitationRoutes")); // NOVO - Sistema de convites de chamada na live
 const activityRoutes_1 = __importDefault(require("./routes/activityRoutes")); // NOVO - Sistema de Atividades
 const videoStreamRoutes_1 = __importDefault(require("./routes/videoStreamRoutes")); // NOVO - API de Streaming de Vídeo
 const srsRoutes_1 = __importDefault(require("./routes/srsRoutes"));
-const livekitRoutes_1 = __importDefault(require("./routes/livekitRoutes")); // LiveKit: PK + Chamadas de vídeo
 const appVersionRoutes_1 = __importDefault(require("./routes/appVersionRoutes")); // NOVO - Sistema de controle de versão
 const debugRoutes_1 = __importDefault(require("./routes/debugRoutes"));
 const crudRoutes_1 = __importDefault(require("./routes/crudRoutes"));
@@ -164,7 +162,6 @@ else {
 }
 const io = (0, socket_1.initSocket)(server);
 const port = env_1.ENV.PORT;
-const wsPort = env_1.ENV.WS_PORT;
 // Monkey-patch io.emit e io.to (SÍNCRONO — aplicado imediatamente)
 const origEmit = io.emit.bind(io);
 io.emit = ((event, ...args) => {
@@ -471,7 +468,6 @@ app.use('/api/settings/:id', (0, idValidation_1.validateAndConvertUserId)('id'))
 // app.use('/api/level/:userId', validateAndConvertUserId('userId')); // REMOVIDO - causa erro MONGODB_ID_EXPOSED
 app.use('/api/zoom/user/:userId', (0, idValidation_1.validateAndConvertUserId)('userId'));
 app.use('/api/zoom', zoomRoutes_1.default);
-app.use('/api/livekit', livekitRoutes_1.default); // NOVO - Salas LiveKit
 app.use('/api', turnRoutes_1.default); // NOVO - Credenciais TURN
 app.use('/api', stunRoutes_1.default); // STUN servers
 app.use('/api/srs', srsRoutes_1.default); // Callbacks do SRS PRIMEIRO (evita conflito com routes genéricos)
@@ -1167,9 +1163,7 @@ io.on('connection', (socket) => {
     });
     socket.on('send_message', (data) => {
         socket.to(data.roomId).emit('receive_message', data.message);
-    });
-    // REMOVIDO: send_gift — presente agora via LiveKit DataChannel (não Socket.IO)
-    // Eventos para atualizações em tempo real
+    });    // Eventos para atualizações em tempo real
     socket.on('update_user_stats', async (data) => {
         try {
             const { User } = await Promise.resolve().then(() => __importStar(require('./models/index')));
@@ -1491,281 +1485,12 @@ io.on('connection', (socket) => {
 });
 // REMOVIDO: getIO duplicado (já existe em socket.ts e server.ts)
 // export const getIO = () => io;
-// Iniciar servidor WebSocket na porta 3001 separadamente
-let wsServer;
-if (isHttps) {
-    const httpsOptions = {
-        cert: fs_1.default.readFileSync(certPath),
-        key: fs_1.default.readFileSync(keyPath),
-    };
-    wsServer = https_1.default.createServer(httpsOptions);
-}
-else {
-    wsServer = http_1.default.createServer();
-}
-const wsIo = (0, socket_1.initSocket)(wsServer);
-// Eventos WebSocket como LiveGo
-wsIo.on('connection', (socket) => {
-    console.log(`🔌 [LIVEGO-WEBSOCKET] Client connected: ${socket.id}`);
-    // Evento de informações básicas (como binfo do LiveGo) - Resposta BINÁRIA
-    socket.on('binfo', (data) => {
-        console.log(`📊 [LIVEGO-BINFO] Received:`, data);
-        const buffer = ProtobufService_1.BackendProtobufService.encodeStreamInfoEvent(data.sdkappid || 'system', 'LiveGo Stream', 'Binary WebSocket System', 'system', 'LiveGo', 'https://via.placeholder.com/40', 0, 0, 'live');
-        if (buffer) {
-            wsIo.emit('binary_data', buffer);
-            console.log(`📦 [LIVEGO-BINFO] Binary response sent:`, buffer.length, 'bytes');
-        }
-    });
-    // Evento de join de sala (stream)
-    socket.on('join_stream', (streamId) => {
-        console.log(`🎥 [STREAM] Client ${socket.id} joined stream: ${streamId}`);
-        socket.join(streamId);
-        // Enviar informações do stream para o cliente
-        wsIo.to(streamId).emit('stream_joined', {
-            streamId,
-            clientId: socket.id,
-            timestamp: Date.now()
-        });
-    });
-    // Evento de leave de sala
-    socket.on('leave_stream', (streamId) => {
-        console.log(`🎥 [STREAM] Client ${socket.id} left stream: ${streamId}`);
-        socket.leave(streamId);
-        wsIo.to(streamId).emit('stream_left', {
-            streamId,
-            clientId: socket.id,
-            timestamp: Date.now()
-        });
-    });
-    // Heartbeat como Buzzcast
-    socket.on('ping', () => {
-        socket.emit('pong', { timestamp: Date.now() });
-    });
-    // Tratamento de mensagens binárias
-    socket.on('binary_data', (data) => {
-        console.log(`📦 [BINARY] Received binary data from ${socket.id}:`, data.length);
-        // Broadcast do dado binário para a sala
-        socket.rooms.forEach(room => {
-            if (room !== socket.id) {
-                wsIo.to(room).emit('binary_data', data);
-            }
-        });
-    });
-    // Eventos de chat em tempo real (integrado com banco)
-    socket.on('send_chat_message', async (data) => {
-        console.log(`💬 [CHAT] Message from ${socket.id}:`, data);
-        try {
-            const { streamId, userId, userName, userAvatar, message, userLevel } = data;
-            if (!streamId || !userId || !message) {
-                console.warn(`⚠️ [CHAT] Dados inválidos:`, { streamId, userId, message });
-                return;
-            }
-            // Salvar no LiveMessage (coleção correta para mensagens de live)
-            const liveMessage = await index_1.LiveMessage.create({
-                streamId,
-                userId,
-                userName: userName || 'Usuário',
-                avatarUrl: userAvatar || '',
-                level: userLevel || 1,
-                text: message,
-                timestamp: new Date()
-            });
-            const chatData = {
-                id: liveMessage.id,
-                userId,
-                userName: userName || 'Usuário',
-                avatarUrl: userAvatar || '',
-                level: userLevel || 1,
-                text: message,
-                timestamp: liveMessage.timestamp?.getTime() || Date.now()
-            };
-            // Broadcast para todos na sala do stream
-            wsIo.to(streamId).emit('live_message', chatData);
-            wsIo.to(streamId).emit('new_chat_message', chatData);
-            console.log(`💬 [CHAT] Real message saved and broadcasted: ${message}`);
-        }
-        catch (error) {
-            console.error(`❌ [CHAT] Error saving message:`, error);
-        }
-    });
-    // Eventos de presentes/gifts em tempo real (integrado com banco)
-    socket.on('send_gift', async (data) => {
-        console.log(`🎁 [GIFT] Gift from ${socket.id}:`, data);
-        try {
-            // Importar helpers de ID
-            const { getRealUserId, validateRealId } = require('../utils/idHelper');
-            // Validar e converter para IDs reais
-            const realFromUserId = validateRealId(data.fromUserId);
-            const realToUserId = validateRealId(data.toUserId);
-            // Salvar no banco de dados
-            const Gift = require('../models/Gift');
-            const User = require('../models/User');
-            // Atualizar diamantes do usuário (usando ID real)
-            await User.findOneAndUpdate({ identification: realFromUserId }, {
-                $inc: { diamonds: -(data.giftPrice * data.quantity) }
-            });
-            // Atualizar ganhos do streamer (usando ID real)
-            await User.findOneAndUpdate({ identification: realToUserId }, {
-                $inc: { totalGifts: data.giftPrice * data.quantity }
-            });
-            const giftRecord = new Gift({
-                streamId: data.streamId,
-                fromUserId: realFromUserId, // ID real da API
-                fromUserName: data.fromUserName,
-                fromUserAvatar: data.fromUserAvatar,
-                toUserId: realToUserId, // ID real da API
-                toUserName: data.toUserName,
-                giftId: data.giftId,
-                giftName: data.giftName,
-                giftIcon: data.giftIcon,
-                giftPrice: data.giftPrice,
-                quantity: data.quantity,
-                totalValue: data.giftPrice * data.quantity,
-                timestamp: new Date()
-            });
-            await giftRecord.save();
-            const giftData = {
-                id: giftRecord._id,
-                fromUserId: realFromUserId, // ID real da API no evento
-                fromUserName: data.fromUserName,
-                fromUserAvatar: data.fromUserAvatar,
-                toUserId: realToUserId, // ID real da API no evento
-                toUserName: data.toUserName,
-                giftId: data.giftId,
-                giftName: data.giftName,
-                giftIcon: data.giftIcon,
-                giftPrice: data.giftPrice,
-                quantity: data.quantity,
-                totalValue: data.giftPrice * data.quantity,
-                timestamp: giftRecord.timestamp.getTime()
-            };
-            // Broadcast para todos na sala do stream
-            wsIo.to(data.streamId).emit('new_gift', giftData);
-            wsIo.to(data.streamId).emit('live_gift_received', {
-                from: {
-                    id: data.fromUserId,
-                    name: data.fromUserName,
-                    avatarUrl: data.fromUserAvatar,
-                    level: data.fromUserLevel || 1
-                },
-                toUser: {
-                    id: data.toUserId,
-                    name: data.toUserName
-                },
-                gift: {
-                    name: data.giftName,
-                    price: data.giftPrice,
-                    icon: data.giftIcon || '🎁',
-                    category: data.giftCategory || 'Popular'
-                },
-                quantity: data.quantity,
-                totalValue: data.giftPrice * data.quantity,
-                roomId: data.streamId,
-                streamId: data.streamId,
-                timestamp: new Date().toISOString()
-            });
-            console.log(`🎁 [GIFT] Real gift processed: ${data.giftName} x${data.quantity} (${data.totalValue} diamonds)`);
-        }
-        catch (error) {
-            console.error(`❌ [GIFT] Error processing gift:`, error);
-        }
-    });
-    // Eventos de status da transmissão (integrado com banco)
-    socket.on('stream_status_update', async (data) => {
-        console.log(`📡 [STREAM] Status update from ${socket.id}:`, data);
-        try {
-            // Atualizar no banco de dados
-            const Stream = require('../models/Stream');
-            await Stream.findOneAndUpdate({ _id: data.streamId }, { $set: { status: data.status, viewers: data.viewers, lastActivity: new Date() } });
-            const statusData = {
-                streamId: data.streamId,
-                status: data.status,
-                viewers: data.viewers,
-                timestamp: Date.now()
-            };
-            // Broadcast para todos na sala do stream
-            wsIo.to(data.streamId).emit('stream_status', statusData);
-            console.log(`📡 [STREAM] Real status updated: ${data.status} for stream ${data.streamId}`);
-        }
-        catch (error) {
-            console.error(`❌ [STREAM] Error updating status:`, error);
-        }
-    });
-    // Evento de live iniciada — broadcast para todos os usuários conectados
-    socket.on('live_started', async (data) => {
-        console.log(`📡 [LIVE] Live started by user ${data.userId}, stream: ${data.streamId}`);
-        try {
-            const user = await index_1.User.findOne({ id: data.userId }).lean();
-            if (user) {
-                const liveData = {
-                    id: data.streamId,
-                    hostId: data.userId,
-                    name: data.title || user.name,
-                    avatar: user.avatarUrl || '',
-                    category: data.category || 'popular',
-                    country: data.country || user.country || 'br',
-                    isLive: true,
-                    streamStatus: 'active',
-                    streamKey: data.streamId,
-                    startTime: new Date(),
-                    viewers: 0,
-                    tags: data.tags || [],
-                    isPrivate: data.isPrivate || false,
-                };
-                socket.broadcast.emit('new_live_stream', liveData);
-                console.log(`📡 [LIVE] new_live_stream broadcasted for ${data.streamId}`);
-            }
-        }
-        catch (error) {
-            console.error(`❌ [LIVE] Error broadcasting live_started:`, error);
-        }
-    });
-    // Evento de live encerrada — broadcast para todos os usuários conectados
-    socket.on('live_ended', async (data) => {
-        console.log(`📡 [LIVE] Live ended by user ${data.userId}, stream: ${data.streamId}`);
-        try {
-            socket.broadcast.emit('live_stream_ended', {
-                streamId: data.streamId,
-                hostId: data.userId,
-                endedAt: new Date(),
-            });
-            console.log(`📡 [LIVE] live_stream_ended broadcasted for ${data.streamId}`);
-        }
-        catch (error) {
-            console.error(`❌ [LIVE] Error broadcasting live_ended:`, error);
-        }
-    });
-    // Eventos de entrada/saída de usuários na live
-    socket.on('user_joined_live', (data) => {
-        console.log(`👤 [USER] User joined live:`, data);
-        const userData = {
-            userId: data.userId,
-            userName: data.userName,
-            userAvatar: data.userAvatar,
-            userLevel: data.userLevel || 1,
-            streamId: data.streamId,
-            timestamp: Date.now()
-        };
-        // Broadcast para todos na sala do stream (exceto o próprio)
-        socket.to(data.streamId).emit('user_joined', userData);
-        console.log(`👤 [USER] ${userData.userName} joined stream ${userData.streamId}`);
-    });
-    socket.on('disconnect', (reason) => {
-        console.log(`🔌 [WEBSOCKET] Client disconnected: ${socket.id} - Reason: ${reason}`);
-    });
-});
+
 // ─── Orphan Process Signals ────────────────────────────────────────
 ['SIGINT', 'SIGTERM', 'exit'].forEach((signal) => {
-    process.on(signal, () => {
-        (0, FfmpegService_1.killAllFfmpegProcesses)();
-        if (signal !== 'exit')
-            process.exit(0);
-    });
+  process.on(signal, () => {
+    killAllFfmpegProcesses();
+    if (signal !== 'exit') process.exit(0);
+  });
 });
 // ────────────────────────────────────────────────────────────────────
-wsServer.listen(wsPort, '127.0.0.1', () => {
-    const protocol = isHttps ? 'https' : 'http';
-    console.log(`🔌 WebSocket server (Socket.IO) started on ${protocol}://127.0.0.1:${wsPort}`);
-    console.log(`🔐 Ready for ${isHttps ? 'secure ' : ''}WebSocket connections`);
-    console.log(`📡 Following LiveGo pattern with real-time events`);
-});

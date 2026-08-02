@@ -4,6 +4,7 @@ import { User } from '../models';
 import Security from '../utils/Security';
 import { ENV } from '../config/env';
 import { turnSecurityMiddleware } from '../middleware/TurnSecurity';
+import { getUserIdFromToken } from '../middleware/auth';
 import { pushRecentActivity } from '../utils/activityHelpers';
 
 const router = express.Router();
@@ -51,22 +52,23 @@ const TURN_CONFIGS: Record<string, TurnConfig> = {
 // POST /api/turn/credentials
 router.post('/turn/credentials', turnSecurityMiddleware, async (req, res) => {
   try {
-    const { userId, streamId, region = 'BR' } = req.body;
+    const userId = getUserIdFromToken(req) || req.body.userId;
+    const { streamId, region = 'BR' } = req.body;
     const clientIP = req.ip || req.socket.remoteAddress || 'unknown';
 
     if (!userId || !streamId) {
       return res.status(400).json({ error: 'userId and streamId are required' });
     }
 
-    // Rate limiting: 1 requisição por minuto por usuário
+    // Rate limiting: 5 requisições por minuto por usuário (12s entre cada)
     const rateKey = `${userId}_${clientIP}`;
     const lastRequest = requestTracker.get(rateKey) || 0;
     const now = Date.now();
 
-    if (now - lastRequest < 60000) {
+    if (now - lastRequest < 12000) {
       return res.status(429).json({
         error: 'Too many requests',
-        retryAfter: Math.ceil((60000 - (now - lastRequest)) / 1000),
+        retryAfter: Math.ceil((12000 - (now - lastRequest)) / 1000),
       });
     }
     requestTracker.set(rateKey, now);
@@ -80,9 +82,9 @@ router.post('/turn/credentials', turnSecurityMiddleware, async (req, res) => {
 
     const user = await User.findOne({ id: userId });
     if (!user) return res.status(401).json({ error: 'Unauthorized - User not found' });
-    if (user.currentStreamId !== streamId) {
-      return res.status(403).json({ error: 'Forbidden - Stream access denied' });
-    }
+    // Corrigido: não bloquear se currentStreamId não coincidir.
+    // Viewers podem não ter currentStreamId definido, mas ainda precisam de TURN.
+    // A validação de acesso à stream é feita pelo WebRTC (WHIP/WHEP) e pelo Socket.IO.
 
     const turnConfig = TURN_CONFIGS[region] || TURN_CONFIGS.BR;
     const ttl = 5 * 60;

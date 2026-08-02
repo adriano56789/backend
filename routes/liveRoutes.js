@@ -45,7 +45,6 @@ const index_1 = require("../models/index");
 const auth_1 = require("../middleware/auth");
 const responseHelper_1 = require("../middleware/responseHelper");
 const env_1 = require("../config/env");
-const LiveKitTokenService_1 = require("../services/LiveKitTokenService");
 const srsStreamMapper_1 = require("../mappers/srsStreamMapper");
 const DEFAULT_AVATAR = 'https://ui-avatars.com/api/?name=User&background=7c3aed&color=fff&size=100';
 function resolveAvatar(user) {
@@ -4994,55 +4993,6 @@ router.post('/lives/:streamId/ffmpeg-transcode/stop', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
-// GET /api/lives/:room/livekit-token - Gerar token LiveKit para transmissão pública
-router.get('/lives/:room/livekit-token', async (req, res) => {
-    const { room } = req.params;
-    const identity = req.query.identity || `user_${Date.now()}`;
-    const isPublisher = req.query.publisher === 'true';
-    try {
-        const extraGrants = isPublisher
-            ? { canPublish: true, canPublishData: true, canSubscribe: true }
-            : { canPublish: false, canPublishData: true, canSubscribe: true };
-        const token = await (0, LiveKitTokenService_1.generateLiveKitToken)(identity, room, undefined, extraGrants);
-        res.json({
-            success: true,
-            token,
-            identity,
-            room,
-            serverUrl: env_1.ENV.LIVEKIT_URL,
-            livekitUrl: env_1.ENV.LIVEKIT_URL,
-        });
-    }
-    catch (error) {
-        console.error('[LIVEKIT] Erro ao gerar token para live:', error);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
-// GET /api/new-users/recent - Listar novos usuários recentes
-router.get('/new-users/recent', async (req, res) => {
-    try {
-        const limit = Math.min(parseInt(req.query.limit) || 20, 100);
-        const { NewUserNotificationService } = await Promise.resolve().then(() => __importStar(require('../services/NewUserNotificationService')));
-        const messages = await NewUserNotificationService.getRecentNewUsers(limit);
-        res.json({ success: true, messages });
-    }
-    catch (error) {
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
-// POST /api/streams/:id/live-message - Enviar mensagem na live (REST equivalente ao socket send_live_message)
-router.post('/streams/:id/live-message', async (req, res) => {
-    try {
-        const { id } = req.params;
-        const userId = (0, auth_1.getUserIdFromToken)(req);
-        if (!userId) {
-            return res.status(401).json({ success: false, message: 'Usuario nao autenticado' });
-        }
-        const { text } = req.body;
-        if (!text || typeof text !== 'string' || text.trim().length === 0) {
-            return res.status(400).json({ success: false, message: 'Texto da mensagem e obrigatorio' });
-        }
-        const user = await index_1.User.findOne({ id: userId }).lean();
         if (!user) {
             return res.status(404).json({ success: false, message: 'Usuario nao encontrado' });
         }

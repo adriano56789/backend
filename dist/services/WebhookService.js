@@ -1,58 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.WebhookService = void 0;
-const livekit_server_sdk_1 = require("livekit-server-sdk");
 class WebhookService {
-    /**
-     * Initializes and returns a singleton RoomServiceClient for LiveKit.
-     * Credentials are read from environment variables.
-     */
-    static getLiveKitClient() {
-        if (!this.livekitClient) {
-            const livekitHost = process.env.LIVEKIT_HOST || 'https://livego.store';
-            const apiKey = process.env.LIVEKIT_API_KEY;
-            const apiSecret = process.env.LIVEKIT_API_SECRET;
-            if (!apiKey || !apiSecret) {
-                console.warn('[LiveKit] LIVEKIT_API_KEY ou LIVEKIT_API_SECRET não configurados. Eventos não serão enviados via LiveKit.');
-                // Return a no-op dummy
-                return null;
-            }
-            try {
-                this.livekitClient = new livekit_server_sdk_1.RoomServiceClient(livekitHost, apiKey, apiSecret);
-                console.log('[LiveKit] RoomServiceClient inicializado:', livekitHost);
-            }
-            catch (err) {
-                console.error('[LiveKit] Falha ao inicializar RoomServiceClient:', err);
-                return null;
-            }
-        }
-        return this.livekitClient;
-    }
-    /**
-     * Sends a JSON event to all participants in a LiveKit room via data channel.
-     * Falls back silently if LiveKit is not configured.
-     */
-    static async broadcastToLiveKit(roomName, eventType, data) {
-        const client = this.getLiveKitClient();
-        if (!client)
-            return;
-        // Frontend conecta-se a salas com prefixo "live_" — usar mesmo padrão
-        const fullRoomName = roomName.startsWith('live_') ? roomName : `live_${roomName}`;
-        try {
-            const payload = {
-                type: eventType,
-                ...data,
-                timestamp: Date.now()
-            };
-            const encoder = new TextEncoder();
-            const bytes = encoder.encode(JSON.stringify(payload));
-            await client.sendData(fullRoomName, bytes, livekit_server_sdk_1.DataPacket_Kind.RELIABLE, { topic: 'livechat' });
-            console.log(`[LiveKit] ✅ Evento "${eventType}" enviado para sala "${fullRoomName}"`);
-        }
-        catch (err) {
-            console.warn(`[LiveKit] ⚠️ Falha ao enviar evento "${eventType}" para sala "${fullRoomName}":`, err);
-        }
-    }
     /**
      * Processes live webhook events and triggers appropriate platform logic.
      */
@@ -136,13 +85,6 @@ class WebhookService {
                     console.log(`🎬 [WebhookService-FFMPEG] Starting FFmpeg transcoding and recording for stream: ${stream.id}`);
                     startFfmpegStream(stream.id);
                 }
-                // 📡 LiveKit: Broadcast stream_started to the stream room
-                this.broadcastToLiveKit(stream.id, 'stream_started', {
-                    streamId: stream.id,
-                    hostId: stream.hostId,
-                    name: stream.name,
-                    avatar: stream.avatar
-                });
                 console.log(`✅ [WebhookService] Stream \"${stream.id}\" iniciada com sucesso via Webhook.`);
                 return { success: true, message: 'Stream started successfully', data: stream };
             }
@@ -169,8 +111,6 @@ class WebhookService {
                         stopFfmpegStream(stream.id);
                     }
                     const eventData = { streamId: stream.id, hostId: stream.hostId, timestamp: new Date().toISOString() };
-                    // 📡 LiveKit: Broadcast stream_ended to the stream room
-                    this.broadcastToLiveKit(stream.id, 'stream_ended', eventData);
                     console.log(`✅ [WebhookService] Stream \"${stream.id}\" encerrada.`);
                     return { success: true, message: `Stream ended successfully via event ${eventName}`, data: eventData };
                 }
@@ -183,11 +123,6 @@ class WebhookService {
                     stream.viewers = (stream.viewers || 0) + 1;
                     console.log(`🗄️ [WebhookService-DB] Incrementando espectadores para \"${stream.id}\": ${stream.viewers}`);
                     saveCollection('streamers', streamers);
-                    // 📡 LiveKit: Broadcast viewers update
-                    this.broadcastToLiveKit(stream.id, 'viewers_count_updated', {
-                        streamId: stream.id,
-                        count: stream.viewers
-                    });
                     return { success: true, message: 'Play event registered', data: { streamId: stream.id, viewers: stream.viewers } };
                 }
                 return { success: false, message: 'Stream not found for play event' };
@@ -199,11 +134,6 @@ class WebhookService {
                     stream.viewers = Math.max(0, (stream.viewers || 1) - 1);
                     console.log(`🗄️ [WebhookService-DB] Decrementando espectadores para \"${stream.id}\": ${stream.viewers}`);
                     saveCollection('streamers', streamers);
-                    // 📡 LiveKit: Broadcast viewers update
-                    this.broadcastToLiveKit(stream.id, 'viewers_count_updated', {
-                        streamId: stream.id,
-                        count: stream.viewers
-                    });
                     return { success: true, message: 'Stop event registered', data: { streamId: stream.id, viewers: stream.viewers } };
                 }
                 return { success: false, message: 'Stream not found for stop event' };
@@ -214,13 +144,6 @@ class WebhookService {
                 const stream = getOrCreateStream();
                 console.log(`🗄️ [WebhookService-DB] Salvando nova live criada: \"${stream.id}\"`);
                 saveCollection('streamers', streamers);
-                // 📡 LiveKit: Broadcast new_live
-                this.broadcastToLiveKit(stream.id, 'new_live', {
-                    streamId: stream.id,
-                    hostId: stream.hostId,
-                    name: stream.name,
-                    avatar: stream.avatar
-                });
                 console.log(`✅ [WebhookService] Nova live criada: \"${stream.id}\"`);
                 return { success: true, message: 'New live created successfully', data: stream };
             }
@@ -240,8 +163,6 @@ class WebhookService {
                         saveCollection('users', users);
                     }
                     const eventData = { streamId: streamIdToDelete, hostId: hostIdToDelete, timestamp: new Date().toISOString() };
-                    // 📡 LiveKit: Broadcast card_removed
-                    this.broadcastToLiveKit(streamIdToDelete, 'card_removed', eventData);
                     console.log(`✅ [WebhookService] Card da stream \"${streamIdToDelete}\" removido do sistema.`);
                     return { success: true, message: 'Card removed successfully', data: eventData };
                 }
@@ -273,12 +194,6 @@ class WebhookService {
                     };
                     chatMessages.push(newMessage);
                     saveCollection('chatmessages', chatMessages);
-                    // 📡 LiveKit: Broadcast chat via data channel
-                    this.broadcastToLiveKit(streamId, 'chat_message', {
-                        message: newMessage,
-                        userName,
-                        userAvatar
-                    });
                     console.log(`💬 [WebhookService] Chat na sala \"${streamId}\": ${userName}: ${messageText}`);
                     return { success: true, message: 'Chat message processed successfully', data: newMessage };
                 }
@@ -291,11 +206,6 @@ class WebhookService {
                         streamers[streamIndex].likes = (streamers[streamIndex].likes || 0) + count;
                         saveCollection('streamers', streamers);
                     }
-                    // 📡 LiveKit: Broadcast like
-                    this.broadcastToLiveKit(streamId, 'stream_liked', {
-                        streamId,
-                        totalLikes: streamers[streamIndex]?.likes || 0
-                    });
                     console.log(`❤️ [WebhookService] Like recebido na sala \"${streamId}\" de: ${userName}`);
                     return { success: true, message: 'Reaction processed successfully' };
                 }
@@ -332,16 +242,8 @@ class WebhookService {
                         receiver.earnings = (receiver.earnings || 0) + totalValue;
                     }
                     saveCollection('users', users);
-                    // 📡 LiveKit: Broadcast gift to stream room
-                    this.broadcastToLiveKit(streamId, 'gift_received', {
-                        fromUser: { id: fromUserId, name: sender?.name || 'Doador', avatarUrl: sender?.avatarUrl },
-                        toUser: { id: toUserId, name: receiver?.name || 'Receptor' },
-                        gift: { id: giftId, name: giftName, price, quantity },
-                        totalValue
-                    });
                     // 📡 Notas: eventos user-specific (diamonds_updated, earnings_updated)
                     // são gerenciados pelo frontend via polling (useCurrentUserPolling)
-                    // ou por LiveKit DataChannel na sala da stream, já que o frontend
                     // não se conecta a salas de notificação individuais.
                     console.log(`🎁 [WebhookService] Presente na sala \"${streamId}\": ${giftName} x${quantity} de ${sender?.name || fromUserId}`);
                     return { success: true, message: 'Gift transaction completed successfully', data: transaction };
@@ -356,4 +258,3 @@ class WebhookService {
     }
 }
 exports.WebhookService = WebhookService;
-WebhookService.livekitClient = null;

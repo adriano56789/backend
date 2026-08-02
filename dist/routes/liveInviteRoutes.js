@@ -52,6 +52,33 @@ function clearInviteTimeout(inviteId) {
         inviteTimeouts.delete(inviteId);
     }
 }
+// ─── Papel do participante (REST API) ───
+// Persiste o papel do usuário na live para exibição de co-host/PK
+// e evita duplicar registros de LiveUser por username.
+router.post('/role', async (req, res) => {
+    try {
+        const { userId, username, name, avatarUrl, streamId, role } = req.body;
+        const uid = userId || username;
+        if (!uid || !streamId) {
+            return res.status(400).json({ success: false, error: 'userId e streamId são obrigatórios' });
+        }
+        const status = role === 'co-host' ? 'co-host' : role === 'pk-battle' ? 'pk-battle' : 'viewing';
+        await LiveInvite_1.LiveUser.findOneAndUpdate({ username: uid }, {
+            userId: uid,
+            username: uid,
+            name: name || username || uid,
+            avatarUrl: avatarUrl || '',
+            status,
+            currentStreamId: streamId,
+            lastActive: new Date()
+        }, { upsert: true, returnDocument: 'after' });
+        res.status(200).json({ success: true, status });
+    }
+    catch (error) {
+        console.error('[LiveInvite] Erro ao definir papel do participante:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 router.post('/join', async (req, res) => {
     try {
         const { userId, username, name, avatarUrl, streamId, socketId } = req.body;
@@ -359,6 +386,29 @@ router.get('/invites/pending', async (req, res) => {
     }
     catch (error) {
         console.error('[LiveInvite] Erro ao listar convites pendentes:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+// ─── Convites enviados (respostas) ────────────────────────────────────
+// Usado pelo inviter para detectar accepted/declined/expired via polling,
+// já que o chat/presença usam Socket.IO mas os convites co-host/PK não têm
+// evento próprio de resposta via socket.
+router.get('/invites/sent', async (req, res) => {
+    try {
+        const { username } = req.query;
+        if (!username) {
+            return res.status(400).json({ success: false, error: 'username é obrigatório' });
+        }
+        const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
+        const invites = await LiveInvite_1.LiveInvite.find({
+            inviterUsername: username,
+            status: { $ne: 'pending' },
+            updatedAt: { $gte: fiveMinAgo }
+        }).sort({ updatedAt: -1 }).lean();
+        res.status(200).json({ success: true, invites });
+    }
+    catch (error) {
+        console.error('[LiveInvite] Erro ao listar convites enviados:', error);
         res.status(500).json({ success: false, error: error.message });
     }
 });

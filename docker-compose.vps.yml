@@ -75,11 +75,9 @@ services:
     restart: always
     ports:
       - "3000:3000"
-      - "3001:3001"
     environment:
       - NODE_ENV=production
       - PORT=3000
-      - WS_PORT=3001
       - HOST=0.0.0.0
       - MONGODB_URI=mongodb://mongodb:27017/api
       - REDIS_URL=redis://redis:6379
@@ -101,10 +99,6 @@ services:
       - MERCADO_PAGO_PUBLIC_KEY=APP_USR-dac29668-9ab3-483f-ad46-8216c93786b2
       - MERCADO_PAGO_CLIENT_ID=8544166678866013
       - MERCADO_PAGO_CLIENT_SECRET=OvtQrTNHPFDNhptfkrldHwqQ9QjYzWhq
-      - LIVEKIT_URL=wss://livego.store/livekit
-      - LIVEKIT_SERVER_URL=http://host.docker.internal:7880
-      - LIVEKIT_API_KEY=dfd8670dd9bc2f158eb5da850fcb47778f19fc9c88ed8f76f2d1d34cd0d29c66
-      - LIVEKIT_API_SECRET=8529e52ace6e923af0a1b72dffe29fc59372faa96b302c398c9142e197f7636d
       - SRS_RTMP_PORT=1935
       - SRS_API_PORT=1985
       - SRS_HTTP_PORT=8080
@@ -166,19 +160,6 @@ services:
       - livego-net
 
 
-  livekit:
-    image: livekit/livekit-server:latest
-    container_name: app-livekit
-    restart: unless-stopped
-    network_mode: host
-    command: --config /etc/livekit.yaml
-    volumes:
-      - /opt/livekit/livekit.yaml:/etc/livekit.yaml:ro
-    environment:
-      - LIVEKIT_API_KEY=dfd8670dd9bc2f158eb5da850fcb47778f19fc9c88ed8f76f2d1d34cd0d29c66
-      - LIVEKIT_API_SECRET=8529e52ace6e923af0a1b72dffe29fc59372faa96b302c398c9142e197f7636d
-    extra_hosts:
-      - "host.docker.internal:127.0.0.1"
 
   ffmpeg:
     image: node:20-alpine
@@ -202,3 +183,4 @@ networks:
   livego-net:
     name: app_livego-net
     external: true
+

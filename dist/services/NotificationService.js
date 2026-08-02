@@ -292,7 +292,7 @@ class NotificationService {
         });
     }
     // ─── 6 novos métodos para migrar FCM inline ─────────────────────
-    static async notifyCallInvitation(io, toUserId, fromUserId, fromUserName, invitationId, roomId, streamId, livekitRoom) {
+    static async notifyCallInvitation(io, toUserId, fromUserId, fromUserName, invitationId, roomId, streamId) {
         if (toUserId === fromUserId)
             return;
         const message = `${fromUserName} está te chamando!`;
@@ -305,7 +305,6 @@ class NotificationService {
             fromUserName,
             roomId,
             streamId,
-            livekitRoom,
             message,
         });
         await this.sendFcm(toUserId, {
@@ -319,12 +318,11 @@ class NotificationService {
                 fromUserName,
                 roomId,
                 streamId,
-                livekitRoom,
                 click_action: 'OPEN_INVITE',
             },
         });
     }
-    static async notifyCallResponded(io, toUserId, responderId, responderName, invitationId, response, roomId, livekitRoom) {
+    static async notifyCallResponded(io, toUserId, responderId, responderName, invitationId, response, roomId) {
         if (toUserId === responderId)
             return;
         const responseLabel = response === 'accepted' ? 'aceitou' : 'recusou';
@@ -340,7 +338,6 @@ class NotificationService {
             responderId,
             responderName,
             roomId: roomId || '',
-            livekitRoom: livekitRoom || '',
             message,
         });
         await this.sendFcm(toUserId, {
@@ -353,7 +350,6 @@ class NotificationService {
                 responderId,
                 responderName,
                 roomId: roomId || '',
-                livekitRoom: livekitRoom || '',
                 click_action: 'OPEN_LIVE',
             },
         });

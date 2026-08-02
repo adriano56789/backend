@@ -27,6 +27,33 @@ function isDuplicate(clientId: string, action: string): boolean {
   return false;
 }
 
+// POST /api/srs/forward — on_forward (Dynamic Forward do SRS)
+// SRS consulta este endpoint ao publicar uma live para obter destinos RTMP
+// adicionais (ex: transmissão simultânea para outras plataformas).
+// Doc: https://ossrs.net/lts/en-us/docs/v5/doc/forward
+router.post('/forward', async (req, res) => {
+    try {
+        const p = req.body;
+        if (!p || p.action !== 'on_forward') {
+            return res.status(400).json({ code: 1, data: { urls: [] } });
+        }
+        const dests = (process.env.SRS_FORWARD_DESTINATIONS || '')
+            .split(/\s+/).map(s => s.trim()).filter(Boolean);
+        if (!dests.length) {
+            return res.json({ code: 0, data: { urls: [] } });
+        }
+        const { app, stream } = p;
+        const urls = dests.map(d =>
+            /^rtmp:/.test(d) ? d : `rtmp://${d}:1935/${app || 'live'}/${stream}`
+        );
+        console.log(`[SRS-FORWARD] on_forward app=${app} stream=${stream} → ${urls.join(', ') || 'nenhum destino'}`);
+        res.json({ code: 0, data: { urls } });
+    } catch (error: any) {
+        console.error('[SRS-FORWARD] Erro:', error.message);
+        res.json({ code: 0, data: { urls: [] } });
+    }
+});
+
 // POST /api/srs/publish — on_publish
 // Doc SRS: https://ossrs.net/lts/en-us/docs/v7/doc/http-callback
 router.post('/publish', async (req, res) => {
@@ -270,14 +297,8 @@ router.post('/publish', async (req, res) => {
             console.warn(`[SRS-PUBLISH] ⚠️ FFmpeg não disponível para ${realStreamKey}:`, ffErr.message);
         }
 
-        // Criar sala LiveKit para o chat da transmissão
-        try {
-            const { ensureLiveKitRoom, getLiveRoomName } = await import('../services/LiveKitTokenService');
-            const liveRoom = await ensureLiveKitRoom(realStreamKey);
-            console.log(`[LIVEKIT-CHAT] Sala LiveKit pronta para chat: ${liveRoom}`);
-        } catch (lkErr: any) {
-            console.warn(`[LIVEKIT-CHAT] Erro ao criar sala LiveKit para ${realStreamKey}:`, lkErr.message);
-        }
+        // Sala de chat removida — chat/presença usam Socket.IO (arquitetura SRS-only)
+        // O chat da stream é via Socket.IO/REST (sem SFU de chat).
 
         res.status(200).json({ code: 0 });
     } catch (error: any) {

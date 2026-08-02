@@ -38,8 +38,7 @@ const ALLOWED_COLLECTIONS = [
     'userstatus',
     'virtualips',
     'appversions',
-    'callinvitations',
-    'livekit'
+    'callinvitations'
 ];
 // Mapeamento de Models para coleções específicas
 const MODEL_MAP = {

@@ -2,7 +2,6 @@ import { Server as SocketIOServer } from 'socket.io';
 import jwt from 'jsonwebtoken';
 
 
-import { mqttBridge } from './services/MqttBridge';
 import { ENV } from './config/env';
 import { User, UserStatus } from './models';
 
@@ -176,8 +175,6 @@ export const initSocket = (server: any) => {
                 if (event.streamId) {
                     // Broadcast para todos na stream (exceto remetente)
                     socket.to(event.streamId).emit('binary_data', data);
-                    const b64 = Buffer.from(new Uint8Array(data)).toString('base64');
-                    mqttBridge.publish(`livego/room/${event.streamId}`, { event: 'binary_data', binaryBase64: b64, _room: event.streamId }).catch(() => {});
                     
                     console.log(` [BINARY] Broadcasted ${EventType[event.type as keyof typeof EventType]} to stream ${event.streamId}`);
                 }
@@ -253,23 +250,6 @@ export const initSocket = (server: any) => {
                 timestamp: new Date().toISOString()
             };
             io.to(data.streamId).emit('live_message', messagePayload);
-
-            // 2b. Broadcast também via LiveKit Chat Channel (canal adicional de distribuição)
-            try {
-                const { sendLiveKitChatMessage, ensureLiveKitRoom } = await import('./services/LiveKitTokenService');
-                await ensureLiveKitRoom(data.streamId);
-                await sendLiveKitChatMessage(data.streamId, {
-                    type: 'chat',
-                    userId: data.userId,
-                    userName: data.userName || 'Usuário',
-                    avatarUrl: data.userAvatar || '',
-                    level: data.userLevel || 1,
-                    text: data.message || '',
-                    timestamp: new Date().toISOString(),
-                });
-            } catch (lkErr) {
-                console.warn('[CHAT-LIVEKIT] Erro ao enviar via LiveKit:', lkErr);
-            }
             
             // 3. Codificar usando Protobuf e enviar como binário (para compatibilidade)
             const buffer: any = null;

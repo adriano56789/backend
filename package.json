@@ -38,7 +38,6 @@
     "db:restore": "ts-node scripts/restoreDatabase.ts"
   },
   "dependencies": {
-    "@livekit/protocol": "^1.50.4",
     "axios": "^1.15.2",
     "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.7",
@@ -49,7 +48,6 @@
     "firebase-admin": "^14.1.0",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
-    "livekit-server-sdk": "^2.17.0",
     "mercadopago": "^3.1.0",
     "mongodb": "^7.2.0",
     "mongoose": "^9.7.1",

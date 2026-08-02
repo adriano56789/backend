@@ -7,7 +7,6 @@ import { Streamer, User, Message, Followers, Friendship, Block, UserLevel, Strea
 import { getUserIdFromToken, generateJWT } from '../middleware/auth';
 import { ResponseHelper } from '../middleware/responseHelper';
 import { ENV } from '../config/env';
-import { generateLiveKitToken, ensureLiveKitRoom } from '../services/LiveKitTokenService';
 
 import { 
 
@@ -7179,6 +7178,18 @@ router.post('/streams/:id/like', async (req: express.Request, res: express.Respo
 
             });
 
+            io.to(streamId).emit('stream_liked', {
+
+                streamId,
+
+                userId,
+
+                totalLikes,
+
+                timestamp: new Date().toISOString()
+
+            });
+
         }
 
 
@@ -7275,6 +7286,18 @@ router.delete('/streams/:id/like', async (req: express.Request, res: express.Res
         if (io) {
 
             io.to(`stream_${streamId}`).emit('stream_unliked', {
+
+                streamId,
+
+                userId,
+
+                totalLikes,
+
+                timestamp: new Date().toISOString()
+
+            });
+
+            io.to(streamId).emit('stream_unliked', {
 
                 streamId,
 
@@ -8888,37 +8911,6 @@ router.post('/lives/:streamId/ffmpeg-transcode/stop', async (req, res) => {
     }
 });
 
-// GET /api/lives/:room/livekit-token - Gerar token LiveKit para transmissão pública
-router.get('/lives/:room/livekit-token', async (req, res) => {
-  const { room } = req.params;
-  const identity = req.query.identity as string || `user_${Date.now()}`;
-  const isPublisher = req.query.publisher === 'true';
-
-  try {
-    // Extrair streamId do room (remove prefixo 'live_' se presente)
-    const streamId = room.startsWith('live_') ? room.slice(5) : room;
-    
-    // Garantir que a sala existe no LiveKit (consistência com /chat-token)
-    const liveRoomName = await ensureLiveKitRoom(streamId);
-
-    const extraGrants = isPublisher
-      ? { canPublish: true, canPublishData: true, canSubscribe: true }
-      : { canPublish: false, canPublishData: true, canSubscribe: true };
-    const token = await generateLiveKitToken(identity, liveRoomName, undefined, extraGrants);
-    res.json({
-      success: true,
-      token,
-      identity,
-      room: liveRoomName,
-      serverUrl: ENV.LIVEKIT_URL,
-      livekitUrl: ENV.LIVEKIT_URL,
-    });
-  } catch (error: any) {
-    console.error('[LIVEKIT] Erro ao gerar token para live:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
 // GET /api/new-users/recent - Listar novos usuários recentes
 router.get('/new-users/recent', async (req, res) => {
   try {
@@ -8972,6 +8964,17 @@ router.post('/streams/:id/live-message', async (req, res) => {
             text: text.trim(),
             timestamp: new Date()
         };
+        // ⚡ Broadcast em tempo real via Socket.IO — mesma sala (join_stream → socket.join(streamId))
+        // usada por host e espectadores. O frontend escuta o evento 'live_message'.
+        try {
+            const io = req.app.get('io');
+            if (io) {
+                io.to(id).emit('live_message', messagePayload);
+            }
+        }
+        catch (ioErr) {
+            console.warn('[LIVE-MESSAGE-REST] Erro ao emitir socket:', ioErr);
+        }
         console.log('[LIVE-MESSAGE-REST] Mensagem criada na live', id, 'por', userId);
         res.json({
             success: true,
