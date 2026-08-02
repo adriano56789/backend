@@ -23,6 +23,7 @@ import walletRoutes from './routes/walletRoutes';
 import checkoutRoutes from './routes/checkoutRoutes';
 import adminRoutes from './routes/adminRoutes';
 import metadataRoutes from './routes/metadataRoutes';
+import giftRoutes from './routes/giftRoutes';
 import settingsRoutes from './routes/settingsRoutes';
 import liveRoutes from './routes/liveRoutes';
 import visitorRoutes from './routes/visitorRoutes';
@@ -393,6 +394,7 @@ app.use('/api', turnRoutes); // NOVO - Credenciais TURN
 app.use('/api', stunRoutes); // STUN servers
 app.use('/api/srs', srsRoutes); // Callbacks do SRS PRIMEIRO (evita conflito com routes genéricos)
 app.use('/api', metadataRoutes); // handles /api/ranking, /api/gifts, /api/regions, /api/history
+app.use('/api/gifts', giftRoutes); // giftRoutes - galeria de presentes por live
 app.use('/api', liveRoutes); // handles /api/live, /api/streams, /api/rtc, /api/lives, /api/permissions
 app.use('/api', likesRoutes); // handles stream likes
 app.use('/api', settingsRoutes); // handles /api/settings, /api/notifications/settings
