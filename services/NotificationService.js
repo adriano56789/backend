@@ -103,7 +103,7 @@ class NotificationService {
             body: message,
             data: {
                 type: 'new_follower', followerId, followerName,
-                followerAvatar: followerAvatar || '', click_action: 'OPEN_PROFILE',
+                click_action: 'OPEN_PROFILE',
             },
         });
     }
@@ -232,7 +232,6 @@ class NotificationService {
                 type: 'friend_invite_received',
                 fromUserId,
                 fromUserName,
-                fromUserAvatar: fromUserAvatar || '',
                 inviteId,
                 click_action: 'OPEN_FRIENDS',
             },
@@ -400,7 +399,6 @@ class NotificationService {
                 streamId,
                 fromUserId,
                 fromUserName,
-                fromUserAvatar: fromUserAvatar || '',
                 click_action: 'OPEN_LIVE',
             },
         });

@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { Server as SocketIOServer } from 'socket.io';
-import { Streamer, User, LiveCard } from '../models/index';
+import { Streamer, User, LiveCard, LiveMessage } from '../models/index';
 import { stopStreamTranscode } from './FfmpegService';
 
 const SRS_API_URL = process.env.SRS_API_URL || 'http://127.0.0.1:1985';
@@ -37,11 +37,11 @@ export class StreamCleanupService {
   private io: SocketIOServer | null = null;
 
   start(io?: SocketIOServer): void {
-    if (this.intervalId) return;
+    // 🛑 DESATIVADO (decisão do dono): nenhuma lógica pode encerrar uma
+    // transmissão ao vivo automaticamente. A live SÓ é encerrada pelo host.
+    // StreamCleanupService NÃO roda mais — nada de timeout/fechamento automático.
     if (io) this.io = io;
-    console.log(`[STREAM-CLEANUP] Iniciando serviço de limpeza a cada ${CLEANUP_INTERVAL_MS}ms`);
-    this.intervalId = setInterval(() => this.cleanup(), CLEANUP_INTERVAL_MS);
-    this.cleanup();
+    console.warn('[STREAM-CLEANUP] 🛑 Serviço de limpeza DESATIVADO — lives só encerram pelo próprio host. Nada será fechado automaticamente.');
   }
 
   stop(): void {
@@ -50,6 +50,11 @@ export class StreamCleanupService {
       this.intervalId = null;
     }
   }
+
+  // Contagem de ciclos consecutivos em que a stream NÃO foi vista no SRS.
+  // Evita matar a live por um blip transitório (reconexão, oscilação de rede).
+  private absenceCount = new Map<string, number>();
+  private readonly REQUIRED_ABSENCES = 2;
 
   private async cleanup(): Promise<void> {
     if (this.isRunning) return;
@@ -64,20 +69,39 @@ export class StreamCleanupService {
       if (activeStreams.length === 0) return;
 
       const srsStreams = await this.fetchSrsStreams();
+
+      // Se a API do SRS falhou, NÃO matar nada neste ciclo. Um erro de rede
+      // não pode derrubar cards de lives que estão realmente transmitindo.
+      if (srsStreams === null) {
+        console.warn('[STREAM-CLEANUP] ⚠️ API do SRS indisponível — nenhuma stream será encerrada neste ciclo');
+        return;
+      }
+
       const srsStreamKeys = new Set(srsStreams.map(s => s.name));
 
       for (const stream of activeStreams) {
         const streamKey = stream.streamKey as string;
-        const isOnSrs = streamKey ? srsStreamKeys.has(streamKey) : false;
 
-        if (!isOnSrs) {
-          const streamAge = Date.now() - new Date(stream.startTime || stream.createdAt || Date.now()).getTime();
-          const staleMs = MAX_STALE_MINUTES * 60 * 1000;
+        // Sem streamKey não há como validar presença no SRS — não matar.
+        if (!streamKey) continue;
 
-          if (streamAge > staleMs) {
-            console.log(`[STREAM-CLEANUP] Stream órfã detectada: ${streamKey || stream.id} (host: ${stream.hostId}, idade: ${Math.round(streamAge / 1000)}s)`);
-            await this.forceEndStream(stream);
-          }
+        const isOnSrs = srsStreamKeys.has(streamKey);
+
+        if (isOnSrs) {
+          this.absenceCount.delete(streamKey);
+          continue;
+        }
+
+        const misses = (this.absenceCount.get(streamKey) || 0) + 1;
+        this.absenceCount.set(streamKey, misses);
+
+        const streamAge = Date.now() - new Date(stream.startTime || stream.createdAt || Date.now()).getTime();
+        const staleMs = MAX_STALE_MINUTES * 60 * 1000;
+
+        if (misses >= this.REQUIRED_ABSENCES && streamAge > staleMs) {
+          console.log(`[STREAM-CLEANUP] Stream órfã detectada: ${streamKey || stream.id} (host: ${stream.hostId}, idade: ${Math.round(streamAge / 1000)}s, ausente ${misses} ciclos)`);
+          await this.forceEndStream(stream);
+          this.absenceCount.delete(streamKey);
         }
       }
     } catch (err: any) {
@@ -87,15 +111,15 @@ export class StreamCleanupService {
     }
   }
 
-  private async fetchSrsStreams(): Promise<SrsStream[]> {
+  private async fetchSrsStreams(): Promise<SrsStream[] | null> {
     try {
-      const res = await axios.get(`${SRS_API_URL}/api/v1/streams`, { timeout: 5000 });
+      const res = await axios.get(`${SRS_API_URL}/api/v1/streams/`, { timeout: 5000 });
       if (res.data?.streams) {
         return res.data.streams;
       }
       return [];
     } catch {
-      return [];
+      return null;
     }
   }
 
@@ -125,6 +149,14 @@ export class StreamCleanupService {
 
       if (stream.streamKey) {
         await stopStreamTranscode(stream.streamKey).catch(() => {});
+      }
+
+      // 🧹 Chat morre com a transmissão
+      try {
+        const result = await LiveMessage.deleteMany({ streamId: String(storedId) });
+        console.log(`[STREAM-CLEANUP] 🧹 Chat apagado da stream ${storedId}: ${result?.deletedCount ?? 0} mensagens`);
+      } catch (chatErr: any) {
+        console.warn('[STREAM-CLEANUP] ⚠️ Erro ao apagar chat:', chatErr?.message || chatErr);
       }
 
       if (this.io) {

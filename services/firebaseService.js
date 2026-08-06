@@ -47,6 +47,18 @@ function getFirebaseMessaging() {
     firebaseMessaging = (0, messaging_1.getMessaging)(app);
     return firebaseMessaging;
 }
+// 🚫 Firebase = SÓ push (title + body). Nenhuma imagem/avatar/ícone é enviada
+// no notification (sem imageUrl/icon) nem nos dados (data sanitizada).
+function sanitizeData(data) {
+    if (!data) return {};
+    const clean = {};
+    for (const [key, value] of Object.entries(data)) {
+        if (/(avatar|image|icon|photo|picture|cover|thumb)/i.test(key)) continue;
+        if (typeof value === 'string' && /^(https?:)?\/\/.*\.(png|jpe?g|gif|webp|svg|ico|avif)([?#]|$)/i.test(value)) continue;
+        clean[key] = value;
+    }
+    return clean;
+}
 async function sendPushNotification(token, payload) {
     const messaging = getFirebaseMessaging();
     if (!messaging) {
@@ -60,11 +72,8 @@ async function sendPushNotification(token, payload) {
                 title: payload.title,
                 body: payload.body,
             },
-            data: payload.data || {},
+            data: sanitizeData(payload.data),
         };
-        if (payload.imageUrl) {
-            message.notification = { ...message.notification, imageUrl: payload.imageUrl };
-        }
         const response = await messaging.send(message);
         console.log('[FCM] Notificação enviada com sucesso:', response);
         return response;
@@ -92,11 +101,8 @@ async function sendPushNotificationToMultiple(tokens, payload) {
                 title: payload.title,
                 body: payload.body,
             },
-            data: payload.data || {},
+            data: sanitizeData(payload.data),
         };
-        if (payload.imageUrl) {
-            message.notification = { ...message.notification, imageUrl: payload.imageUrl };
-        }
         const response = await messaging.sendEachForMulticast(message);
         console.log(`[FCM] Notificação enviada para ${response.successCount} dispositivos, ${response.failureCount} falhas.`);
         const failedTokens = [];

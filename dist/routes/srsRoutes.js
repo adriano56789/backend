@@ -39,6 +39,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const models_1 = require("../models");
 const FfmpegService_1 = require("../services/FfmpegService");
+const streamKeyUtils_1 = require("../utils/streamKeyUtils");
+const streamEndService_1 = require("../services/streamEndService");
 const router = express_1.default.Router();
 const DEFAULT_AVATAR = 'https://ui-avatars.com/api/?name=User&background=7c3aed&color=fff&size=100';
 function resolveAvatar(user) {
@@ -95,8 +97,8 @@ router.post('/publish', async (req, res) => {
         console.log(`[SRS-PUBLISH] ➡️ Etapa 1/4: SRS confirmou que a stream foi publicada. Iniciando processamento...`);
         const realStreamKey = stream?.split('?')[0] || stream;
         // Ignorar streams internas de transcodificação logo no início
-        if (realStreamKey && realStreamKey.endsWith('_transcoded')) {
-            console.log(`[SRS-PUBLISH] ⏭️ Stream transcodificada ignorada: ${realStreamKey}`);
+        if ((0, streamKeyUtils_1.isTranscodeVariant)(realStreamKey)) {
+            console.log(`[SRS-PUBLISH] ⏭️ Stream transcodificada/variante ignorada: ${realStreamKey}`);
             return res.status(200).json({ code: 0 });
         }
         if (client_id && isDuplicate(client_id, 'on_publish')) {
@@ -288,77 +290,46 @@ router.post('/publish', async (req, res) => {
     }
 });
 // POST /api/srs/unpublish — on_unpublish
+// Auto-encerramento: se o host desconectar (saiu da tela, trocou de app, fechou),
+// a transmissão deve ser encerrada. Usamos um grace period curto para não derrubar
+// a live em blips rápidos de rede onde o WHIP reconecta (on_publish limpa o timer).
 router.post('/unpublish', async (req, res) => {
     try {
-        const { server_id, action, client_id, ip, vhost, app, tcUrl, stream, param, stream_url, stream_id } = req.body;
-        console.log(`[SRS-UNPUBLISH] 🔴 Webhook on_unpublish recebido! stream=${stream}, client=${client_id}`);
-        console.log(`[SRS-UNPUBLISH] ➡️ Etapa 1/2: Stream ${stream} encerrada. Iniciando cleanup...`);
+        const { client_id, stream } = req.body;
         const realStreamKey = stream?.split('?')[0] || stream;
+        console.log(`[SRS-UNPUBLISH] 🔴 Webhook on_unpublish recebido! stream=${stream}, client=${client_id}`);
         // Ignorar streams internas de transcodificação
-        if (realStreamKey && realStreamKey.endsWith('_transcoded')) {
-            console.log(`[SRS-UNPUBLISH] ⏭️ Stream transcodificada ignorada: ${realStreamKey}`);
+        if ((0, streamKeyUtils_1.isTranscodeVariant)(realStreamKey)) {
+            console.log(`[SRS-UNPUBLISH] ⏭️ Stream transcodificada/variante ignorada: ${realStreamKey}`);
             return res.status(200).json({ code: 0 });
         }
         if (client_id && isDuplicate(client_id, 'on_unpublish')) {
             console.log(`[SRS-UNPUBLISH] ⏭️ Callback duplicado ignorado`);
             return res.status(200).json({ code: 0 });
         }
-        // Normalizar: remover prefixo 'stream_' para compatibilidade
-        const normalizedId = realStreamKey?.startsWith('stream_') ? realStreamKey.replace('stream_', '') : realStreamKey;
-        const storedId = normalizedId || realStreamKey;
-        if (realStreamKey && reconnectionTimers.has(realStreamKey)) {
-            console.log(`[SRS-UNPUBLISH] ⏭️ Reconexão em andamento, ignorando unpublish`);
-            return res.status(200).json({ code: 0 });
-        }
-        // Atualizar status da stream para offline
-        const updated = await models_1.Streamer.findOneAndUpdate({ id: storedId, isLive: true }, { $set: {
-                isLive: false,
-                streamStatus: 'ended',
-                endTime: new Date(),
-                srsUnpublishData: {
-                    server_id, action, client_id, ip, vhost, app,
-                    tcUrl, stream, param, stream_url, stream_id
-                }
-            } });
-        if (updated) {
-            await models_1.User.findOneAndUpdate({ id: updated.hostId }, { $set: { isLive: false, isOnline: false, currentStreamId: null } });
-            // Atualizar LiveCard para ended
-            try {
-                const { LiveCard } = await Promise.resolve().then(() => __importStar(require('../models/index')));
-                await LiveCard.findOneAndUpdate({ hostId: updated.hostId }, { $set: {
-                        isLive: false,
-                        streamStatus: 'ended',
-                        endTime: new Date(),
-                        updatedAt: new Date()
-                    } });
-            }
-            catch (cardErr) {
-                console.warn('[SRS-UNPUBLISH] Erro ao atualizar LiveCard:', cardErr);
-            }
-            const io = req.app.get('io');
-            if (io) {
-                io.emit('card_removed', {
-                    streamId: storedId,
-                    hostId: updated?.hostId || '',
-                    timestamp: new Date().toISOString()
-                });
-                io.emit('stream_ended', {
-                    streamId: storedId,
-                    hostId: updated?.hostId || '',
-                    timestamp: new Date().toISOString()
-                });
-                io.emit('stream_stopped', {
-                    streamId: storedId,
-                    hostId: updated?.hostId || '',
-                    timestamp: new Date().toISOString()
-                });
-            }
-        }
-        // Parar FFmpeg transcoding
+        // Parar FFmpeg transcoding (se a stream reconectar, o on_publish reinicia)
         if (realStreamKey) {
-            console.log(`[SRS-UNPUBLISH] ➡️ Etapa 2/2: Parando FFmpeg transcoding para ${realStreamKey}...`);
-            const result = await (0, FfmpegService_1.stopStreamTranscode)(realStreamKey);
-            console.log(`[SRS-UNPUBLISH] ✅ FFmpeg transcoding parado para ${realStreamKey}. Fonte: ${result.source}`);
+            try {
+                const result = await (0, FfmpegService_1.stopStreamTranscode)(realStreamKey);
+                console.log(`[SRS-UNPUBLISH] ✅ FFmpeg transcoding parado para ${realStreamKey}. Fonte: ${result.source}`);
+            }
+            catch (ffErr) {
+                console.warn(`[SRS-UNPUBLISH] ⚠️ FFmpeg transcoding já parado para ${realStreamKey}:`, ffErr.message);
+            }
+        }
+        // Agendar auto-encerramento se o host não reconectar dentro da janela
+        if (realStreamKey) {
+            const existing = reconnectionTimers.get(realStreamKey);
+            if (existing)
+                clearTimeout(existing);
+            const io = req.app.get('io');
+            console.log(`[SRS-UNPUBLISH] ⏳ Host desconectou — encerra em ${RECONNECT_WINDOW_MS / 1000}s se não reconectar (stream=${realStreamKey})`);
+            const timer = setTimeout(() => {
+                reconnectionTimers.delete(realStreamKey);
+                console.log(`[SRS-UNPUBLISH] ⏰ Host não reconectou em ${RECONNECT_WINDOW_MS / 1000}s — encerrando live ${realStreamKey}`);
+                (0, streamEndService_1.autoEndStreamOnDisconnect)(realStreamKey, io);
+            }, RECONNECT_WINDOW_MS);
+            reconnectionTimers.set(realStreamKey, timer);
         }
         res.status(200).json({ code: 0 });
     }
@@ -372,7 +343,7 @@ router.post('/play', async (req, res) => {
     try {
         const { server_id, action, client_id, ip, vhost, app, stream, param, pageUrl, stream_url, stream_id } = req.body;
         const playStreamKey = stream?.split('?')[0] || stream;
-        if (playStreamKey && playStreamKey.endsWith('_transcoded')) {
+        if ((0, streamKeyUtils_1.isTranscodeVariant)(playStreamKey)) {
             return res.status(200).json({ code: 0 });
         }
         console.log(`[SRS-PLAY] stream=${stream} client=${client_id} server=${server_id} action=${action} ip=${ip} vhost=${vhost} app=${app} pageUrl=${pageUrl} stream_url=${stream_url} stream_id=${stream_id}`);
@@ -388,7 +359,7 @@ router.post('/stop', async (req, res) => {
     try {
         const { server_id, action, client_id, ip, vhost, app, stream, param, stream_url, stream_id } = req.body;
         const stopStreamKey = stream?.split('?')[0] || stream;
-        if (stopStreamKey && stopStreamKey.endsWith('_transcoded')) {
+        if ((0, streamKeyUtils_1.isTranscodeVariant)(stopStreamKey)) {
             return res.status(200).json({ code: 0 });
         }
         console.log(`[SRS-STOP] stream=${stream} client=${client_id} server=${server_id} action=${action} ip=${ip} vhost=${vhost} app=${app} param=${param} stream_url=${stream_url} stream_id=${stream_id}`);
@@ -404,7 +375,7 @@ router.post('/hls', async (req, res) => {
     try {
         const { server_id, action, client_id, ip, vhost, app, stream, param, duration, cwd, file, url, m3u8, m3u8_url, seq_no, stream_url, stream_id } = req.body;
         const hlsStreamKey = stream?.split('?')[0] || stream;
-        if (hlsStreamKey && hlsStreamKey.endsWith('_transcoded')) {
+        if ((0, streamKeyUtils_1.isTranscodeVariant)(hlsStreamKey)) {
             return res.status(200).json({ code: 0 });
         }
         console.log(`[SRS-HLS] stream=${stream} seq=${seq_no} server=${server_id} action=${action} client=${client_id} ip=${ip} vhost=${vhost} app=${app} param=${param} duration=${duration} cwd=${cwd} file=${file} url=${url} m3u8=${m3u8} m3u8_url=${m3u8_url} stream_url=${stream_url} stream_id=${stream_id}`);

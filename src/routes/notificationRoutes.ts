@@ -66,7 +66,7 @@ router.post('/notifications/send', async (req, res) => {
       return res.status(401).json({ error: 'Não autorizado' });
     }
 
-    const { userId, title, body, data, imageUrl } = req.body;
+    const { userId, title, body, data } = req.body;
     if (!userId || !title || !body) {
       return res.status(400).json({ error: 'userId, title e body são obrigatórios' });
     }
@@ -77,7 +77,7 @@ router.post('/notifications/send', async (req, res) => {
     }
 
     const tokenList = tokens.map(t => t.token);
-    const failed = await sendPushNotificationToMultiple(tokenList, { title, body, data, imageUrl });
+    const failed = await sendPushNotificationToMultiple(tokenList, { title, body, data });
 
     if (failed.length > 0) {
       const failedTokens = failed.map(f => f.token);
@@ -98,7 +98,7 @@ router.post('/notifications/send-to-all', async (req, res) => {
       return res.status(401).json({ error: 'Não autorizado' });
     }
 
-    const { title, body, data, imageUrl } = req.body;
+    const { title, body, data } = req.body;
     if (!title || !body) {
       return res.status(400).json({ error: 'title e body são obrigatórios' });
     }
@@ -110,7 +110,7 @@ router.post('/notifications/send-to-all', async (req, res) => {
       return res.json({ success: true, sent: 0 });
     }
 
-    const failed = await sendPushNotificationToMultiple(tokenList, { title, body, data, imageUrl });
+    const failed = await sendPushNotificationToMultiple(tokenList, { title, body, data });
 
     if (failed.length > 0) {
       const failedTokens = failed.map(f => f.token);

@@ -88,7 +88,6 @@ validateEnv();
 
 // ─── Orphan Process Killer (FFmpeg) ─────────────────────────────────
 import { killAllFfmpegProcesses } from './services/FfmpegService';
-import { streamCleanupService } from './services/StreamCleanupService';
 // ────────────────────────────────────────────────────────────────────
 
 const app = express();
@@ -182,7 +181,6 @@ connectDB().then(async () => {
     server.listen(port, '0.0.0.0', () => {
         console.log(`🌍 API Server started on http://127.0.0.1:${port}`);
         initFirebase();
-        streamCleanupService.start(io);
     });
 }).catch(error => {
     console.error('❌ [DB] Falha na conexão com MongoDB:', error.message);

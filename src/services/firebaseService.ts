@@ -2,6 +2,28 @@ import { initializeApp, cert, getApp, App } from 'firebase-admin/app';
 import { getMessaging, Messaging, Message, MulticastMessage } from 'firebase-admin/messaging';
 import { ENV } from '../config/env';
 
+// ═══════════════════════════════════════════════════════════════════════
+// REGRA DE OURO: Firebase/FCM serve EXCLUSIVAMENTE para enviar notificação
+// PUSH na tela do usuário (title + body). NUNCA deve carregar/buscar imagem,
+// avatar ou ícone — nem no notification (imageUrl/icon) nem nos dados (data).
+// Qualquer campo que pareça imagem/avatar/ícone é REMOVIDO do payload antes
+// do envio, garantindo que o push NUNCA dispare um fetch de imagem.
+// ═══════════════════════════════════════════════════════════════════════
+const IMAGE_LIKE_FIELD = /(avatar|image|icon|photo|picture|cover|thumb)/i;
+
+function sanitizeData(data?: Record<string, string>): Record<string, string> {
+  if (!data) return {};
+  const clean: Record<string, string> = {};
+  for (const [key, value] of Object.entries(data)) {
+    // Remove chaves de imagem/avatar/ícone (nunca trafegam no push)
+    if (IMAGE_LIKE_FIELD.test(key)) continue;
+    // Remove valores que são URLs de imagem (defesa extra)
+    if (typeof value === 'string' && /^(https?:)?\/\/.*\.(png|jpe?g|gif|webp|svg|ico|avif)([?#]|$)/i.test(value)) continue;
+    clean[key] = value;
+  }
+  return clean;
+}
+
 let firebaseApp: App | null = null;
 let firebaseMessaging: Messaging | null = null;
 
@@ -46,7 +68,7 @@ export function getFirebaseMessaging() {
 
 export async function sendPushNotification(
   token: string,
-  payload: { title: string; body: string; data?: Record<string, string>; imageUrl?: string }
+  payload: { title: string; body: string; data?: Record<string, string> }
 ) {
   const messaging = getFirebaseMessaging();
   if (!messaging) {
@@ -55,18 +77,15 @@ export async function sendPushNotification(
   }
 
   try {
+    // 🚫 SEM imageUrl/icon: o push é SÓ título + corpo. Nenhuma imagem é baixada.
     const message: Message = {
       token,
       notification: {
         title: payload.title,
         body: payload.body,
       },
-      data: payload.data || {},
+      data: sanitizeData(payload.data),
     };
-
-    if (payload.imageUrl) {
-      message.notification = { ...message.notification, imageUrl: payload.imageUrl };
-    }
 
     const response = await messaging.send(message);
     console.log('[FCM] Notificação enviada com sucesso:', response);
@@ -83,7 +102,7 @@ export async function sendPushNotification(
 
 export async function sendPushNotificationToMultiple(
   tokens: string[],
-  payload: { title: string; body: string; data?: Record<string, string>; imageUrl?: string }
+  payload: { title: string; body: string; data?: Record<string, string> }
 ) {
   const messaging = getFirebaseMessaging();
   if (!messaging) {
@@ -92,18 +111,15 @@ export async function sendPushNotificationToMultiple(
   }
 
   try {
+    // 🚫 SEM imageUrl/icon: o push é SÓ título + corpo. Nenhuma imagem é baixada.
     const message: MulticastMessage = {
       tokens,
       notification: {
         title: payload.title,
         body: payload.body,
       },
-      data: payload.data || {},
+      data: sanitizeData(payload.data),
     };
-
-    if (payload.imageUrl) {
-      message.notification = { ...message.notification, imageUrl: payload.imageUrl };
-    }
 
     const response = await messaging.sendEachForMulticast(message);
     console.log(`[FCM] Notificação enviada para ${response.successCount} dispositivos, ${response.failureCount} falhas.`);

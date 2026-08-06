@@ -267,7 +267,6 @@ else {
     server.listen(port, '0.0.0.0', () => {
         console.log(`🌍 API Server started on http://127.0.0.1:${port}`);
         (0, firebaseService_1.initFirebase)();
-        StreamCleanupService_1.streamCleanupService.start(io);
     });
 }).catch(error => {
     console.error('❌ [DB] Falha na conexão com MongoDB:', error.message);

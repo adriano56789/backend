@@ -7,5 +7,6 @@ node_modules/
 deploy-ssh.js
 deploy-vps.js
 srs-check.cjs
+inspect-audio.cjs
 
 nul

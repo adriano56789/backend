@@ -38,6 +38,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const models_1 = require("../models");
+const streamKeyUtils_1 = require("../utils/streamKeyUtils");
+const streamEndService_1 = require("../services/streamEndService");
 // @ts-ignore - local mercadopago SDK
 const { WebhookSignatureValidator } = require('mercadopago');
 const router = express_1.default.Router();
@@ -64,8 +66,8 @@ router.post('/', async (req, res) => {
         // ─── on_publish / stream started ───────────────────────────────────
         if (action === 'on_publish' || action === 'publish' || event.includes('stream started') || event.includes('on publish')) {
             // Ignorar streams internas de transcodificação
-            if (streamKey && streamKey.endsWith('_transcoded')) {
-                console.log(`[WEBHOOK-SRS] ⏭️ Stream transcodificada ignorada: ${streamKey}`);
+            if ((0, streamKeyUtils_1.isTranscodeVariant)(streamKey)) {
+                console.log(`[WEBHOOK-SRS] ⏭️ Stream transcodificada/variante ignorada: ${streamKey}`);
                 return res.status(200).json({ code: 0 });
             }
             if (client_id && isDuplicate(client_id, 'on_publish')) {
@@ -173,22 +175,31 @@ router.post('/', async (req, res) => {
             console.log(`[WEBHOOK-SRS] Stream iniciada: ${streamKey} user=${foundUserId}`);
             return res.status(200).json({ code: 0 });
         }
-        // ─── on_unpublish (REMOVED AUTO-END) ────────────────────────────────
-        // ⚠️ REMOVIDO: Não finalizar a stream quando o SRS reporta unpublish.
-        // A WebRTC/WHIP pode cair por vários motivos (background, rede, etc.)
-        // mas isso NÃO significa que a live acabou. O broadcaster pode reconectar.
-        // A stream SÓ deve ser encerrada pelo dono ao clicar "Encerrar Transmissão".
-        // Se a stream reconectar, o on_publish acima já atualiza os dados.
+        // ─── on_unpublish (auto-end com grace period) ────────────────────────
+        // Se o host desconectar (saiu da tela, trocou de app, fechou), a live
+        // deve ser encerrada. Usamos uma janela curta de reconexão para não
+        // derrubar a live em blips rápidos de rede (on_publish limpa o timer).
         if (action === 'on_unpublish' || action === 'unpublish' || event.includes('stream ended') || event.includes('stream stopped') || event.includes('live stream ended') || event.includes('on unpublish')) {
-            if (streamKey && streamKey.endsWith('_transcoded')) {
-                console.log(`[WEBHOOK-SRS] ⏭️ Stream transcodificada ignorada: ${streamKey}`);
+            if ((0, streamKeyUtils_1.isTranscodeVariant)(streamKey)) {
+                console.log(`[WEBHOOK-SRS] ⏭️ Stream transcodificada/variante ignorada: ${streamKey}`);
                 return res.status(200).json({ code: 0 });
             }
             if (client_id && isDuplicate(client_id, 'on_unpublish')) {
                 return res.status(200).json({ code: 0 });
             }
-            // Apenas logar o evento — não finalizar a stream
-            console.log(`[WEBHOOK-SRS] ⚡ WHIP desconectou (on_unpublish) para stream=${streamKey} — live mantida ativa, aguardando reconexão`);
+            if (streamKey) {
+                const existing = reconnectionTimers.get(streamKey);
+                if (existing)
+                    clearTimeout(existing);
+                const io = req.app.get('io');
+                console.log(`[WEBHOOK-SRS] ⏳ Host desconectou — encerra em ${RECONNECT_WINDOW_MS / 1000}s se não reconectar (stream=${streamKey})`);
+                const timer = setTimeout(() => {
+                    reconnectionTimers.delete(streamKey);
+                    console.log(`[WEBHOOK-SRS] ⏰ Host não reconectou — encerrando live ${streamKey}`);
+                    (0, streamEndService_1.autoEndStreamOnDisconnect)(streamKey, io);
+                }, RECONNECT_WINDOW_MS);
+                reconnectionTimers.set(streamKey, timer);
+            }
             return res.status(200).json({ code: 0 });
         }
         // ─── on_play / viewer joined ──────────────────────────────────────

@@ -17,13 +17,11 @@ class StreamCleanupService {
         this.io = null;
     }
     start(io) {
-        if (this.intervalId)
-            return;
+        // 🛑 DESATIVADO (decisão do dono): nenhuma lógica pode encerrar uma
+        // transmissão ao vivo automaticamente. A live SÓ é encerrada pelo host.
         if (io)
             this.io = io;
-        console.log(`[STREAM-CLEANUP] Iniciando serviço de limpeza a cada ${CLEANUP_INTERVAL_MS}ms`);
-        this.intervalId = setInterval(() => this.cleanup(), CLEANUP_INTERVAL_MS);
-        this.cleanup();
+        console.warn('[STREAM-CLEANUP] 🛑 Serviço de limpeza DESATIVADO — lives só encerram pelo próprio host. Nada será fechado automaticamente.');
     }
     stop() {
         if (this.intervalId) {

@@ -57,6 +57,7 @@ const walletRoutes_1 = __importDefault(require("./routes/walletRoutes"));
 const checkoutRoutes_1 = __importDefault(require("./routes/checkoutRoutes"));
 const adminRoutes_1 = __importDefault(require("./routes/adminRoutes"));
 const metadataRoutes_1 = __importDefault(require("./routes/metadataRoutes"));
+const giftRoutes_1 = __importDefault(require("./routes/giftRoutes"));
 const settingsRoutes_1 = __importDefault(require("./routes/settingsRoutes"));
 const liveRoutes_1 = __importDefault(require("./routes/liveRoutes"));
 const visitorRoutes_1 = __importDefault(require("./routes/visitorRoutes"));
@@ -116,7 +117,6 @@ const blockBase64_1 = require("./middleware/blockBase64");
 (0, validateEnv_1.validateEnv)();
 // ─── Orphan Process Killer (FFmpeg) ─────────────────────────────────
 const FfmpegService_1 = require("./services/FfmpegService");
-const StreamCleanupService_1 = require("./services/StreamCleanupService");
 // ────────────────────────────────────────────────────────────────────
 const app = (0, express_1.default)();
 app.set('trust proxy', 1);
@@ -200,7 +200,6 @@ global.io = io;
     server.listen(port, '0.0.0.0', () => {
         console.log(`🌍 API Server started on http://127.0.0.1:${port}`);
         (0, firebaseService_1.initFirebase)();
-        StreamCleanupService_1.streamCleanupService.start(io);
     });
 }).catch(error => {
     console.error('❌ [DB] Falha na conexão com MongoDB:', error.message);
@@ -403,6 +402,7 @@ app.use('/api', turnRoutes_1.default); // NOVO - Credenciais TURN
 app.use('/api', stunRoutes_1.default); // STUN servers
 app.use('/api/srs', srsRoutes_1.default); // Callbacks do SRS PRIMEIRO (evita conflito com routes genéricos)
 app.use('/api', metadataRoutes_1.default); // handles /api/ranking, /api/gifts, /api/regions, /api/history
+app.use('/api/gifts', giftRoutes_1.default); // giftRoutes - galeria de presentes por live
 app.use('/api', liveRoutes_1.default); // handles /api/live, /api/streams, /api/rtc, /api/lives, /api/permissions
 app.use('/api', likesRoutes_1.default); // handles stream likes
 app.use('/api', settingsRoutes_1.default); // handles /api/settings, /api/notifications/settings

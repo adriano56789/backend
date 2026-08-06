@@ -45,8 +45,13 @@ const index_1 = require("../models/index");
 const auth_1 = require("../middleware/auth");
 const responseHelper_1 = require("../middleware/responseHelper");
 const env_1 = require("../config/env");
+const streamKeyUtils_1 = require("../utils/streamKeyUtils");
+const streamEndService_1 = require("../services/streamEndService");
 const srsStreamMapper_1 = require("../mappers/srsStreamMapper");
 const DEFAULT_AVATAR = 'https://ui-avatars.com/api/?name=User&background=7c3aed&color=fff&size=100';
+// Auto-encerramento: janela de reconexão (ms) após on_unpublish antes de encerrar a live
+const SRS_HOOK_RECONNECT_MS = 15000;
+const srsHookReconnectTimers = new Map();
 function resolveAvatar(user) {
     if (!user)
         return DEFAULT_AVATAR;
@@ -56,6 +61,20 @@ function resolveAvatar(user) {
         return `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=7c3aed&color=fff&size=100`;
     }
     return DEFAULT_AVATAR;
+}
+// 🧹 Chat morre junto com a transmissão: apaga TODAS as mensagens da stream.
+// Chamado em todas as rotas de encerramento para que a próxima live
+// comece com o chat 100% vazio (nenhuma mensagem da transmissão anterior permanece).
+async function clearLiveChat(streamId) {
+    if (!streamId)
+        return;
+    try {
+        const result = await index_1.LiveMessage.deleteMany({ streamId: String(streamId) });
+        console.log(`[CHAT-CLEAR] 🧹 Chat apagado da stream ${streamId}: ${result?.deletedCount ?? 0} mensagens`);
+    }
+    catch (err) {
+        console.warn('[CHAT-CLEAR] ⚠️ Erro ao apagar chat da stream:', streamId, err?.message || err);
+    }
 }
 const responseHelpers_1 = require("../utils/responseHelpers");
 const idHelper_1 = require("../utils/idHelper");
@@ -725,7 +744,18 @@ router.post('/srs/hook', async (req, res) => {
         }
         const streamKey = String(stream);
         const hostId = streamKey.replace(/^stream_/, '');
+        // Ignorar variantes de transcode (_t240/_t360/_transcoded) — não criam live
+        if ((0, streamKeyUtils_1.isTranscodeVariant)(streamKey)) {
+            console.log('[SRS-HOOK] ⏭️ Stream transcodificada/variante ignorada: ' + streamKey);
+            return res.json({ code: 0 });
+        }
         if (action === 'on_publish') {
+            if (srsHookReconnectTimers.has(streamKey)) {
+                const t = srsHookReconnectTimers.get(streamKey);
+                clearTimeout(t);
+                srsHookReconnectTimers.delete(streamKey);
+                console.log('[SRS-HOOK] Reconexão detectada — auto-end cancelado para ' + streamKey);
+            }
             let userName = hostId, userAvatar = '';
             try {
                 const u = await index_1.User.findOne({ id: hostId }).lean();
@@ -746,10 +776,18 @@ router.post('/srs/hook', async (req, res) => {
             console.log('[SRS-HOOK] on_publish: ' + streamKey + ' -> isLive=true');
         }
         if (action === 'on_unpublish') {
-            // ⚠️ REMOVIDO: Não finalizar stream no on_unpublish.
-            // O WebRTC/WHIP pode cair por background/rede, mas a live continua ativa.
-            // A stream SÓ deve encerrar pelo usuário clicar "Encerrar Transmissão".
-            console.log('[SRS-HOOK] on_unpublish: ' + streamKey + ' -> WHIP caiu, mas live mantida ativa');
+            // Auto-encerramento com grace period: se o host não reconectar
+            // dentro da janela, a live é encerrada (host saiu da tela / outro app).
+            const io = req.app.get('io');
+            const existing = srsHookReconnectTimers.get(streamKey);
+            if (existing)
+                clearTimeout(existing);
+            console.log('[SRS-HOOK] on_unpublish: ' + streamKey + ' -> encerra em ' + (SRS_HOOK_RECONNECT_MS / 1000) + 's se não reconectar');
+            const timer = setTimeout(() => {
+                srsHookReconnectTimers.delete(streamKey);
+                (0, streamEndService_1.autoEndStreamOnDisconnect)(streamKey, io);
+            }, SRS_HOOK_RECONNECT_MS);
+            srsHookReconnectTimers.set(streamKey, timer);
         }
         return res.json({ code: 0 });
     }
@@ -1656,6 +1694,8 @@ router.post('/streams/:id/end', async (req, res) => {
         stream.endedAt = new Date();
         stream.endedBy = userId;
         await stream.save();
+        // 🧹 Chat morre com a transmissão
+        await clearLiveChat(stream.id || id);
         // Atualizar usuário
         await index_1.User.findOneAndUpdate({ id: userId }, { $set: {
                 isLive: false,
@@ -1765,7 +1805,7 @@ router.get('/streams', async (req, res) => {
                     const streamKey = srs.name;
                     if (!streamKey)
                         continue;
-                    if (streamKey.endsWith('_transcoded'))
+                    if ((0, streamKeyUtils_1.isTranscodeVariant)(streamKey))
                         continue;
                     const hostId = streamKey.replace('stream_', '');
                     const roomId = srs.id || streamKey;
@@ -1799,7 +1839,7 @@ router.get('/streams', async (req, res) => {
         }
         // Construir filtro base: apenas streams ativas
         const baseFilter = {
-            streamKey: { $not: /_transcoded$/ }
+            streamKey: { $not: streamKeyUtils_1.TRANSCODE_VARIANT_REGEX }
         };
         if (isLive === 'true') {
             baseFilter.isLive = true;
@@ -2359,6 +2399,8 @@ router.post('/live/:streamId/end', async (req, res) => {
         if (!stream) {
             return responseHelper_1.ResponseHelper.error(res, 'Live não encontrada ou sem permissão', 404);
         }
+        // 🧹 Chat morre com a transmissão
+        await clearLiveChat(streamId || stream?.id);
         await index_1.User.findOneAndUpdate({ id: userId }, { $set: { isLive: false, isOnline: false, currentStreamId: null } });
         console.log(`🛑 [SRS] Live finalizada: streamId=${streamId}, userId=${userId}`);
         const io = req.app.get('io');
@@ -2561,6 +2603,8 @@ router.post('/live/end', async (req, res) => {
         catch (cardErr) {
             console.warn('[LIVE-END] ⚠️ Erro ao atualizar LiveCard:', cardErr.message);
         }
+        // ── Etapa 6: 🧹 Chat morre com a transmissão — apaga TODAS as mensagens ──
+        await clearLiveChat(streamId);
         console.log('[LIVE-END] ✅ Live encerrada:', streamId, 'para usuário', userId);
         res.json({
             success: true,
@@ -2700,7 +2744,7 @@ router.get('/streams/live', async (req, res) => {
             streamStatus: 'active',
             name: { $exists: true, $nin: ['', null] },
             hostId: { $exists: true, $nin: ['', null] },
-            streamKey: { $not: /_transcoded$/ }
+            streamKey: { $not: streamKeyUtils_1.TRANSCODE_VARIANT_REGEX }
         })
             .populate('hostId', 'id name avatarUrl level country isOnline');
         // Enriquecer streams com dados dos hosts usando mapper especializado
@@ -3349,6 +3393,8 @@ router.post('/streams/:id/end-session', async (req, res) => {
             });
             console.log(`���� Notifica+�+�o WebSocket enviada: stream ${streamId} encerrada`);
         }
+        // 🧹 Chat morre com a transmissão
+        await clearLiveChat(streamId);
         console.log(`ԣ� Live ${streamId} encerrada e hist+�rico salvo com sucesso`);
         // 🔧 Retornar dados reais do resumo para o frontend usar no EndStreamSummaryScreen
         const summary = {
@@ -3463,6 +3509,40 @@ router.post('/streams/:id/gift', async (req, res) => {
         if (sender.diamonds < totalValue) {
             return res.status(400).json({ error: 'Insufficient diamonds' });
         }
+        const io = req.app.get('io');
+        // Emitir o presente IMEDIATAMENTE após a validação, antes das escritas no DB,
+        // para que todos os participantes (incluindo o remetente) vejam a animação sem atraso.
+        if (io) {
+            const giftEventId = `gift_tx_${Date.now()}_${fromUserId}`;
+            const giftEventData = {
+                id: giftEventId,
+                from: {
+                    id: sender.id || fromUserId,
+                    name: sender.name || 'Unknown',
+                    avatarUrl: sender.avatarUrl || '',
+                    level: sender.level || 1
+                },
+                toUser: {
+                    id: stream.hostId,
+                    name: stream.name || 'Unknown'
+                },
+                gift: {
+                    name: giftName,
+                    price: price,
+                    icon: gift.icon || '🎁',
+                    category: gift.category || 'Popular'
+                },
+                quantity: amount || 1,
+                totalValue,
+                roomId: req.params.id,
+                streamId: req.params.id,
+                timestamp: new Date().toISOString()
+            };
+            io.to(req.params.id).emit('live_gift_received', giftEventData);
+            io.to(req.params.id).emit('gift_received', giftEventData);
+            io.to(`user_${stream.hostId}`).emit('gift_received', giftEventData);
+            console.log(`🎁 [WEBSOCKET] live_gift_received emitido para sala ${req.params.id}: ${giftName} x${amount || 1}`);
+        }
         let updatedSender;
         let updatedReceiver;
         if (fromUserId === stream.hostId) {
@@ -3484,7 +3564,6 @@ router.post('/streams/:id/gift', async (req, res) => {
             console.log(`���� [LIVE GIFT] ${updatedReceiver.name} - Receptores: ${updatedReceiver.receptores}, Earnings: ${updatedReceiver.earnings}`);
         }
         // Enviar WebSocket em tempo real com valor real
-        const io = req.app.get('io');
         if (io && updatedReceiver) {
             // Notificar o RECEPTOR: atualiza earnings e receptores em tempo real
             io.emit('earnings_updated', {
@@ -3528,36 +3607,6 @@ router.post('/streams/:id/gift', async (req, res) => {
                 giftName: giftName
             });
             console.log(`���� [WEBSOCKET] live_coins_updated emitido para a sala ${req.params.id} com totalCoins: ${updatedReceiver.receptores}`);
-        }
-        // Emitir evento de presente recebido para todos na sala da live
-        if (io) {
-            const giftEventData = {
-                from: {
-                    id: updatedSender?.id || fromUserId,
-                    name: updatedSender?.name || 'Unknown',
-                    avatarUrl: updatedSender?.avatarUrl || '',
-                    level: updatedSender?.level || 1
-                },
-                toUser: {
-                    id: stream.hostId,
-                    name: updatedReceiver?.name || 'Unknown'
-                },
-                gift: {
-                    name: giftName,
-                    price: price,
-                    icon: gift.icon || '🎁',
-                    category: gift.category || 'Popular'
-                },
-                quantity: amount || 1,
-                totalValue,
-                roomId: req.params.id,
-                streamId: req.params.id,
-                timestamp: new Date().toISOString()
-            };
-            io.to(req.params.id).emit('live_gift_received', giftEventData);
-            io.to(req.params.id).emit('gift_received', giftEventData);
-            io.to(`user_${stream.hostId}`).emit('gift_received', giftEventData);
-            console.log(`🎁 [WEBSOCKET] live_gift_received emitido para sala ${req.params.id}: ${giftName} x${amount || 1}`);
         }
         // Register gift transaction
         await index_1.GiftTransaction.create([{
@@ -3796,6 +3845,8 @@ router.post('/lives/:id/end', async (req, res) => {
                 timestamp: new Date().toISOString()
             });
         }
+        // 🧹 Chat morre com a transmissão
+        await clearLiveChat(realId);
         return (0, responseHelpers_1.successResponse)(res, 'Stream encerrada com sucesso');
     }
     catch (error) {
@@ -4079,6 +4130,8 @@ router.post('/streams/:streamId/end', async (req, res) => {
                 timestamp: new Date().toISOString()
             });
         }
+        // 🧹 Chat morre com a transmissão
+        await clearLiveChat(streamId);
         res.json({
             success: true,
             message: 'Stream encerrada com sucesso',
@@ -4137,6 +4190,10 @@ router.post('/streams/end-all', async (req, res) => {
                 lastSeen: new Date()
             } });
         console.log(`[STREAM-END-ALL] ${activeStreams.length} streams encerradas para usuário: ${userId}`);
+        // 🧹 Chat morre com a transmissão (todas as streams)
+        for (const s of activeStreams) {
+            await clearLiveChat(s.id);
+        }
         const io = req.app.get('io');
         if (io) {
             for (const s of activeStreams) {
@@ -4315,6 +4372,8 @@ router.post('/admin/streams/:streamId/force-end', async (req, res) => {
                 timestamp: new Date().toISOString()
             });
         }
+        // 🧹 Chat morre com a transmissão
+        await clearLiveChat(streamId || stream?.id);
         res.json({
             success: true,
             message: 'Stream encerrada for+adamente com sucesso',
@@ -4778,6 +4837,8 @@ router.post('/stark/live/end', async (req, res) => {
         catch (ioErr) {
             console.warn('[STARK-END] Erro ao emitir eventos socket:', ioErr);
         }
+        // 🧹 Chat morre com a transmissão
+        await clearLiveChat(streamId);
         // Atualizar LiveCard para ended
         try {
             await index_1.LiveCard.findOneAndUpdate({ hostId: tokenUserId }, { $set: {

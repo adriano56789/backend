@@ -95,7 +95,7 @@ export function startBattleMixer(
     '[0:v]scale=480:860,setpts=PTS-STARTPTS[v0];' +
     '[1:v]scale=480:860,setpts=PTS-STARTPTS[v1];' +
     '[v0][v1]hstack=inputs=2[v_mixed];' +
-    '[0:a][1:a]amix=inputs=2:duration=longest[a_mixed]',
+    '[0:a][1:a]amix=inputs=2:duration=longest,aresample=async=1:first_pts=0[a_mixed]',
     '-map', '[v_mixed]',
     '-map', '[a_mixed]',
     '-c:v', 'libx264',
@@ -193,7 +193,8 @@ export async function startStreamTranscode(
   const fps = options?.fps || 30;
 
   const args = [
-    '-fflags', 'nobuffer',
+    '-fflags', 'nobuffer+genpts',
+    '-use_wallclock_as_timestamps', '1',
     '-i', inputUrl,
     '-c:v', 'libx264',
     '-preset', 'veryfast',
@@ -204,9 +205,11 @@ export async function startStreamTranscode(
     '-bufsize', `${vbr * 2}k`,
     '-r', String(fps),
     '-g', String(fps * 2),
+    '-af', 'aresample=async=1:first_pts=0',
     '-c:a', 'aac',
     '-b:a', `${abr}k`,
-    '-ar', '44100',
+    '-ar', '48000',
+    '-ac', '2',
     '-f', 'flv',
     outputUrl,
   ];
