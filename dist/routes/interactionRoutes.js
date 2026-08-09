@@ -43,6 +43,7 @@ const activityHelpers_1 = require("../utils/activityHelpers");
 const appOwnerProtection_1 = require("../middleware/appOwnerProtection");
 const auth_1 = require("../middleware/auth");
 const BeautyEffect_1 = require("../models/BeautyEffect");
+const socket_1 = require("../socket");
 const router = express_1.default.Router();
 // Listar presentes enviados em uma live específica
 router.get('/presents/live/:id', async (req, res) => {
@@ -350,7 +351,7 @@ router.post('/friends/invite', async (req, res) => {
             })
         ]);
         // Notificar via WebSocket
-        const io = require('../server').getIO();
+        const io = (0, socket_1.getIO)();
         if (io) {
             io.to(`user_${toUserId}`).emit('friend_invite_received', {
                 inviteId: invite.id,
@@ -429,7 +430,7 @@ router.post('/streams/:id/interactions', async (req, res) => {
         });
         console.log(`✅ [INTERACTION] Resposta MongoDB recebida. Atividades persistidas. Total: ${updateResult?.recentActivities?.length}`);
         // Notificar via WebSocket
-        const io = require('../server').getIO();
+        const io = (0, socket_1.getIO)();
         if (io) {
             io.to(`stream_${streamId}`).emit('stream_interaction', {
                 ...interaction,
@@ -492,7 +493,7 @@ router.post('/invitations/send', async (req, res) => {
             })
         ]);
         // Notificar via WebSocket
-        const io = require('../server').getIO();
+        const io = (0, socket_1.getIO)();
         if (io) {
             io.to(`user_${toUserId}`).emit('invitation_received', {
                 ...invitation,

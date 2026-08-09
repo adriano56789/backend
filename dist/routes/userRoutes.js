@@ -44,6 +44,7 @@ const userResponse_1 = require("../utils/userResponse");
 const idHelper_1 = require("../utils/idHelper");
 const appOwnerProtection_1 = require("../middleware/appOwnerProtection");
 const db_1 = require("../config/db");
+const socket_1 = require("../socket");
 exports.UserRoutes = express_1.default.Router();
 exports.UserRoutes.get('/me', auth_1.protect, async (req, res) => {
     try {
@@ -1124,7 +1125,7 @@ exports.UserRoutes.get('/:id/avatar-protection', async (req, res) => {
 exports.UserRoutes.post('/:id/avatar-protection', async (req, res) => {
     const user = await models_1.User.findOneAndUpdate({ id: req.params.id }, { $set: { isAvatarProtected: req.body.isEnabled } }, { returnDocument: 'after' });
     // Enviar atualização em tempo real via WebSocket
-    const io = require('../server').getIO();
+    const io = (0, socket_1.getIO)();
     if (io) {
         io.emit('user_avatar_protection_updated', {
             userId: req.params.id,

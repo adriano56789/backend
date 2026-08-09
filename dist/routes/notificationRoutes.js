@@ -60,7 +60,7 @@ router.post('/notifications/send', async (req, res) => {
         if (!adminId) {
             return res.status(401).json({ error: 'Não autorizado' });
         }
-        const { userId, title, body, data, imageUrl } = req.body;
+        const { userId, title, body, data } = req.body;
         if (!userId || !title || !body) {
             return res.status(400).json({ error: 'userId, title e body são obrigatórios' });
         }
@@ -69,7 +69,7 @@ router.post('/notifications/send', async (req, res) => {
             return res.json({ success: true, sent: 0, message: 'Usuário não possui dispositivos registrados' });
         }
         const tokenList = tokens.map(t => t.token);
-        const failed = await (0, firebaseService_1.sendPushNotificationToMultiple)(tokenList, { title, body, data, imageUrl });
+        const failed = await (0, firebaseService_1.sendPushNotificationToMultiple)(tokenList, { title, body, data });
         if (failed.length > 0) {
             const failedTokens = failed.map(f => f.token);
             await DeviceToken_1.DeviceToken.deleteMany({ token: { $in: failedTokens } });
@@ -87,7 +87,7 @@ router.post('/notifications/send-to-all', async (req, res) => {
         if (!adminId) {
             return res.status(401).json({ error: 'Não autorizado' });
         }
-        const { title, body, data, imageUrl } = req.body;
+        const { title, body, data } = req.body;
         if (!title || !body) {
             return res.status(400).json({ error: 'title e body são obrigatórios' });
         }
@@ -96,7 +96,7 @@ router.post('/notifications/send-to-all', async (req, res) => {
         if (tokenList.length === 0) {
             return res.json({ success: true, sent: 0 });
         }
-        const failed = await (0, firebaseService_1.sendPushNotificationToMultiple)(tokenList, { title, body, data, imageUrl });
+        const failed = await (0, firebaseService_1.sendPushNotificationToMultiple)(tokenList, { title, body, data });
         if (failed.length > 0) {
             const failedTokens = failed.map(f => f.token);
             await DeviceToken_1.DeviceToken.deleteMany({ token: { $in: failedTokens } });

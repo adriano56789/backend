@@ -100,12 +100,14 @@ class NotificationService {
         this.emitSocket(io, toUserId, {
             type: 'new_follower', followerId, followerName, followerAvatar, message,
         });
+        // 🚫 Push FCM: SÓ título + corpo + rota (sem avatar — Firebase não carrega imagem).
+        // O avatar segue apenas pelo socket (tempo real com o app aberto).
         await this.sendFcm(toUserId, {
             title: '👤 Novo seguidor!',
             body: message,
             data: {
                 type: 'new_follower', followerId, followerName,
-                followerAvatar: followerAvatar || '', click_action: 'OPEN_PROFILE',
+                click_action: 'OPEN_PROFILE',
             },
         });
     }
@@ -165,7 +167,6 @@ class NotificationService {
                         streamId,
                         hostId,
                         hostName: hostName || '',
-                        hostAvatar: hostAvatar || '',
                         click_action: 'OPEN_STREAM',
                     },
                 });
@@ -267,6 +268,7 @@ class NotificationService {
             customMessage: message || '',
             message: displayMessage,
         });
+        // 🚫 Push FCM: sem avatar (Firebase não carrega imagem) — avatar só no socket.
         await this.sendFcm(toUserId, {
             title: '👥 Convite de amizade!',
             body: displayMessage,
@@ -274,7 +276,6 @@ class NotificationService {
                 type: 'friend_invite_received',
                 fromUserId,
                 fromUserName,
-                fromUserAvatar: fromUserAvatar || '',
                 inviteId,
                 click_action: 'OPEN_FRIENDS',
             },
@@ -430,6 +431,7 @@ class NotificationService {
             fromUserAvatar: fromUserAvatar || '',
             message,
         });
+        // 🚫 Push FCM: sem avatar (Firebase não carrega imagem) — avatar só no socket.
         await this.sendFcm(toUserId, {
             title: message,
             body: 'Toque para entrar na sala',
@@ -438,7 +440,6 @@ class NotificationService {
                 streamId,
                 fromUserId,
                 fromUserName,
-                fromUserAvatar: fromUserAvatar || '',
                 click_action: 'OPEN_LIVE',
             },
         });

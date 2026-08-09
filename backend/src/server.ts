@@ -416,6 +416,200 @@ app.use('/api/settings/:id', validateAndConvertUserId('id'));
 app.use('/api/zoom/user/:userId', validateAndConvertUserId('userId'));
 app.use('/api/zoom', zoomRoutes);
 
+// 🎁 ROTA DE PRESENTE — POST /api/streams/:id/gift
+// RESTAURADA: o frontend envia presentes por aqui (api.sendGift). Após validar,
+// deduzir diamantes e persistir, emite live_gift_received / gift_received para a
+// sala — é esse broadcast que dispara a ANIMAÇÃO em tela cheia no meio do vídeo
+// (lógica Tencent Cloud / TikTok Live: UI reage apenas ao evento de broadcast).
+app.post('/api/streams/:id/gift', async (req, res) => {
+    try {
+        const { fromUserId, giftName, amount } = req.body;
+        if (!fromUserId || !giftName) {
+            return res.status(400).json({ error: 'fromUserId e giftName são obrigatórios' });
+        }
+
+        const models = await import('./models');
+        const U = models.User;
+        const G = models.Gift;
+        const GT = models.GiftTransaction;
+
+        const sender = await U.findOne({ id: fromUserId });
+        if (!sender) return res.status(404).json({ error: 'Sender not found' });
+
+        // Stream: aceitar com ou sem prefixo stream_ (o frontend normaliza o ID)
+        let stream: any = await models.Streamer.findOne({ id: req.params.id });
+        if (!stream && !String(req.params.id).startsWith('stream_')) {
+            stream = await models.Streamer.findOne({ id: `stream_${req.params.id}` });
+        }
+        if (!stream) return res.status(404).json({ error: 'Stream not found' });
+
+        const receiverId = stream.hostId;
+        const receiver = await U.findOne({ id: receiverId });
+
+        const gift = await G.findOne({ name: giftName });
+        if (!gift) return res.status(404).json({ error: 'Gift not found' });
+
+        const price = gift.price || 0;
+        const quantity = Number(amount || 1);
+        const totalValue = price * quantity;
+
+        if ((sender.diamonds || 0) < totalValue) {
+            return res.status(400).json({ error: 'Insufficient diamonds' });
+        }
+
+        const io = req.app.get('io');
+
+        // Sala do socket: o frontend entra na sala SEM o prefixo stream_ (normaliza),
+        // então emitimos para os dois formatos para garantir a entrega.
+        const roomId = req.params.id;
+        const roomIdNorm = String(roomId).startsWith('stream_') ? String(roomId).replace('stream_', '') : roomId;
+
+        // 🎬 Emitir o presente IMEDIATAMENTE após a validação (antes das escritas no
+        // DB) para que todos — inclusive o remetente — vejam a animação sem atraso.
+        if (io) {
+            const giftEventId = `gift_tx_${Date.now()}_${fromUserId}`;
+            const giftEventData = {
+                id: giftEventId,
+                from: {
+                    id: sender.id || fromUserId,
+                    name: sender.name || 'Unknown',
+                    avatarUrl: sender.avatarUrl || '',
+                    level: sender.level || 1
+                },
+                toUser: {
+                    id: receiverId,
+                    name: receiver?.name || stream.name || 'Unknown'
+                },
+                gift: {
+                    name: giftName,
+                    price: price,
+                    icon: gift.icon || '🎁',
+                    category: gift.category || 'Popular',
+                    animationUrl: gift.videoUrl || undefined
+                },
+                quantity,
+                totalValue,
+                roomId,
+                streamId: roomId,
+                timestamp: new Date().toISOString()
+            };
+
+            io.to(roomId).emit('live_gift_received', giftEventData);
+            io.to(roomId).emit('gift_received', giftEventData);
+            if (roomIdNorm !== roomId) {
+                io.to(roomIdNorm).emit('live_gift_received', giftEventData);
+                io.to(roomIdNorm).emit('gift_received', giftEventData);
+            }
+            io.to(`user_${receiverId}`).emit('gift_received', giftEventData);
+            console.log(`🎁 [WEBSOCKET] live_gift_received → sala ${roomId}: ${giftName} x${quantity}`);
+        }
+
+        let updatedSender;
+        let updatedReceiver;
+
+        if (fromUserId === receiverId) {
+            // Presente para si mesmo: as duas métricas (- e +) numa ÚNICA escrita no banco
+            updatedSender = await U.findOneAndUpdate(
+                { id: fromUserId },
+                { $inc: { diamonds: -totalValue, enviados: totalValue, receptores: totalValue, earnings: totalValue } },
+                { returnDocument: 'after' }
+            );
+            updatedReceiver = updatedSender;
+        } else {
+            updatedSender = await U.findOneAndUpdate(
+                { id: fromUserId },
+                { $inc: { diamonds: -totalValue, enviados: totalValue } },
+                { returnDocument: 'after' }
+            );
+            if (receiverId) {
+                updatedReceiver = await U.findOneAndUpdate(
+                    { id: receiverId },
+                    { $inc: { receptores: totalValue, earnings: totalValue } },
+                    { returnDocument: 'after' }
+                );
+            }
+        }
+
+        // 💎 Saldos em tempo real — receptor
+        if (io && updatedReceiver) {
+            io.emit('earnings_updated', {
+                userId: updatedReceiver.id,
+                diamonds: totalValue,
+                totalEarnings: updatedReceiver.earnings,
+                totalReceptores: updatedReceiver.receptores,
+                timestamp: new Date().toISOString(),
+                source: 'live_gift',
+                streamId: req.params.id,
+                fromUser: updatedSender?.name || 'Unknown',
+                giftName
+            });
+        }
+
+        // 💎 Saldos em tempo real — remetente
+        if (io && updatedSender) {
+            io.emit('diamonds_updated', {
+                userId: updatedSender.id,
+                diamonds: updatedSender.diamonds,
+                enviados: updatedSender.enviados,
+                change: -totalValue,
+                timestamp: new Date().toISOString(),
+                source: 'gift_sent',
+                giftName
+            });
+        }
+
+        await models.Streamer.findOneAndUpdate(
+            { id: req.params.id },
+            { $inc: { diamonds: totalValue } }
+        );
+
+        if (io && updatedReceiver) {
+            io.emit('live_coins_updated', {
+                streamId: req.params.id,
+                coins: totalValue,
+                totalCoins: updatedReceiver.receptores || 0,
+                timestamp: new Date().toISOString(),
+                fromUser: updatedSender?.name || 'Unknown',
+                giftName
+            });
+        }
+
+        // 📝 Registrar transação
+        try {
+            await GT.create([{
+                id: `gift_tx_${Date.now()}_${fromUserId}`,
+                fromUserId,
+                fromUserName: updatedSender?.name || 'Unknown',
+                fromUserAvatar: updatedSender?.avatarUrl || '',
+                toUserId: receiverId,
+                toUserName: updatedReceiver?.name || 'Unknown',
+                streamId: req.params.id,
+                giftId: gift._id,
+                giftName,
+                giftIcon: gift.icon || '🎁',
+                giftPrice: price,
+                quantity,
+                totalValue,
+                createdAt: new Date().toISOString()
+            }]);
+        } catch (txErr: any) {
+            console.error('❌ [GIFT] Erro ao registrar transação:', txErr.message);
+        }
+
+        console.log(`🎁 Gift sent: ${giftName} x${quantity} from ${updatedSender?.name || 'Unknown'} to stream ${req.params.id} - ${totalValue} diamonds`);
+
+        res.json({
+            success: true,
+            updatedSender,
+            updatedReceiver: updatedReceiver || {},
+            transaction: { giftName, amount: quantity, totalValue }
+        });
+    } catch (error: any) {
+        console.error('❌ [GIFT] Erro na rota POST /streams/:id/gift:', error);
+        res.status(500).json({ error: error.message || 'Erro interno ao enviar presente' });
+    }
+});
+
 app.use('/api/srs', srsRoutes); // Callbacks do SRS PRIMEIRO (evita conflito com routes genéricos)
 app.use('/api', metadataRoutes); // handles /api/ranking, /api/gifts, /api/regions, /api/history
 app.use('/api', liveRoutes); // handles /api/live, /api/streams, /api/rtc, /api/lives, /api/permissions
@@ -493,6 +687,67 @@ const onlineUsers = new Map<string, {
 }>();
 // Map para rastrear qual socket pertence a qual usuário
 const socketToUser = new Map<string, string>();
+
+// 🎁 [GIFT] Helpers de broadcast de presentes (lógica Tencent Cloud / TikTok Live):
+// 1) A animação em tela cheia NO MEIO DO VÍDEO só é renderizada pelo frontend
+//    quando ele recebe o evento de broadcast (live_gift_received / gift_received).
+// 2) O payload precisa carregar o objeto `gift` (name/icon/price/category/animationUrl),
+//    o remetente (`from`), o destinatário (`toUser`) e a `quantity` — o cliente usa
+//    gift.name + gift.animationUrl para escolher a animação e remove ao terminar.
+function buildGiftEventPayload(data: any, overrides: any = {}): any {
+  const roomId = data.roomId || data.streamId || data.room || '';
+  const fromData = data.from || {};
+  const from = fromData.id
+    ? {
+        id: fromData.id,
+        name: fromData.name || 'Usuário',
+        avatarUrl: fromData.avatarUrl || '',
+        level: fromData.level || 1,
+      }
+    : {
+        id: data.fromUserId || data.fromUser?.id || '',
+        name: data.fromUserName || data.fromUser?.name || 'Usuário',
+        avatarUrl: data.fromUserAvatar || data.fromUser?.avatarUrl || '',
+        level: data.fromUserLevel || data.fromUser?.level || 1,
+      };
+  const giftData = data.gift || {};
+  const gift = giftData.name
+    ? { ...giftData }
+    : {
+        name: data.giftName || '',
+        price: data.giftPrice ?? 0,
+        icon: data.giftIcon || '🎁',
+        category: data.giftCategory || 'Popular',
+        animationUrl: data.animationUrl || data.giftAnimationUrl || data.giftVideoUrl || undefined,
+      };
+  const quantity = Number(data.quantity || data.amount || 1);
+  const price = Number(gift.price || data.giftPrice || 0);
+  return {
+    ...overrides,
+    id: overrides.id || data.id || `gift_tx_${Date.now()}_${from.id || Math.random().toString(36).substr(2, 6)}`,
+    from,
+    toUser: data.toUser || { id: data.toUserId || data.toUser?.id || '', name: data.toUserName || data.toUser?.name || 'Streamer' },
+    gift,
+    quantity,
+    totalValue: Number(overrides.totalValue ?? data.totalValue ?? price * quantity),
+    roomId,
+    streamId: data.streamId || roomId,
+    timestamp: data.timestamp || new Date().toISOString(),
+  };
+}
+
+function broadcastGiftEvent(targetIo: any, roomId: string, payload: any) {
+  if (!targetIo || !roomId) return;
+  // live_gift_received + gift_received: o frontend escuta AMBOS (dedupe de 2s no cliente).
+  // new_gift mantido para compatibilidade com clientes antigos.
+  targetIo.to(roomId).emit('live_gift_received', payload);
+  targetIo.to(roomId).emit('gift_received', payload);
+  targetIo.to(roomId).emit('new_gift', payload);
+  if (payload.toUser?.id) {
+    targetIo.to(`user_${payload.toUser.id}`).emit('gift_received', payload);
+  }
+  console.log(`🎁 [GIFT] live_gift_received → sala ${roomId}: ${payload.gift?.name || '?'} x${payload.quantity}`);
+}
 
 io.on('connection', (socket) => {
     console.log(`🔌 New WebSocket connection: ${socket.id}`);
@@ -1090,7 +1345,19 @@ io.on('connection', (socket) => {
     });
 
     socket.on('send_gift', (data: { roomId: string, gift: any }) => {
-        io.to(data.roomId).emit('gift_received', data.gift);
+        try {
+            const payload = buildGiftEventPayload(data);
+            const roomId = payload.roomId || data.roomId;
+            if (!roomId) {
+                console.warn('⚠️ [GIFT] send_gift sem roomId/streamId', data);
+                return;
+            }
+            // 🔁 Broadcast com a estrutura que o frontend espera para a animação
+            // em tela cheia no meio do vídeo (live_gift_received / gift_received).
+            broadcastGiftEvent(io, roomId, payload);
+        } catch (error) {
+            console.error('❌ [GIFT] Erro no broadcast send_gift:', error);
+        }
     });
 
     // Eventos para atualizações em tempo real
@@ -1644,8 +1911,28 @@ wsIo.on('connection', (socket) => {
                 timestamp: giftRecord.timestamp.getTime()
             };
 
+            // 🔥 [GIFT] Payload no padrão do frontend (live_gift_received / gift_received):
+            // a animação em tela cheia no meio do vídeo só é renderizada com estes campos.
+            const giftEventPayload = buildGiftEventPayload({
+                ...data,
+                id: giftRecord._id,
+                from: {
+                    id: realFromUserId,
+                    name: data.fromUserName,
+                    avatarUrl: data.fromUserAvatar,
+                    level: data.fromUserLevel || 1
+                },
+                toUser: {
+                    id: realToUserId,
+                    name: data.toUserName || 'Streamer'
+                },
+                totalValue: data.giftPrice * data.quantity,
+                timestamp: giftRecord.timestamp.toISOString()
+            });
+
             // Broadcast para todos na sala do stream
             wsIo.to(data.streamId).emit('new_gift', giftData);
+            broadcastGiftEvent(wsIo, data.streamId, giftEventPayload);
             console.log(`🎁 [GIFT] Real gift processed: ${data.giftName} x${data.quantity} (${data.totalValue} diamonds)`);
         } catch (error) {
             console.error(`❌ [GIFT] Error processing gift:`, error);

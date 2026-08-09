@@ -10,6 +10,7 @@ import { findUserByAnyId, updateUserByRealId } from '../utils/idHelper';
 
 import { blockProtection } from '../middleware/appOwnerProtection';
 import { getDb } from '../config/db';
+import { getIO } from '../socket';
 
 
 
@@ -2039,7 +2040,7 @@ UserRoutes.post('/:id/avatar-protection', async (req, res) => {
 
     // Enviar atualização em tempo real via WebSocket
 
-    const io = require('../server').getIO();
+    const io = getIO();
 
     if (io) {
 
