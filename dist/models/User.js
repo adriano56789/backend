@@ -101,7 +101,7 @@ const UserSchema = new mongoose_1.Schema({
     isAvatarProtected: { type: Boolean, default: false },
     activeFrameId: { type: String, default: null },
     ownedFrames: [{ frameId: String, expirationDate: String }],
-    chatPermission: { type: String, enum: ['all', 'followers', 'none'], default: 'all' },
+    chatPermission: { type: String, enum: ['all', 'followers', 'following', 'friends', 'none'], default: 'all' },
     pipEnabled: { type: Boolean, default: true },
     locationPermission: { type: String, enum: ['granted', 'denied', 'prompt'], default: 'prompt' },
     cameraPermissionStatus: { type: String, enum: ['granted', 'denied', 'prompt'], default: 'prompt' },

@@ -142,7 +142,7 @@ exports.UserRoutes.get('/:id', async (req, res) => {
             if (user) {
                 const userObj = typeof user.toObject === 'function' ? user.toObject() : user;
                 req.params.id = user.id;
-                return res.json((0, userResponse_1.standardizeUserResponse)(userObj));
+                return res.json((0, userResponse_1.standardizeUserResponse)(userObj, (0, auth_1.getUserIdFromToken)(req)));
             }
             // Fallback: case-insensitive
             query = { id: { $regex: new RegExp('^' + paramId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i') } };
@@ -192,7 +192,7 @@ exports.UserRoutes.get('/:id', async (req, res) => {
             ]);
             userObj.fans = realFans > 0 ? realFans : (userObj.followersList?.length || 0);
             userObj.following = realFollowing > 0 ? realFollowing : (userObj.followingList?.length || 0);
-            return res.json((0, userResponse_1.standardizeUserResponse)(userObj));
+            return res.json((0, userResponse_1.standardizeUserResponse)(userObj, currentUserId));
         }
         res.status(404).json({ error: 'User not found' });
     }
@@ -969,7 +969,7 @@ exports.UserRoutes.get('/:id/photos', async (req, res) => {
         const user = await models_1.User.findOne({ id: userId }).select('id name avatarUrl level fans following isLive isOnline lastSeen').lean();
         if (!user)
             return res.status(404).json({ error: 'Usuário não encontrado' });
-        const publicUser = (0, userResponse_1.standardizeUserResponse)(user);
+        const publicUser = (0, userResponse_1.standardizeUserResponse)(user, (0, auth_1.getUserIdFromToken)(req));
         const formattedPhotos = photos.map(photo => {
             const photoJson = photo instanceof models_1.Photo ? photo.toJSON() : photo;
             return {

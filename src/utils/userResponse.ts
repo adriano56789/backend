@@ -4,8 +4,11 @@ import { getRealUserId } from './idHelper';
 /**
  * Padroniza a resposta do usuário garantindo que todos os campos esperados pelo frontend
  * estejam presentes com valores padrão adequados, mesmo quando não há dados.
+ *
+ * @param viewerId Quando informado e diferente do usuário alvo, aplica as regras de privacidade
+ * (showActivityStatus / showLocation) ocultando dados sensíveis para outros usuários.
  */
-export function standardizeUserResponse(user: any): any {
+export function standardizeUserResponse(user: any, viewerId?: string | null): any {
     if (!user) {
         // Retorna estrutura padrão vazia se não houver usuário
         return {
@@ -39,6 +42,11 @@ export function standardizeUserResponse(user: any): any {
     
     // Garante que todos os campos obrigatórios existam com valores padrão
     // Usando ID REAL da API Externa (Dazoom/Zoom) como fonte principal
+
+    const isOwnView = !!viewerId && getRealUserId(user) && viewerId === getRealUserId(user);
+    const hideActivity = !isOwnView && user.showActivityStatus === false;
+    const hideLocation = !isOwnView && user.showLocation === false;
+
     return {
         id: getRealUserId(user),
         name: user.name || "",
@@ -61,12 +69,12 @@ export function standardizeUserResponse(user: any): any {
         level: user.level || 1,
         xp: user.xp || 0,
         rank: user.rank || 0,
-        location: user.location ? (typeof user.location === 'object' ? '' : user.location) : "",
-        latitude: user.latitude,
-        longitude: user.longitude,
-        city: user.city || "",
-        state: user.state || "",
-        distance: user.distance || "",
+        location: hideLocation ? "" : (user.location ? (typeof user.location === 'object' ? '' : user.location) : ""),
+        latitude: hideLocation ? null : user.latitude,
+        longitude: hideLocation ? null : user.longitude,
+        city: hideLocation ? "" : user.city || "",
+        state: hideLocation ? "" : user.state || "",
+        distance: hideLocation ? "" : user.distance || "",
         fans: user.fans || 0,
         following: user.following || 0,
         followingList: user.followingList || [],
@@ -77,10 +85,10 @@ export function standardizeUserResponse(user: any): any {
         enviados: user.enviados || 0,
         topFansAvatars: user.topFansAvatars || [],
         accountStatus: user.accountStatus || "active",
-        isLive: user.isLive || false,
-        isOnline: user.isOnline || false,
-        lastSeen: user.lastSeen,
-        currentStreamId: user.currentStreamId || "",
+        isLive: hideActivity ? false : user.isLive || false,
+        isOnline: hideActivity ? false : user.isOnline || false,
+        lastSeen: hideActivity ? null : user.lastSeen,
+        currentStreamId: hideActivity ? "" : user.currentStreamId || "",
         permanentStreamId: user.permanentStreamId || "",
         diamonds: user.diamonds || 0,
         earnings: user.earnings || 0,
@@ -151,10 +159,10 @@ export function standardizeUserResponse(user: any): any {
 /**
  * Padroniza uma lista de usuários aplicando a padronização individual
  */
-export function standardizeUsersList(users: any[]): any[] {
+export function standardizeUsersList(users: any[], viewerId?: string | null): any[] {
     if (!Array.isArray(users)) {
         return [];
     }
     
-    return users.map(user => standardizeUserResponse(user));
+    return users.map(user => standardizeUserResponse(user, viewerId));
 }

@@ -461,7 +461,12 @@ router.get('/can-send-message/:fromId/:toId', async (req, res) => {
 });
 router.post('/chat-permission/update/:id', async (req, res) => {
     try {
-        const user = await (0, idHelper_1.updateUserByRealId)(models_1.User, req.params.id, { chatPermission: req.body.permission });
+        const validPermissions = ['all', 'followers', 'following', 'friends', 'none'];
+        const permission = req.body.permission;
+        if (!validPermissions.includes(permission)) {
+            return res.status(400).json({ error: 'Permissão de mensagem inválida' });
+        }
+        const user = await (0, idHelper_1.updateUserByRealId)(models_1.User, req.params.id, { chatPermission: permission });
         res.json({ success: !!user, user: (0, userResponse_1.standardizeUserResponse)(user) || {} });
     }
     catch (error) {

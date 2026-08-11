@@ -175,7 +175,7 @@ UserRoutes.get('/:id', async (req, res) => {
             if (user) {
                 const userObj = typeof (user as any).toObject === 'function' ? (user as any).toObject() : user;
                 req.params.id = user.id;
-                return res.json(standardizeUserResponse(userObj));
+                return res.json(standardizeUserResponse(userObj, getUserIdFromToken(req)));
             }
             // Fallback: case-insensitive
             query = { id: { $regex: new RegExp('^' + paramId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i') } };
@@ -255,7 +255,7 @@ UserRoutes.get('/:id', async (req, res) => {
             userObj.fans = realFans > 0 ? realFans : (userObj.followersList?.length || 0);
             userObj.following = realFollowing > 0 ? realFollowing : (userObj.followingList?.length || 0);
 
-            return res.json(standardizeUserResponse(userObj));
+            return res.json(standardizeUserResponse(userObj, currentUserId));
         }
 
         res.status(404).json({ error: 'User not found' });
@@ -1694,7 +1694,7 @@ UserRoutes.get('/:id/photos', async (req, res) => {
 
         if (!user) return res.status(404).json({ error: 'Usuário não encontrado' });
 
-        const publicUser = standardizeUserResponse(user);
+        const publicUser = standardizeUserResponse(user, getUserIdFromToken(req));
 
         const formattedPhotos = photos.map(photo => {
             const photoJson = photo instanceof (Photo as any) ? photo.toJSON() : photo;

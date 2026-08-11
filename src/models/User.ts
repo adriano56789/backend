@@ -78,7 +78,7 @@ export interface IUser extends Document {
   isAvatarProtected?: boolean;
   activeFrameId?: string | null;
   ownedFrames: { frameId: string; expirationDate: string }[];
-  chatPermission?: 'all' | 'followers' | 'none';
+  chatPermission?: 'all' | 'followers' | 'following' | 'friends' | 'none';
   pipEnabled?: boolean;
   locationPermission?: 'granted' | 'denied' | 'prompt';
   cameraPermissionStatus?: 'granted' | 'denied' | 'prompt';
@@ -181,7 +181,7 @@ const UserSchema: Schema = new Schema({
   isAvatarProtected: { type: Boolean, default: false },
   activeFrameId: { type: String, default: null },
   ownedFrames: [{ frameId: String, expirationDate: String }],
-  chatPermission: { type: String, enum: ['all', 'followers', 'none'], default: 'all' },
+  chatPermission: { type: String, enum: ['all', 'followers', 'following', 'friends', 'none'], default: 'all' },
   pipEnabled: { type: Boolean, default: true },
   locationPermission: { type: String, enum: ['granted', 'denied', 'prompt'], default: 'prompt' },
   cameraPermissionStatus: { type: String, enum: ['granted', 'denied', 'prompt'], default: 'prompt' },

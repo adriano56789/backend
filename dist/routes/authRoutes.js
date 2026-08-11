@@ -135,7 +135,7 @@ router.post('/register', async (req, res) => {
             // Configurações de perfil - valores booleanos normalizados
             isVIP: Boolean(isVIP),
             isAvatarProtected: Boolean(isAvatarProtected),
-            chatPermission: ["all", "followers", "none"].includes(chatPermission) ? chatPermission : "all",
+            chatPermission: ["all", "followers", "following", "friends", "none"].includes(chatPermission) ? chatPermission : "all",
             pipEnabled: pipEnabled !== undefined ? Boolean(pipEnabled) : true,
             locationPermission: ["granted", "denied", "prompt"].includes(locationPermission) ? locationPermission : "prompt",
             showActivityStatus: showActivityStatus !== undefined ? Boolean(showActivityStatus) : true,
