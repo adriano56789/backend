@@ -47,6 +47,7 @@ import { onlineTracker } from './services/OnlineTracker';
 import locationRoutes from './routes/locationRoutes';
 import shopRoutes from './routes/shopRoutes';
 import frameRoutes from './routes/frameRoutes';
+import rouletteRoutes from './routes/rouletteRoutes';
 import contributionRoutes from './routes/contributionRoutes';
 import purchaseRoutes from './routes/purchaseRoutes';
 import uploadRoutes from './routes/uploadRoutes';
@@ -367,6 +368,7 @@ app.use('/api/blocks', blockRoutes); // Rotas de bloqueios
 app.use('/api/location', locationRoutes); // Rotas de localização
 app.use('/api/shop', shopRoutes); // Rotas da loja
 app.use('/api', frameRoutes); // Rotas de frames (quadros de avatar)
+app.use('/api', rouletteRoutes); // 🎡 ROLETA EDITÁVEL — CRUD de itens + giros
 app.use('/api', contributionRoutes); // Rotas de ranking de contribuição
 app.use('/api/upload', uploadRoutes); // Rotas de upload de arquivos
 app.use('/api/upload', imageUploadRoutes); // Novas rotas completas de upload

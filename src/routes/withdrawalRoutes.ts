@@ -3,6 +3,8 @@ import { User, PurchaseAuditTrail } from '../models';
 import { getIO } from '../socket';
 import { protect, AuthRequest } from '../middleware/auth';
 import { paymentRateLimit } from '../middleware/rateLimit';
+import { calculateBRLFromDiamonds } from '../utils/diamondConversion';
+import { getCurrencyForCountry, convertBRL, CURRENCY_SYMBOLS, SupportedCurrency } from '../services/currencyService';
 
 import { ENV } from '../config/env';
 
@@ -238,6 +240,221 @@ router.post('/pix', protect, paymentRateLimit, async (req: AuthRequest, res) => 
         }
 
         res.status(500).json({ 
+            error: 'Erro interno',
+            message: 'Não foi possível processar o saque. Tente novamente.'
+        });
+    }
+});
+
+// Endpoint para realizar saque via conta bancária (EUR/USD - países PT/US)
+router.post('/bank', protect, paymentRateLimit, async (req: AuthRequest, res) => {
+    try {
+        const { userId, amount } = req.body;
+
+        // Verificar se o userId do token corresponde
+        if (req.user?.id !== userId) {
+            return res.status(403).json({ error: 'Acesso negado: userId não corresponde ao token' });
+        }
+
+        console.log(`[WITHDRAWAL BANK] Iniciando saque bancário: User=${userId}, Amount=${amount}`);
+
+        // Validações básicas
+        if (!userId || !amount) {
+            return res.status(400).json({
+                error: 'Dados incompletos',
+                details: 'userId e amount são obrigatórios'
+            });
+        }
+
+        // Buscar usuário com projeção apenas para dados financeiros
+        const user = await User.findOne(
+            { id: userId }
+        ).select('id earnings withdrawal_method country name email');
+        if (!user) {
+            return res.status(404).json({ error: 'Usuário não encontrado' });
+        }
+
+        // Verificar método de saque configurado
+        if (!user.withdrawal_method) {
+            return res.status(400).json({
+                error: 'Método de saque não configurado',
+                details: 'Configure seu método de saque (conta bancária) no perfil'
+            });
+        }
+
+        const method = user.withdrawal_method.method;
+        if (!method || method.toString().toLowerCase() !== 'bank') {
+            return res.status(400).json({
+                error: 'Método de saque não suportado',
+                details: `Método atual: ${method || 'não configurado'}. Use conta bancária.`
+            });
+        }
+
+        const details = user.withdrawal_method.details || {};
+        const hasAccount = details.iban || (details.accountNumber && details.routingNumber) || details.bankName;
+        if (!hasAccount) {
+            return res.status(400).json({
+                error: 'Dados bancários incompletos',
+                details: 'Adicione sua conta bancária antes de realizar o saque'
+            });
+        }
+
+        // Exigência legal (Receita Federal/BC): saque bancário internacional precisa de endereço fiscal completo
+        const addr = details.address || {};
+        const hasAddress = addr.street && addr.city && addr.country;
+        if (!hasAddress) {
+            return res.status(400).json({
+                error: 'Endereço incompleto',
+                details: 'Saque internacional exige endereço fiscal completo. Configure seu método de saque novamente.'
+            });
+        }
+
+        // Moeda do saque: prioriza a moeda configurada no método (EUR/USD), senão usa o país
+        const preferredCurrency = (details.currency || '').toUpperCase();
+        const currency: SupportedCurrency = (preferredCurrency === 'EUR' || preferredCurrency === 'USD') ? preferredCurrency : getCurrencyForCountry(user.country);
+        if (currency === 'BRL') {
+            return res.status(400).json({
+                error: 'Fluxo inválido',
+                details: 'Para Brasil utilize o saque via Pix'
+            });
+        }
+
+        if (user.earnings < amount) {
+            return res.status(400).json({
+                error: 'Saldo insuficiente',
+                details: `Saldo disponível: ${amount - user.earnings >= 0 ? user.earnings : 0} diamantes`
+            });
+        }
+
+        // Calcular valores em BRL e converter para a moeda do país
+        const brl_amount = calculateBRLFromDiamonds(amount);
+        const net_brl = Math.round((brl_amount * 0.8) * 100) / 100; // 80% para o streamer
+        const appCommission = Math.round((brl_amount * 0.2) * 100) / 100; // 20% para o app
+        const local_net = await convertBRL(net_brl, currency);
+        const symbol = CURRENCY_SYMBOLS[currency];
+
+        // Deduzir saldo total do usuário + persistir atividade
+        const updatedUser = await User.findOneAndUpdate(
+            { id: userId },
+            {
+                $inc: { earnings: -amount },
+                $set: {
+                    lastWithdrawalAt: new Date(),
+                    lastWithdrawalAmount: amount
+                },
+                $push: {
+                    withdrawal_requests: {
+                        external_reference: `bank_withdraw_${userId}_${Date.now()}`,
+                        amount: local_net,
+                        currency,
+                        status: 'processing',
+                        created_at: new Date().toISOString()
+                    },
+                    recentActivities: { $each: [{
+                            action: 'withdrawal',
+                            resource: 'financial_operation',
+                            timestamp: new Date(),
+                            endpoint: '/api/withdrawals/bank'
+                        }], $slice: -50 }
+                }
+            },
+            { returnDocument: 'after' }
+        );
+
+        // AUDIT: saque bancário solicitado
+        await PurchaseAuditTrail.create({
+            eventType: 'diamonds_delivered',
+            orderId: `bank_withdraw_${userId}_${Date.now()}`,
+            userId,
+            ip: req.ip || '',
+            userAgent: (req.headers['user-agent'] || '').slice(0, 300),
+            metadata: { amount, currency, action: 'bank_withdrawal' }
+        }).catch(() => {});
+
+        // Registrar no histórico - saque bancário
+        const PurchaseRecord = (await import('../models')).PurchaseRecord;
+        const withdrawalId = `withdrawal_bank_${userId}_${Date.now()}`;
+        await PurchaseRecord.create({
+            id: withdrawalId,
+            userId: userId,
+            type: 'withdrawal',
+            description: `Saque bancário (${currency}) - ${symbol} ${local_net.toFixed(2)} (80%) - ${amount} diamantes`,
+            amountBRL: -net_brl,
+            amountCoins: amount,
+            status: 'Processando',
+            metadata: {
+                withdrawalId,
+                currency,
+                amount_local: local_net,
+                amount_brl: net_brl,
+                commission_brl: appCommission,
+                bank: {
+                    bankName: details.bankName || '',
+                    accountHolder: details.accountHolder || '',
+                    iban: details.iban || '',
+                    accountNumber: details.accountNumber || '',
+                    routingNumber: details.routingNumber || '',
+                    swiftBic: details.swiftBic || ''
+                },
+                commissionType: 'streamer_payment',
+                percentage: 80
+            }
+        });
+
+        // Registrar comissão do app
+        await PurchaseRecord.create({
+            id: `withdrawal_bank_app_${userId}_${Date.now()}`,
+            userId: 'system_app',
+            type: 'commission',
+            description: `Comissão do app (20%) - Streamer: ${user.name || userId} - Saque bancário (${currency})`,
+            amountBRL: appCommission,
+            amountCoins: 0,
+            status: 'Processando',
+            metadata: {
+                streamerId: userId,
+                streamerName: user.name,
+                commissionType: 'app_commission',
+                percentage: 20,
+                currency
+            }
+        });
+
+        // Emitir WebSocket para atualizar frontend em tempo real
+        const io = getIO();
+        if (io) {
+            io.to(userId).emit('withdrawal_processed', {
+                userId,
+                totalAmount: amount,
+                streamerAmount: local_net,
+                appCommission: appCommission,
+                currency,
+                newBalance: updatedUser?.earnings || 0,
+                withdrawalId,
+                status: 'processing'
+            });
+
+            io.to(userId).emit('earnings_updated', {
+                userId,
+                available_diamonds: 0,
+                brl_value: updatedUser?.earnings || 0
+            });
+        }
+
+        res.json({
+            success: true,
+            withdrawalId,
+            totalAmount: amount,
+            streamerAmount: local_net,
+            appCommission: appCommission,
+            currency,
+            status: 'processing',
+            message: `Saque de ${symbol} ${local_net.toFixed(2)} iniciado com sucesso. O dinheiro será transferido para sua conta bancária em até 3 dias úteis.`,
+            newBalance: updatedUser?.earnings || 0
+        });
+
+    } catch (error: any) {
+        console.error('[WITHDRAWAL BANK ERROR] Erro ao processar saque bancário:', error);
+        res.status(500).json({
             error: 'Erro interno',
             message: 'Não foi possível processar o saque. Tente novamente.'
         });

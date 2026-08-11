@@ -216,7 +216,8 @@ exports.UserRoutes.patch("/:id", async (req, res) => {
             'city', 'state', 'country', 'age', 'isAvatarProtected',
             'chatPermission', 'pipEnabled', 'locationPermission',
             'showActivityStatus', 'showLocation', 'privateStreamSettings',
-            'activeFrameId', 'obras', 'location', 'latitude', 'longitude'
+            'activeFrameId', 'obras', 'location', 'latitude', 'longitude',
+            'cadastral'
         ];
         const updateData = {};
         for (const key of allowedFields) {
@@ -485,17 +486,22 @@ exports.UserRoutes.post('/:id/block', (0, appOwnerProtection_1.blockProtection)(
         await models_1.User.findOneAndUpdate({ id: blockerId }, { $push: { blockedUsers: blockedId } });
         // Remover follow se existir
         await models_1.Followers.findOneAndUpdate({ followerId: blockedId, followingId: blockerId, isActive: true }, { $set: { isActive: false, unfollowedAt: new Date() } });
-        await models_1.Followers.findOneAndUpdate({ followerId: blockerId, followingId: blockedId, isActive: true }, { $set: { isActive: false, unfollowedAt: new Date() } });
-        await models_1.Followers.findOneAndUpdate({ followerId: blockerId, followingId: blockedId, isActive: true }, { isActive: false, unfollowedAt: new Date() });
-        // Atualizar contadores usando helper estrito
+        const removedFollow = await models_1.Followers.findOneAndUpdate({ followerId: blockerId, followingId: blockedId, isActive: true }, { $set: { isActive: false, unfollowedAt: new Date() } });
+        // Atualizar listas legadas sempre; contadores apenas se havia follow ativo (evita contadores negativos)
         await (0, idHelper_1.updateUserByRealId)(models_1.User, blockerId, {
-            $inc: { following: -1 },
             $pull: { followingList: blockedId }
         });
         await (0, idHelper_1.updateUserByRealId)(models_1.User, blockedId, {
-            $inc: { fans: -1 },
             $pull: { followersList: blockerId }
         });
+        if (removedFollow) {
+            await (0, idHelper_1.updateUserByRealId)(models_1.User, blockerId, {
+                $inc: { following: -1 }
+            });
+            await (0, idHelper_1.updateUserByRealId)(models_1.User, blockedId, {
+                $inc: { fans: -1 }
+            });
+        }
         res.json({ success: true, message: 'Usuário bloqueado com sucesso' });
     }
     catch (error) {

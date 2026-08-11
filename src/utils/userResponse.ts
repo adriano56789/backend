@@ -87,6 +87,7 @@ export function standardizeUserResponse(user: any): any {
         earnings_withdrawn: user.earnings_withdrawn || 0,
         diamonds_purchased: user.diamonds_purchased || 0,
         withdrawal_method: user.withdrawal_method || null,
+        cadastral: user.cadastral || null,
         bio: user.bio || "",
         obras: user.obras || [],
         curtidas: user.curtidas || [],

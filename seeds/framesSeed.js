@@ -16,7 +16,7 @@ async function seedFrames() {
             {
                 name: 'Blue Crystal',
                 price: 150,
-                duration: 7,
+                duration: 3,
                 description: 'Um frame azul cristalino elegante',
                 icon: '💎',
                 image: 'https://picsum.photos/seed/frame-blue-crystal/400/400',
@@ -27,7 +27,7 @@ async function seedFrames() {
             {
                 name: 'Rose Garden',
                 price: 200,
-                duration: 7,
+                duration: 3,
                 description: 'Um frame rosa floral',
                 icon: '🌹',
                 image: 'https://picsum.photos/seed/frame-rose-garden/400/400',
@@ -38,7 +38,7 @@ async function seedFrames() {
             {
                 name: 'Celestial Crown',
                 price: 300,
-                duration: 7,
+                duration: 3,
                 description: 'Um frame celestial com coroa',
                 icon: '👑',
                 image: 'https://picsum.photos/seed/frame-celestial/400/400',
@@ -49,7 +49,7 @@ async function seedFrames() {
             {
                 name: 'Copper Pearls',
                 price: 180,
-                duration: 7,
+                duration: 3,
                 description: 'Um frame com pérolas de cobre',
                 icon: '💧',
                 image: 'https://picsum.photos/seed/frame-copper/400/400',
@@ -60,7 +60,7 @@ async function seedFrames() {
             {
                 name: 'Cosmic Fire',
                 price: 250,
-                duration: 7,
+                duration: 3,
                 description: 'Um frame com fogo cósmico',
                 icon: '🔥',
                 image: 'https://picsum.photos/seed/frame-cosmic/400/400',
@@ -71,7 +71,7 @@ async function seedFrames() {
             {
                 name: 'Mystical Wings',
                 price: 220,
-                duration: 7,
+                duration: 3,
                 description: 'Um frame com asas místicas',
                 icon: '✨',
                 image: 'https://picsum.photos/seed/frame-mystical/400/400',
@@ -82,7 +82,7 @@ async function seedFrames() {
             {
                 name: 'Neon Feathers',
                 price: 170,
-                duration: 7,
+                duration: 3,
                 description: 'Um frame com penas neon',
                 icon: '🌈',
                 image: 'https://picsum.photos/seed/frame-neon/400/400',
@@ -93,7 +93,7 @@ async function seedFrames() {
             {
                 name: 'Ornate Magenta',
                 price: 190,
-                duration: 7,
+                duration: 3,
                 description: 'Um frame ornamentado magenta',
                 icon: '🎀',
                 image: 'https://picsum.photos/seed/frame-magenta/400/400',
@@ -104,10 +104,21 @@ async function seedFrames() {
             {
                 name: 'Baroque Elegance',
                 price: 280,
-                duration: 7,
+                duration: 3,
                 description: 'Um frame barroco elegante',
                 icon: '🏆',
                 image: 'https://picsum.photos/seed/frame-baroque/400/400',
+                isActive: true,
+                createdAt: new Date(),
+                updatedAt: new Date()
+            },
+            {
+                name: 'Primavera',
+                price: 500,
+                duration: 3,
+                description: 'Moldura animada Primavera (pacote ZEGO 20275) — flores em movimento ao redor do avatar via VAP',
+                icon: 'Frame20275',
+                image: '/frames/primavera.png',
                 isActive: true,
                 createdAt: new Date(),
                 updatedAt: new Date()

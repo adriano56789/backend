@@ -81,6 +81,7 @@ const OnlineTracker_1 = require("./services/OnlineTracker");
 const locationRoutes_1 = __importDefault(require("./routes/locationRoutes"));
 const shopRoutes_1 = __importDefault(require("./routes/shopRoutes"));
 const frameRoutes_1 = __importDefault(require("./routes/frameRoutes"));
+const rouletteRoutes_1 = __importDefault(require("./routes/rouletteRoutes"));
 const contributionRoutes_1 = __importDefault(require("./routes/contributionRoutes"));
 const purchaseRoutes_1 = __importDefault(require("./routes/purchaseRoutes"));
 const uploadRoutes_1 = __importDefault(require("./routes/uploadRoutes"));
@@ -378,6 +379,7 @@ app.use('/api/blocks', blockRoutes_1.default); // Rotas de bloqueios
 app.use('/api/location', locationRoutes_1.default); // Rotas de localização
 app.use('/api/shop', shopRoutes_1.default); // Rotas da loja
 app.use('/api', frameRoutes_1.default); // Rotas de frames (quadros de avatar)
+app.use('/api', rouletteRoutes_1.default); // 🎡 ROLETA EDITÁVEL — CRUD de itens + giros
 app.use('/api', contributionRoutes_1.default); // Rotas de ranking de contribuição
 app.use('/api/upload', uploadRoutes_1.default); // Rotas de upload de arquivos
 app.use('/api/upload', imageUploadRoutes_1.default); // Novas rotas completas de upload

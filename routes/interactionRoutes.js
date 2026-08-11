@@ -1236,15 +1236,16 @@ router.post('/streams/:id/toggle-auto-invite', async (req, res) => {
     }
 });
 const avatarFrames = {
-    'FrameBlueCrystal': { price: 500, durationDays: 7, name: 'Blue Crystal' },
-    'FrameRoseGarden': { price: 750, durationDays: 7, name: 'Rose Garden' },
-    'FrameCopperPearls': { price: 1000, durationDays: 14, name: 'Copper Pearls' },
-    'FrameOrnateMagenta': { price: 1250, durationDays: 14, name: 'Ornate Magenta' },
-    'FrameNeonFeathers': { price: 1500, durationDays: 30, name: 'Neon Feathers' },
-    'FrameBaroqueElegance': { price: 2000, durationDays: 30, name: 'Baroque Elegance' },
-    'FrameMysticalWings': { price: 1800, durationDays: 30, name: 'Mystical Wings' },
-    'FrameCosmicFire': { price: 2200, durationDays: 30, name: 'Cosmic Fire' },
-    'FrameCelestialCrown': { price: 2500, durationDays: 30, name: 'Celestial Crown' }
+    'Frame20275': { price: 500, durationDays: 3, name: 'Primavera' },
+    'FrameBlueCrystal': { price: 500, durationDays: 3, name: 'Blue Crystal' },
+    'FrameRoseGarden': { price: 750, durationDays: 3, name: 'Rose Garden' },
+    'FrameCopperPearls': { price: 1000, durationDays: 3, name: 'Copper Pearls' },
+    'FrameOrnateMagenta': { price: 1250, durationDays: 3, name: 'Ornate Magenta' },
+    'FrameNeonFeathers': { price: 1500, durationDays: 3, name: 'Neon Feathers' },
+    'FrameBaroqueElegance': { price: 2000, durationDays: 3, name: 'Baroque Elegance' },
+    'FrameMysticalWings': { price: 1800, durationDays: 3, name: 'Mystical Wings' },
+    'FrameCosmicFire': { price: 2200, durationDays: 3, name: 'Cosmic Fire' },
+    'FrameCelestialCrown': { price: 2500, durationDays: 3, name: 'Celestial Crown' }
 };
 // GET /api/effects/frames - Buscar frames disponíveis
 router.get('/effects/frames', async (req, res) => {

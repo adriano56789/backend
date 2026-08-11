@@ -292,7 +292,8 @@ UserRoutes.patch("/:id", async (req, res) => {
             'city', 'state', 'country', 'age', 'isAvatarProtected',
             'chatPermission', 'pipEnabled', 'locationPermission',
             'showActivityStatus', 'showLocation', 'privateStreamSettings',
-            'activeFrameId', 'obras', 'location', 'latitude', 'longitude'
+            'activeFrameId', 'obras', 'location', 'latitude', 'longitude',
+            'cadastral'
         ];
         const updateData: any = {};
         for (const key of allowedFields) {
@@ -832,7 +833,7 @@ UserRoutes.post('/:id/block', blockProtection(), async (req, res) => {
 
 
 
-        await Followers.findOneAndUpdate(
+        const removedFollow = await Followers.findOneAndUpdate(
 
             { followerId: blockerId, followingId: blockedId, isActive: true },
 
@@ -842,21 +843,9 @@ UserRoutes.post('/:id/block', blockProtection(), async (req, res) => {
 
 
 
-        await Followers.findOneAndUpdate(
-
-            { followerId: blockerId, followingId: blockedId, isActive: true },
-
-            { isActive: false, unfollowedAt: new Date() }
-
-        );
-
-
-
-        // Atualizar contadores usando helper estrito
+        // Atualizar listas legadas sempre; contadores apenas se havia follow ativo (evita contadores negativos)
 
         await updateUserByRealId(User, blockerId, {
-
-            $inc: { following: -1 },
 
             $pull: { followingList: blockedId }
 
@@ -866,11 +855,29 @@ UserRoutes.post('/:id/block', blockProtection(), async (req, res) => {
 
         await updateUserByRealId(User, blockedId, {
 
-            $inc: { fans: -1 },
-
             $pull: { followersList: blockerId }
 
         });
+
+
+
+        if (removedFollow) {
+
+            await updateUserByRealId(User, blockerId, {
+
+                $inc: { following: -1 }
+
+            });
+
+
+
+            await updateUserByRealId(User, blockedId, {
+
+                $inc: { fans: -1 }
+
+            });
+
+        }
 
 
 

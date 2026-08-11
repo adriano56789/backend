@@ -49,6 +49,7 @@ export interface IStreamer extends Document {
   autoInviteEnabled?: boolean;
   moderators?: string[];
   kickedUsers?: string[];
+  invitedUsers?: string[];
   diamonds?: number;
   likes?: number;
   cover?: string;
@@ -128,6 +129,7 @@ const StreamerSchema: Schema = new Schema({
   autoInviteEnabled: { type: Boolean, default: false },
   moderators: [{ type: String }],
   kickedUsers: [{ type: String }],
+  invitedUsers: [{ type: String }],
   diamonds: { type: Number, default: 0 },
   likes: { type: Number, default: 0 },
   cover: { type: String },

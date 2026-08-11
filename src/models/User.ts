@@ -51,6 +51,19 @@ export interface IUser extends Document {
   earnings_withdrawn: number;
   diamonds_purchased: number;
   withdrawal_method?: { method: string; details: any };
+  cadastral?: {
+    documentType: 'cpf' | 'cnpj';
+    document: string;
+    address: {
+      street: string;
+      number: string;
+      neighborhood: string;
+      city: string;
+      state: string;
+      zipCode: string;
+      country: string;
+    };
+  };
   bio?: string;
   obras?: Array<{ id: string; url: string }>;
   curtidas?: string[];
@@ -96,6 +109,8 @@ export interface IUser extends Document {
   recentActivities?: Array<{ action: string; resource?: string; timestamp?: Date; endpoint?: string }>;
   isNewUser?: boolean;
   newUserNotified?: boolean;
+  // 🎡 Custo fixo (em diamantes) para girar a roleta de prêmios — definido pelo host
+  rouletteSpinCost: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -151,6 +166,7 @@ const UserSchema: Schema = new Schema({
   earnings_withdrawn: { type: Number, default: 0 },
   diamonds_purchased: { type: Number, default: 0 },
   withdrawal_method: { type: Object },
+  cadastral: { type: Object },
   bio: { type: String },
   obras: [{ id: String, url: String }],
   curtidas: [{ type: String }],
@@ -200,7 +216,8 @@ const UserSchema: Schema = new Schema({
   searchesPerformed: { type: Number, default: 0 },
   recentActivities: [{ action: String, resource: String, timestamp: Date, endpoint: String }],
   isNewUser: { type: Boolean, default: true },
-  newUserNotified: { type: Boolean, default: false }
+  newUserNotified: { type: Boolean, default: false },
+  rouletteSpinCost: { type: Number, default: 0 }
 }, { timestamps: true, id: false });
 
 // Create text index for search

@@ -43,6 +43,7 @@ const fraudDetection_1 = __importDefault(require("../middleware/fraudDetection")
 const mercadoPagoService_1 = __importDefault(require("../services/mercadoPagoService"));
 const auth_1 = require("../middleware/auth");
 const rateLimit_1 = require("../middleware/rateLimit");
+const currencyService_1 = require("../services/currencyService");
 const env_1 = require("../config/env");
 const router = express_1.default.Router();
 router.get('/purchases/history/:id', async (req, res) => {
@@ -75,11 +76,22 @@ router.get('/earnings/get/:id', async (req, res) => {
         // Garantir que earnings seja sempre um número inteiro
         const available_diamonds = Math.floor(user.earnings || 0);
         const brl_value = (0, diamondConversion_1.calculateBRLFromDiamonds)(available_diamonds);
+        const currency = (0, currencyService_1.getCurrencyForCountry)(user.country);
+        const { rates, source } = await (0, currencyService_1.getExchangeRates)();
+        const eur_value = Math.round(brl_value * rates.EUR * 100) / 100;
+        const usd_value = Math.round(brl_value * rates.USD * 100) / 100;
+        const local_value = await (0, currencyService_1.convertBRL)(brl_value, currency);
         console.log(`💳 [EARNINGS] Usuário ${user.name} (${req.params.id}) - Earnings: ${available_diamonds} diamantes`);
         res.json({
             available_diamonds,
             brl_value,
+            eur_value,
+            usd_value,
+            local_value,
+            currency,
+            currency_symbol: currencyService_1.CURRENCY_SYMBOLS[currency],
             conversion_rate: 'Tabela de pacotes',
+            rate_source: source,
             withdrawal_method: user.withdrawal_method || null
         });
     }
@@ -106,23 +118,32 @@ router.post('/earnings/calculate', async (req, res) => {
         }).catch(console.error);
         // Calcular valores (sem taxa - apenas conversão)
         const brl_amount = (0, diamondConversion_1.calculateBRLFromDiamonds)(amount);
-        const platform_fee_brl = Math.round((brl_amount * 0.20) * 100) / 100; // Mostrar taxa informativa
-        const net_brl = Math.round((brl_amount - platform_fee_brl) * 100) / 100; // Valor que receberia ao sacar
-        // ⚠️ REMOVIDO: Logs com dados sensíveis
-        // console.log(`[CALCULATE] Valores do saque:`);
-        // console.log(`[CALCULATE] - Valor bruto: R$ ${brl_amount.toFixed(2)}`);
-        // console.log(`[CALCULATE] - Taxa plataforma (20%): R$ ${platform_fee_brl.toFixed(2)}`);
-        // console.log(`[CALCULATE] - Valor líquido: R$ ${net_brl.toFixed(2)}`);
+        const user = await models_1.User.findOne({ id: userId }).select('id country name');
+        const currency = (0, currencyService_1.getCurrencyForCountry)(user?.country);
+        const multi = await (0, currencyService_1.calculateMultiCurrency)(amount, brl_amount);
+        const local = multi.byCurrency[currency];
         console.log('[CALCULATE] Cálculo de saque processado para amount:', amount);
         res.json({
             diamonds: amount,
-            gross_brl: brl_amount,
-            platform_fee_brl: parseFloat(platform_fee_brl.toFixed(2)),
-            net_brl: parseFloat(net_brl.toFixed(2)),
+            currency,
+            currency_symbol: currencyService_1.CURRENCY_SYMBOLS[currency],
+            rate_source: multi.rateSource,
+            gross_brl: multi.byCurrency.BRL.gross,
+            platform_fee_brl: multi.byCurrency.BRL.fee,
+            net_brl: multi.byCurrency.BRL.net,
+            gross_eur: multi.byCurrency.EUR.gross,
+            platform_fee_eur: multi.byCurrency.EUR.fee,
+            net_eur: multi.byCurrency.EUR.net,
+            gross_usd: multi.byCurrency.USD.gross,
+            platform_fee_usd: multi.byCurrency.USD.fee,
+            net_usd: multi.byCurrency.USD.net,
+            local_gross: local.gross,
+            local_fee: local.fee,
+            local_net: local.net,
             breakdown: {
-                conversion: `${amount} diamantes = R$ ${brl_amount.toFixed(2)}`,
-                fee: `Taxa de saque (20%): R$ ${platform_fee_brl.toFixed(2)}`,
-                final: `Você receberia: R$ ${net_brl.toFixed(2)}`
+                conversion: `${amount} diamantes = ${(0, currencyService_1.formatCurrency)(local.gross, currency)}`,
+                fee: `Taxa de saque (20%): ${(0, currencyService_1.formatCurrency)(local.fee, currency)}`,
+                final: `Você receberia: ${(0, currencyService_1.formatCurrency)(local.net, currency)}`
             }
         });
     }

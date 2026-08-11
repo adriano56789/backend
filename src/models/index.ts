@@ -59,3 +59,6 @@ export { StreamParticipant } from './StreamParticipant';
 export { PurchaseAuditTrail } from './PurchaseAuditTrail';
 export { StreamRoom } from './StreamRoom';
 
+
+export { RouletteItem, IRouletteItem } from './RouletteItem';
+export { RouletteSpin, IRouletteSpin } from './RouletteSpin';

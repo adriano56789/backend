@@ -86,6 +86,7 @@ const StreamerSchema = new mongoose_1.Schema({
     autoInviteEnabled: { type: Boolean, default: false },
     moderators: [{ type: String }],
     kickedUsers: [{ type: String }],
+    invitedUsers: [{ type: String }],
     diamonds: { type: Number, default: 0 },
     likes: { type: Number, default: 0 },
     cover: { type: String },

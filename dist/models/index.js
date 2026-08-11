@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.CallInvitation = exports.DeviceToken = exports.Battle = exports.UserActivity = exports.Withdrawal = exports.Like = exports.Follow = exports.BeautyEffect = exports.StreamKeyAssociation = exports.UserStatus = exports.ZoomSettings = exports.BannedEntity = exports.ManualTransmissao = exports.UserFrame = exports.Frame = exports.UserAvatar = exports.UserInventory = exports.ShopItem = exports.UserLevel = exports.MediaPermission = exports.AppVersion = exports.BeautySettings = exports.GiftNotificationSettings = exports.UserIndex = exports.Visitor = exports.Invitation = exports.Conversation = exports.ChatMessage = exports.Chat = exports.ProfilePhoto = exports.Comment = exports.Birthday = exports.ProfileUpdate = exports.UserVideo = exports.UserPhoto = exports.Block = exports.Friendship = exports.Followers = exports.GiftTransaction = exports.StreamSession = exports.LiveNotification = exports.PurchaseRecord = exports.Photo = exports.Order = exports.Message = exports.Gift = exports.StreamLike = exports.StreamHistory = exports.Streamer = exports.User = void 0;
-exports.StreamRoom = exports.PurchaseAuditTrail = exports.StreamParticipant = exports.EmptyApiLog = exports.PKInvite = exports.LiveCard = exports.LiveInvite = exports.LiveUser = exports.LiveMessage = void 0;
+exports.RouletteSpin = exports.RouletteItem = exports.StreamRoom = exports.PurchaseAuditTrail = exports.StreamParticipant = exports.EmptyApiLog = exports.PKInvite = exports.LiveCard = exports.LiveInvite = exports.LiveUser = exports.LiveMessage = void 0;
 var User_1 = require("./User");
 Object.defineProperty(exports, "User", { enumerable: true, get: function () { return User_1.User; } });
 var Streamer_1 = require("./Streamer");
@@ -119,3 +119,7 @@ var PurchaseAuditTrail_1 = require("./PurchaseAuditTrail");
 Object.defineProperty(exports, "PurchaseAuditTrail", { enumerable: true, get: function () { return PurchaseAuditTrail_1.PurchaseAuditTrail; } });
 var StreamRoom_1 = require("./StreamRoom");
 Object.defineProperty(exports, "StreamRoom", { enumerable: true, get: function () { return StreamRoom_1.StreamRoom; } });
+var RouletteItem_1 = require("./RouletteItem");
+Object.defineProperty(exports, "RouletteItem", { enumerable: true, get: function () { return RouletteItem_1.RouletteItem; } });
+var RouletteSpin_1 = require("./RouletteSpin");
+Object.defineProperty(exports, "RouletteSpin", { enumerable: true, get: function () { return RouletteSpin_1.RouletteSpin; } });

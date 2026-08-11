@@ -86,6 +86,7 @@ const UserSchema = new mongoose_1.Schema({
     earnings_withdrawn: { type: Number, default: 0 },
     diamonds_purchased: { type: Number, default: 0 },
     withdrawal_method: { type: Object },
+    cadastral: { type: Object },
     bio: { type: String },
     obras: [{ id: String, url: String }],
     curtidas: [{ type: String }],
@@ -135,7 +136,8 @@ const UserSchema = new mongoose_1.Schema({
     searchesPerformed: { type: Number, default: 0 },
     recentActivities: [{ action: String, resource: String, timestamp: Date, endpoint: String }],
     isNewUser: { type: Boolean, default: true },
-    newUserNotified: { type: Boolean, default: false }
+    newUserNotified: { type: Boolean, default: false },
+    rouletteSpinCost: { type: Number, default: 0 }
 }, { timestamps: true, id: false });
 // Create text index for search
 UserSchema.index({ name: 'text', displayName: 'text', bio: 'text', profession: 'text' });

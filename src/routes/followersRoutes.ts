@@ -259,16 +259,18 @@ router.delete('/:id', async (req, res) => {
             }
         );
         
-        // Atualizar contadores
-        await User.updateOne(
-            { id: follow.followerId },
-            { $inc: { following: -1 } }
-        );
-        
-        await User.updateOne(
-            { id: follow.followingId },
-            { $inc: { fans: -1 } }
-        );
+        // Atualizar contadores SOMENTE se o follow ainda estava ativo (evita contadores negativos)
+        if (follow.isActive) {
+            await User.updateOne(
+                { id: follow.followerId },
+                { $inc: { following: -1 } }
+            );
+            
+            await User.updateOne(
+                { id: follow.followingId },
+                { $inc: { fans: -1 } }
+            );
+        }
         
         // Notificar via WebSocket
         const io = req.app.get('io');

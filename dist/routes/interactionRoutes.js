@@ -145,6 +145,9 @@ router.post('/streams/:id/private-invite', async (req, res) => {
             return res.status(404).json({ success: false, error: 'Usuário não encontrado' });
         }
         console.log(`📝 [PRIVATE INVITE] Evento recebido: ${stream.hostId} convidando ${userId}`);
+        // Persistir o convite no stream (controle de acesso para convidados)
+        await models_1.Streamer.updateOne({ id: streamId }, { $addToSet: { invitedUsers: userId } });
+        console.log(`💾 [PRIVATE INVITE] Usuário ${userId} adicionado aos convidados do stream ${streamId}`);
         // Persistir atividade de convite privado
         console.log(`📤 [PRIVATE INVITE] Enviando updates de atividades para o banco...`);
         await Promise.all([
@@ -206,6 +209,25 @@ router.post('/streams/:id/private-invite', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+router.get('/streams/invited-streams', async (req, res) => {
+    try {
+        const { userId } = req.query;
+        if (!userId) {
+            return res.json({ success: true, streamIds: [] });
+        }
+        const invited = await models_1.Streamer.find({
+            invitedUsers: userId,
+            isLive: true
+        }).select('id streamKey hostId').lean();
+        const streamIds = Array.from(new Set(invited.map((s) => s.id || s.streamKey || s.hostId).filter(Boolean)));
+        console.log(`🔑 [INVITED STREAMS] ${streamIds.length} lives para o usuário ${userId}:`, streamIds);
+        res.json({ success: true, streamIds });
+    }
+    catch (error) {
+        console.error('❌ Erro ao listar lives convidadas:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 router.get('/streams/:id/access-check', async (req, res) => {
     try {
         const { id: streamId } = req.params;
@@ -243,41 +265,46 @@ router.get('/streams/:id/access-check', async (req, res) => {
         if (requestingUser === stream.hostId) {
             canJoin = true;
         }
-        // Verificar configuração de followers only
-        else if (settings.followersOnly) {
-            const isFollowing = await models_1.Followers.findOne({
-                followerId: requestingUser,
-                followingId: stream.hostId,
-                isActive: true
-            });
-            canJoin = !!isFollowing;
-            reason = canJoin ? '' : 'Only followers can join this stream';
-        }
-        // Verificar configuração de fans only
-        else if (settings.fansOnly) {
-            const isFan = await models_1.Followers.findOne({
-                followerId: requestingUser,
-                followingId: stream.hostId,
-                isActive: true
-            });
-            canJoin = !!isFan;
-            reason = canJoin ? '' : 'Only fans can join this stream';
-        }
-        // Verificar configuração de friends only
-        else if (settings.friendsOnly) {
-            const friendship = await models_1.Friendship.findOne({
-                $or: [
-                    { userId1: requestingUser, userId2: stream.hostId },
-                    { userId1: stream.hostId, userId2: requestingUser }
-                ],
-                isActive: true
-            });
-            canJoin = !!friendship;
-            reason = canJoin ? '' : 'Only friends can join this stream';
-        }
-        // Se não houver restrições específicas, pode entrar
         else {
-            canJoin = true;
+            const invitedUsers = Array.isArray(stream.invitedUsers) ? stream.invitedUsers : [];
+            // Convite privado ligado: exige convite + TODAS as regras ativas (AND)
+            if (settings.privateInvite) {
+                if (!invitedUsers.includes(requestingUser)) {
+                    canJoin = false;
+                    reason = 'Você precisa ser convidado para entrar nesta sala privada';
+                }
+                else {
+                    const followerCheck = settings.followersOnly
+                        ? await models_1.Followers.findOne({
+                            followerId: requestingUser,
+                            followingId: stream.hostId,
+                            isActive: true
+                        })
+                        : true;
+                    const fanCheck = settings.fansOnly
+                        ? await models_1.Followers.findOne({
+                            followerId: requestingUser,
+                            followingId: stream.hostId,
+                            isActive: true
+                        })
+                        : true;
+                    const friendCheck = settings.friendsOnly
+                        ? await models_1.Friendship.findOne({
+                            $or: [
+                                { userId1: requestingUser, userId2: stream.hostId },
+                                { userId1: stream.hostId, userId2: requestingUser }
+                            ],
+                            isActive: true
+                        })
+                        : true;
+                    canJoin = !!followerCheck && !!fanCheck && !!friendCheck;
+                    reason = canJoin ? '' : 'Você não atende aos critérios do criador para entrar nesta sala';
+                }
+            }
+            else {
+                // Convite privado desligado: sem restrições extras além da privacidade da transmissão
+                canJoin = true;
+            }
         }
         console.log(`🔓 Access result for user ${requestingUser}: ${canJoin}, reason: ${reason}`);
         res.json({ canJoin, reason });
@@ -1188,6 +1215,7 @@ router.post('/streams/:id/toggle-auto-invite', async (req, res) => {
     }
 });
 const avatarFrames = {
+    'Frame20275': { price: 500, durationDays: 30, name: 'Primavera' },
     'FrameBlueCrystal': { price: 500, durationDays: 7, name: 'Blue Crystal' },
     'FrameRoseGarden': { price: 750, durationDays: 7, name: 'Rose Garden' },
     'FrameCopperPearls': { price: 1000, durationDays: 14, name: 'Copper Pearls' },
