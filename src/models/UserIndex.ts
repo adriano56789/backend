@@ -135,7 +135,12 @@ export async function searchUserIndexesByName(collection: Collection, queryStr: 
         { $or: [
             { name: regex },
             { displayName: regex },
+            { identification: regex },
             { searchTerms: regex },
+            // 🔍 Buscar também pelo ID REAL do usuário (ex.: '6771613') e pelo
+            // identificador — sem isso, pesquisar por ID não retornava ninguém.
+            { userId: regex },
+            { id: regex },
         ]},
     ];
     if (filters?.isActive !== undefined) andClauses.push({ isActive: filters.isActive });

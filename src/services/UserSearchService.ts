@@ -80,7 +80,18 @@ export class UserSearchService {
             const collection = db.collection("userindexes");
             const results = await searchUserIndexesByName(collection, searchTerm, limit, { isActive: true });
 
-            return results;
+            // 🐛 FIX: o documento do índice guarda `id` como "user_idx_123456" —
+            // retornar esse id quebrava o app (perfil/chat com id inválido e o
+            // texto "user_idx6671613" aparecendo na busca). A API agora devolve
+            // o ID REAL do usuário (`userId`) no campo `id`.
+            return (results || []).map((u: any) => ({
+                id: u.userId || u.id,
+                userId: u.userId || u.id,
+                name: u.name || '',
+                displayName: u.displayName || u.name || '',
+                avatarUrl: u.avatarUrl || '',
+                isActive: u.isActive !== false,
+            }));
         } catch (error: any) {
             console.error('❌ Erro na busca de usuários:', error.message);
             return [];

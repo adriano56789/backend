@@ -103,6 +103,7 @@ const UserSchema = new mongoose_1.Schema({
     ownedFrames: [{ frameId: String, expirationDate: String }],
     chatPermission: { type: String, enum: ['all', 'followers', 'following', 'friends', 'none'], default: 'all' },
     pipEnabled: { type: Boolean, default: true },
+    streamPreviewEnabled: { type: Boolean, default: false },
     locationPermission: { type: String, enum: ['granted', 'denied', 'prompt'], default: 'prompt' },
     cameraPermissionStatus: { type: String, enum: ['granted', 'denied', 'prompt'], default: 'prompt' },
     microphonePermissionStatus: { type: String, enum: ['granted', 'denied', 'prompt'], default: 'prompt' },

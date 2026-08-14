@@ -217,7 +217,7 @@ exports.UserRoutes.patch("/:id", async (req, res) => {
             'chatPermission', 'pipEnabled', 'locationPermission',
             'showActivityStatus', 'showLocation', 'privateStreamSettings',
             'activeFrameId', 'obras', 'location', 'latitude', 'longitude',
-            'cadastral'
+            'cadastral', 'streamPreviewEnabled'
         ];
         const updateData = {};
         for (const key of allowedFields) {
@@ -859,28 +859,9 @@ exports.UserRoutes.get('/:id/messages', async (req, res) => {
                 }
             }
         });
-        // Buscar IDs de usuários bloqueados pelo usuário atual e que bloqueiam o usuário
-        const currentUser = await models_1.User.findOne({ id: userId }).select('blockedUsers').lean();
-        const blockedByMe = currentUser?.blockedUsers || [];
-        const blockers = await models_1.User.find({ blockedUsers: userId }).select('id').lean();
-        const blockedMe = blockers.map((b) => b.id);
-        const allBlocked = [...blockedByMe, ...blockedMe];
-        // Buscar também USUÁRIOS ONLINE que NÃO estão nos parceiros de conversa nem bloqueados
-        // para que apareçam na lista de mensagens mesmo sem histórico
-        const onlinePartnerIds = Array.from(partnerIds);
-        const onlineUsers = await models_1.User.find({
-            isOnline: true,
-            id: { $ne: userId, $nin: [...onlinePartnerIds, ...allBlocked] }
-        })
-            .sort({ lastSeen: -1 })
-            .limit(20)
-            .select('id name avatarUrl level fans following isOnline lastSeen')
-            .lean();
-        // Adicionar usuários online aos partnerIds e criar entradas sem mensagem
-        onlineUsers.forEach((u) => {
-            partnerIds.add(u.id);
-            // Não adicionar ao lastMessageByPartner — fica sem mensagem
-        });
+        // ✅ Só aparecem na lista de mensagens usuários com os quais existe
+        // conversa REAL (mensagem trocada). Cadastro/login/navegação NÃO geram
+        // contato. Usuários online sem mensagem nunca aparecem aqui.
         if (partnerIds.size === 0) {
             return res.json([]);
         }
@@ -902,7 +883,9 @@ exports.UserRoutes.get('/:id/messages', async (req, res) => {
         const conversations = partners.map((partner) => {
             const lastMsg = lastMessageByPartner.get(partner.id);
             const lastMsgText = lastMsg?.content || '';
-            const lastMsgTime = lastMsg?.sentAt ? new Date(lastMsg.sentAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }) : '';
+            // timestamp CRU (ISO), sem pré-formatar: o frontend formata com data
+            // completa + hora exata (Agora / hoje / Ontem / dd/mm/aaaa).
+            const lastMsgTime = lastMsg?.sentAt ? lastMsg.sentAt.toISOString() : lastMsg?.createdAt ? lastMsg.createdAt.toISOString() : '';
             return {
                 id: `conv_${userId}_${partner.id}`,
                 friend: partner,
@@ -915,8 +898,8 @@ exports.UserRoutes.get('/:id/messages', async (req, res) => {
         conversations.sort((a, b) => {
             const aMsg = lastMessageByPartner.get(a.friend.id);
             const bMsg = lastMessageByPartner.get(b.friend.id);
-            const aTime = aMsg?.sentAt ? new Date(aMsg.sentAt).getTime() : 0;
-            const bTime = bMsg?.sentAt ? new Date(bMsg.sentAt).getTime() : 0;
+            const aTime = aMsg?.sentAt ? new Date(aMsg.sentAt).getTime() : aMsg?.createdAt ? new Date(aMsg.createdAt).getTime() : 0;
+            const bTime = bMsg?.sentAt ? new Date(bMsg.sentAt).getTime() : bMsg?.createdAt ? new Date(bMsg.createdAt).getTime() : 0;
             if (aTime && bTime)
                 return bTime - aTime;
             if (aTime)

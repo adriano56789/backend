@@ -374,6 +374,81 @@ router.get('/ranking/:period', async (req, res) => {
             return res.json(liveRanking);
         }
         
+        // 🎯 TOP FÃS POR USUÁRIO (scope=fans): retorna APENAS usuários que
+        // ENVIARAM pelo menos um presente PARA este usuário (transações reais
+        // no banco de GiftTransaction). Auto-presentes (fromUserId === toUserId)
+        // são excluídos — quem nunca enviou presente não aparece na lista.
+        const scope = req.query.scope;
+        const targetUserId = req.query.userId;
+        if (scope === 'fans' && targetUserId && typeof targetUserId === 'string') {
+            console.log(`🎁 [TOP FANS] Buscando fãs de ${targetUserId} para período ${period}`);
+            const now = new Date();
+            let startDate: Date | null = null;
+            if (period === 'daily' || period === 'Diária' || period === 'Hoje' || period === 'today') {
+                startDate = new Date(now);
+                startDate.setHours(0, 0, 0, 0);
+            }
+            else if (period === 'weekly' || period === 'Semanal' || period === 'Semana' || period === 'week') {
+                startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            }
+            else if (period === 'monthly' || period === 'Mensal' || period === 'Mês' || period === 'month') {
+                startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+            }
+            const dateQuery = startDate ? { createdAt: { $gte: startDate } } : {};
+
+            const fanTransactions = await GiftTransaction.find({
+                toUserId: targetUserId,
+                fromUserId: { $ne: targetUserId },
+                ...dateQuery,
+            }).limit(10000).lean();
+
+            const senderTotals = new Map<string, { total: number; count: number }>();
+            fanTransactions.forEach((tx: any) => {
+                const senderId = tx.fromUserId;
+                if (!senderId) return;
+                if (!senderTotals.has(senderId)) {
+                    senderTotals.set(senderId, { total: 0, count: 0 });
+                }
+                const entry = senderTotals.get(senderId)!;
+                const unitValue = tx.totalValue || ((tx.giftPrice || 0) * (tx.quantity || 1));
+                entry.total += unitValue;
+                entry.count += 1;
+            });
+
+            // Apenas quem realmente enviou (total > 0) — espectadores nunca entram
+            const sorted = Array.from(senderTotals.entries())
+                .filter(([, data]) => data.total > 0)
+                .sort((a, b) => b[1].total - a[1].total)
+                .slice(0, 50);
+
+            const senderIds = sorted.map(([id]) => id);
+            const senders = await User.find({ id: { $in: senderIds } }).lean();
+            const senderMap = new Map(senders.map(u => [u.id, u]));
+
+            const ranked = sorted
+                .map(([senderId, data]) => {
+                    const user = senderMap.get(senderId);
+                    if (!user) return null;
+                    return {
+                        id: user.id,
+                        name: user.name,
+                        avatarUrl: user.avatarUrl || (user as any).avatar || '',
+                        contribution: Math.round(data.total),
+                        giftCount: data.count,
+                        rank: 0,
+                        gender: (user as any).gender || 'not_specified',
+                        age: (user as any).age || 0,
+                        level: (user as any).level || 1,
+                        country: (user as any).country || '',
+                    };
+                })
+                .filter(Boolean)
+                .map((item: any, index: number) => ({ ...item, rank: index + 1 }));
+
+            console.log(`🎁 [TOP FANS] ${ranked.length} fãs encontrados para ${targetUserId}`);
+            return res.json(ranked);
+        }
+        
         // 🔧 CORREÇÃO: Para outros períodos, usar contadores atuais em vez de transações
         // Após saque, os contadores devem estar zerados
         

@@ -8,11 +8,11 @@ const app_1 = require("firebase-admin/app");
 const messaging_1 = require("firebase-admin/messaging");
 const env_1 = require("../config/env");
 // ═══════════════════════════════════════════════════════════════════════
-// REGRA DE OURO: Firebase/FCM serve EXCLUSIVAMENTE para enviar notificação
-// PUSH na tela do usuário (title + body). NUNCA deve carregar/buscar imagem,
-// avatar ou ícone — nem no notification (imageUrl/icon) nem nos dados (data).
-// Qualquer campo que pareça imagem/avatar/ícone é REMOVIDO do payload antes
-// do envio, garantindo que o push NUNCA dispare um fetch de imagem.
+// REGRA: Firebase/FCM envia a notificação PUSH na tela (title + body). Por
+// padrão NENHUM campo de imagem/avatar/ícone trafega nos dados (data) — para
+// o push de "início de live" é enviado UM campo `image` (Big Picture) apenas
+// no notification.webpush.notification.image / notification.image, usado pelo
+// service worker para exibir a imagem grande (como nos grandes apps).
 // ═══════════════════════════════════════════════════════════════════════
 const IMAGE_LIKE_FIELD = /(avatar|image|icon|photo|picture|cover|thumb)/i;
 function sanitizeData(data) {
@@ -29,6 +29,16 @@ function sanitizeData(data) {
         clean[key] = value;
     }
     return clean;
+}
+function buildNotification(payload) {
+    const notification = {
+        title: payload.title,
+        body: payload.body,
+    };
+    if (payload.image) {
+        notification.image = payload.image;
+    }
+    return notification;
 }
 let firebaseApp = null;
 let firebaseMessaging = null;
@@ -77,15 +87,15 @@ async function sendPushNotification(token, payload) {
         return null;
     }
     try {
-        // 🚫 SEM imageUrl/icon: o push é SÓ título + corpo. Nenhuma imagem é baixada.
         const message = {
             token,
-            notification: {
-                title: payload.title,
-                body: payload.body,
-            },
+            notification: buildNotification(payload),
             data: sanitizeData(payload.data),
         };
+        if (payload.image) {
+            // Big Picture — imagem grande do push (padrão Web Push)
+            message.webpush = { notification: { image: payload.image } };
+        }
         const response = await messaging.send(message);
         console.log('[FCM] Notificação enviada com sucesso:', response);
         return response;
@@ -107,15 +117,15 @@ async function sendPushNotificationToMultiple(tokens, payload) {
         return [];
     }
     try {
-        // 🚫 SEM imageUrl/icon: o push é SÓ título + corpo. Nenhuma imagem é baixada.
         const message = {
             tokens,
-            notification: {
-                title: payload.title,
-                body: payload.body,
-            },
+            notification: buildNotification(payload),
             data: sanitizeData(payload.data),
         };
+        if (payload.image) {
+            // Big Picture — imagem grande do push (padrão Web Push)
+            message.webpush = { notification: { image: payload.image } };
+        }
         const response = await messaging.sendEachForMulticast(message);
         console.log(`[FCM] Notificação enviada para ${response.successCount} dispositivos, ${response.failureCount} falhas.`);
         const failedTokens = [];

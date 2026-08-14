@@ -165,47 +165,34 @@ router.post('/roulette/spin', async (req, res) => {
         const ownerDoc = await User.findOne({ id: ownerId }).exec();
         const cost = ownerDoc && Number(ownerDoc.rouletteSpinCost) > 0 ? Math.floor(Number(ownerDoc.rouletteSpinCost)) : 0;
 
-        // 💎 Bloqueia giro com saldo insuficiente ANTES de debitar (400 → o app
-        // abre a mesma carteira de diamantes usada nos presentes)
-        if (cost > 0) {
-            const userDoc = await User.findOne({ id: userId }).exec();
-            const balance = userDoc ? Number(userDoc.diamonds) || 0 : 0;
-            if (balance < cost) {
-                return res.status(400).json({ error: 'Diamantes insuficientes para girar esta roleta.' });
-            }
-        }
-
-        // Débito dos diamantes do usuário — ATÔMICO ($inc) + clamp em 0
+        // 💎 DÉBITO ATÔMICO + BLOQUEIO POR SALDO NA MESMA OPERAÇÃO: o filtro
+        // diamonds >= cost garante que o $inc só roda se o saldo cobrir o custo
+        // NAQUELE instante. Se não cobrir, findOneAndUpdate retorna null →
+        // giro BLOQUEADO com 400 e NADA é debitado. Resultado garantido:
+        //  • só gira quem tem saldo suficiente;
+        //  • o valor descontado é EXATAMENTE o custo fixo definido pela host;
+        //  • o débito é imediato e nunca gera saldo negativo (sem clamp depois).
         let diamondsAfter: number | null = null;
         if (cost > 0 && userId) {
-            try {
-                const activity = {
-                    action: 'roulette_spin',
-                    resource: 'roulette',
-                    timestamp: new Date(),
-                    endpoint: '/api/roulette/spin'
-                };
-                const updated = await User.findOneAndUpdate(
-                    { id: userId },
-                    {
-                        $inc: { diamonds: -cost },
-                        $push: { recentActivities: { $each: [activity], $slice: -50 } },
-                    },
-                    { new: true }
-                ).exec();
-                if (updated) {
-                    let after = Number(updated.diamonds);
-                    if (!Number.isFinite(after)) after = 0;
-                    if (after < 0) {
-                        // Nunca deixar saldo negativo
-                        await User.updateOne({ id: userId }, { $set: { diamonds: 0 } }).exec();
-                        after = 0;
-                    }
-                    diamondsAfter = after;
-                }
-            } catch (userErr: any) {
-                console.warn('[ROULETTE-ROUTES] Erro ao debitar diamantes (continuando):', userErr.message);
+            const activity = {
+                action: 'roulette_spin',
+                resource: 'roulette',
+                timestamp: new Date(),
+                endpoint: '/api/roulette/spin'
+            };
+            const updated = await User.findOneAndUpdate(
+                { id: userId, diamonds: { $gte: cost } },
+                {
+                    $inc: { diamonds: -cost },
+                    $push: { recentActivities: { $each: [activity], $slice: -50 } },
+                },
+                { new: true }
+            ).exec();
+            if (!updated) {
+                return res.status(400).json({ error: 'Diamantes insuficientes para girar esta roleta.' });
             }
+            const after = Number(updated.diamonds);
+            diamondsAfter = Number.isFinite(after) ? Math.max(0, after) : 0;
         }
 
         // 💎 OS DIAMANTES DO GIRO VÃO DIRETO PARA A HOST — o espectador paga e
@@ -246,6 +233,9 @@ router.post('/roulette/spin', async (req, res) => {
             success: true,
             item: JSON.parse(JSON.stringify(item)),
             diamondsAfter,
+            // 💎 Valor EXATO debitado — o app usa pra confirmar que o que mostrou
+            // na roleta (definido pela host) foi exatamente o que saiu do saldo.
+            cost,
         });
     } catch (error: any) {
         console.error('[ROULETTE-ROUTES] Erro ao girar:', error);

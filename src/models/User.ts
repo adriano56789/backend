@@ -80,6 +80,7 @@ export interface IUser extends Document {
   ownedFrames: { frameId: string; expirationDate: string }[];
   chatPermission?: 'all' | 'followers' | 'following' | 'friends' | 'none';
   pipEnabled?: boolean;
+  streamPreviewEnabled?: boolean;
   locationPermission?: 'granted' | 'denied' | 'prompt';
   cameraPermissionStatus?: 'granted' | 'denied' | 'prompt';
   microphonePermissionStatus?: 'granted' | 'denied' | 'prompt';
@@ -183,6 +184,7 @@ const UserSchema: Schema = new Schema({
   ownedFrames: [{ frameId: String, expirationDate: String }],
   chatPermission: { type: String, enum: ['all', 'followers', 'following', 'friends', 'none'], default: 'all' },
   pipEnabled: { type: Boolean, default: true },
+  streamPreviewEnabled: { type: Boolean, default: false },
   locationPermission: { type: String, enum: ['granted', 'denied', 'prompt'], default: 'prompt' },
   cameraPermissionStatus: { type: String, enum: ['granted', 'denied', 'prompt'], default: 'prompt' },
   microphonePermissionStatus: { type: String, enum: ['granted', 'denied', 'prompt'], default: 'prompt' },

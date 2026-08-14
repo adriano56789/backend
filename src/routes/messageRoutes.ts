@@ -46,7 +46,7 @@ router.get('/', async (req, res) => {
                 to: msg.receiverId,
                 text: msg.content || '',
                 imageUrl: msg.messageType === 'image' ? msg.content : undefined,
-                timestamp: msg.sentAt?.toISOString() || new Date().toISOString(),
+                timestamp: msg.sentAt?.toISOString() || msg.createdAt?.toISOString() || new Date().toISOString(),
                 status: msg.isRead ? 'read' : 'delivered',
                 ...senderData
             };
@@ -107,7 +107,7 @@ router.get('/chats/:userId/messages', async (req, res) => {
                 to: msg.receiverId,
                 text: msg.messageType !== 'image' ? (msg.content || '') : '',
                 imageUrl: msg.messageType === 'image' ? msg.content : undefined,
-                timestamp: msg.sentAt?.toISOString() || new Date().toISOString(),
+                timestamp: msg.sentAt?.toISOString() || msg.createdAt?.toISOString() || new Date().toISOString(),
                 status: msg.isRead ? 'read' : 'delivered',
                 ...senderData
             };
@@ -203,7 +203,7 @@ router.post('/', async (req, res) => {
             to: receiverId,
             text: messageType !== 'image' ? (content || '') : '',
             imageUrl: messageType === 'image' ? imageUrl : undefined,
-            timestamp: message.sentAt?.toISOString() || new Date().toISOString(),
+            timestamp: message.sentAt?.toISOString() || message.createdAt?.toISOString() || new Date().toISOString(),
             status: 'sent',
             senderName: sender?.name,
             senderAvatar: sender?.avatarUrl,

@@ -204,7 +204,7 @@ router.get('/:id/messages', async (req, res) => {
                     messageType: message.messageType,
                     isRead: message.isRead,
                     readAt: message.readAt,
-                    sentAt: message.sentAt,
+                    sentAt: message.sentAt || message.createdAt,
                     sender: sender || { id: message.senderId, name: 'Usuário', avatarUrl: '' }
                 };
             })

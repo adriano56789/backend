@@ -517,9 +517,29 @@ io.on('connection', (socket) => {
       io.to(streamId).emit('online_users_updated', { streamId, count: onlineCount });
       // viewers_count_updated removido — redundante com online_users_updated.count
       let userName = 'Usuário', userAvatar = '', userLevel = 0;
+      let entranceEffect: any = null;
       try {
-        const userDoc = await models.User.findOne({ id: userId }).select('name avatarUrl level').lean();
-        if (userDoc) { userName = (userDoc as any).name || 'Usuário'; userAvatar = (userDoc as any).avatarUrl || ''; userLevel = (userDoc as any).level || 0; }
+        const userDoc = await models.User.findOne({ id: userId }).select('name avatarUrl level isVIP vipExpirationDate').lean();
+        if (userDoc) {
+          userName = (userDoc as any).name || 'Usuário';
+          userAvatar = (userDoc as any).avatarUrl || '';
+          userLevel = (userDoc as any).level || 0;
+          // 🚪 Efeito de ENTRADA: recurso premium (como Bigo/ti.live) — só quem tem
+          // VIP ativo toca o efeito. O front toca para o HOST (anúncio de chegada)
+          // e para o próprio VIP ao entrar.
+          const isVipActive = !!(userDoc as any).isVIP &&
+            (!(userDoc as any).vipExpirationDate || new Date((userDoc as any).vipExpirationDate).getTime() > Date.now());
+          if (isVipActive) {
+            entranceEffect = {
+              id: 'vip_entrance_51002',
+              name: 'Entrada VIP',
+              url: '/animations/entrada_efeito.mp4',
+              configUrl: '/animations/entrada_efeito.json',
+              w: 750,
+              h: 200,
+            };
+          }
+        }
       } catch (_) {}
       let hostId = '';
       try {
@@ -539,8 +559,8 @@ io.on('connection', (socket) => {
         else console.log('[FCM] Streamer não encontrado para streamId=' + streamId);
       } catch (_) {}
       const counts = await onlineTracker.userJoin(streamId, userId, hostId, userName, userAvatar);
-      io.to(streamId).emit('user_joined_stream', { userId, userName, userAvatar, userLevel, streamId, timestamp: new Date().toISOString() });
-      io.to(streamId).emit('user:join', { userId, userName, userAvatar, userLevel, streamId, role: userId === hostId ? 'host' : counts.role, fans: counts.fans, visitors: counts.visitors, total: counts.fans + counts.visitors, timestamp: new Date().toISOString() });
+      io.to(streamId).emit('user_joined_stream', { userId, userName, userAvatar, userLevel, streamId, entranceEffect, isVip: !!entranceEffect, timestamp: new Date().toISOString() });
+      io.to(streamId).emit('user:join', { userId, userName, userAvatar, userLevel, streamId, entranceEffect, isVip: !!entranceEffect, role: userId === hostId ? 'host' : counts.role, fans: counts.fans, visitors: counts.visitors, total: counts.fans + counts.visitors, timestamp: new Date().toISOString() });
       io.to(streamId).emit('online_counts_updated', { streamId, fans: counts.fans, visitors: counts.visitors, total: counts.fans + counts.visitors });
       try {
         const { Streamer } = await import('./models/Streamer');
@@ -602,6 +622,7 @@ io.on('connection', (socket) => {
           userId,
           userName,
           userAvatar,
+          entranceEffect,
           chatId,
           streamId,
           timestamp: new Date()

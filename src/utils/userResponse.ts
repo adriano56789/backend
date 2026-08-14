@@ -112,6 +112,7 @@ export function standardizeUserResponse(user: any, viewerId?: string | null): an
         ownedFrames: user.ownedFrames || [],
         chatPermission: user.chatPermission || "all",
         pipEnabled: user.pipEnabled !== undefined ? user.pipEnabled : true,
+        streamPreviewEnabled: user.streamPreviewEnabled !== undefined ? user.streamPreviewEnabled : false,
         locationPermission: user.locationPermission || "prompt",
         showActivityStatus: user.showActivityStatus !== undefined ? user.showActivityStatus : true,
         showLocation: user.showLocation !== undefined ? user.showLocation : true,

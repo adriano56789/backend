@@ -1464,6 +1464,35 @@ function getCountryInfo(countryCode: string): { name: string; flagUrl: string } 
     return COUNTRY_FLAGS[code] || { name: code.toUpperCase(), flagUrl: `https://flagcdn.com/w40/${code}.png` };
 }
 
+// Mapa nome normalizado (sem acentos) → código ISO (ex: 'portugal' → 'pt', 'brasil' → 'br')
+const COUNTRY_NAME_TO_CODE: Record<string, string> = (() => {
+    const map: Record<string, string> = {};
+    for (const [code, info] of Object.entries(COUNTRY_FLAGS)) {
+        map[code] = code;
+        const nameNorm = info.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        map[nameNorm] = code;
+    }
+    return map;
+})();
+
+function normalizeCountryCode(value: any): string {
+    const raw = String(value ?? '').trim().toLowerCase();
+    const norm = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    return COUNTRY_NAME_TO_CODE[norm] || norm;
+}
+
+// Filtro Mongo que casa o país por código ISO OU nome (normalizado), cobrindo
+// dados legados gravados como 'portugal'/'brasil' em vez de 'pt'/'br'.
+function buildCountryFilter(countryValue: any): Record<string, any> {
+    const target = normalizeCountryCode(countryValue);
+    if (!target) return {};
+    const variants: string[] = [target];
+    for (const [key, code] of Object.entries(COUNTRY_NAME_TO_CODE)) {
+        if (code === target && !variants.includes(key)) variants.push(key);
+    }
+    return { $in: variants };
+}
+
 
 
 
@@ -3273,17 +3302,13 @@ router.get('/streams', async (req, res) => {
         const hasCountryFilter = country && country !== 'all' && country !== 'ICON_GLOBE';
 
         if (hasCountryFilter) {
-            const countryFilter = { ...baseFilter, country: (country as string).toLowerCase() };
+            const countryFilter = { ...baseFilter, country: buildCountryFilter(country) };
             cardDocs = await LiveCard.find(countryFilter)
                 .sort(sortField)
                 .limit(parseLimit + 1)
                 .lean();
-            if (cardDocs.length === 0) {
-                cardDocs = await LiveCard.find(baseFilter)
-                    .sort(sortField)
-                    .limit(parseLimit + 1)
-                    .lean();
-            }
+            // 🔧 FILTRO ESTRITO: sem fallback para todos os países — o usuário escolheu
+            // um país e deve ver SOMENTE as lives daquele país.
         } else {
             cardDocs = await LiveCard.find(baseFilter)
                 .sort(sortField)
@@ -3291,7 +3316,7 @@ router.get('/streams', async (req, res) => {
                 .lean();
         }
 
-        if (cardDocs.length === 0 && isLive === 'true') {
+        if (!hasCountryFilter && cardDocs.length === 0 && isLive === 'true') {
             const fallbackFilter: any = { ...baseFilter };
             delete fallbackFilter.country;
             cardDocs = await LiveCard.find(fallbackFilter)
@@ -3300,7 +3325,7 @@ router.get('/streams', async (req, res) => {
                 .lean();
         }
 
-        if (cardDocs.length === 0 && isLive === 'true') {
+        if (!hasCountryFilter && cardDocs.length === 0 && isLive === 'true') {
             cardDocs = await LiveCard.find({
                 isLive: true,
                 streamStatus: { $in: ['active', 'live'] }
@@ -5685,6 +5710,142 @@ router.post('/streams/:streamId/leave', async (req, res) => {
 
 
 // Rota para quando usu+�rio entra na stream - LEGACY
+
+// ===== ROUTE START =====
+
+// POST /api/streams/:id/toggle-mic - Alterna o microfone do host
+router.post('/streams/:id/toggle-mic', async (req, res) => {
+    try {
+        const streamId = req.params.id;
+        const db = getDb();
+        const sessions = db.collection('streamsessions');
+        const session = await sessions.findOne({ streamId, endTime: { $exists: false } });
+        if (!session) {
+            return res.status(404).json({ success: false, error: 'Sessao de stream nao encontrada' });
+        }
+        const userId = getUserIdFromToken(req);
+        if (userId && session.hostId !== userId) {
+            return res.status(403).json({ success: false, error: 'Apenas o host pode alternar o microfone' });
+        }
+        const newMicState = !(session.isMicrophoneMuted ?? false);
+        await sessions.updateOne(
+            { streamId, endTime: { $exists: false } },
+            { $set: { isMicrophoneMuted: newMicState, updatedAt: new Date() } }
+        );
+        const io = req.app.get('io');
+        if (io) {
+            io.to(streamId).emit('mic_toggled', {
+                streamId,
+                roomId: streamId,
+                userId,
+                isMuted: newMicState,
+                microphoneEnabled: newMicState,
+                timestamp: new Date().toISOString()
+            });
+        }
+        res.json({ success: true, isMuted: newMicState });
+    } catch (error: any) {
+        console.error('[TOGGLE-MIC] Erro:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ===== ROUTE START =====
+
+// POST /api/streams/:id/toggle-sound - Alterna o som do stream
+router.post('/streams/:id/toggle-sound', async (req, res) => {
+    try {
+        const streamId = req.params.id;
+        const db = getDb();
+        const sessions = db.collection('streamsessions');
+        const session = await sessions.findOne({ streamId, endTime: { $exists: false } });
+        if (!session) {
+            return res.status(404).json({ success: false, error: 'Sessao de stream nao encontrada' });
+        }
+        const userId = getUserIdFromToken(req);
+        if (userId && session.hostId !== userId) {
+            return res.status(403).json({ success: false, error: 'Apenas o host pode alternar o som' });
+        }
+        const newSoundState = !(session.isStreamMuted ?? false);
+        await sessions.updateOne(
+            { streamId, endTime: { $exists: false } },
+            { $set: { isStreamMuted: newSoundState, updatedAt: new Date() } }
+        );
+        const io = req.app.get('io');
+        if (io) {
+            io.to(streamId).emit('sound_toggled', {
+                streamId,
+                roomId: streamId,
+                userId,
+                isMuted: newSoundState,
+                soundEnabled: newSoundState,
+                timestamp: new Date().toISOString()
+            });
+        }
+        res.json({ success: true, isMuted: newSoundState });
+    } catch (error: any) {
+        console.error('[TOGGLE-SOUND] Erro:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ===== ROUTE START =====
+
+// POST /api/streams/:id/toggle-auto-follow - Alterna o seguimento automatico
+router.post('/streams/:id/toggle-auto-follow', async (req, res) => {
+    try {
+        const streamId = req.params.id;
+        const { isEnabled } = req.body ?? {};
+        const db = getDb();
+        const sessions = db.collection('streamsessions');
+        const session = await sessions.findOne({ streamId, endTime: { $exists: false } });
+        if (!session) {
+            return res.status(404).json({ success: false, error: 'Sessao de stream nao encontrada' });
+        }
+        const userId = getUserIdFromToken(req);
+        if (userId && session.hostId !== userId) {
+            return res.status(403).json({ success: false, error: 'Apenas o host pode alterar esta configuracao' });
+        }
+        const newState = typeof isEnabled === 'boolean' ? isEnabled : !(session.isAutoFollowEnabled ?? false);
+        await sessions.updateOne(
+            { streamId, endTime: { $exists: false } },
+            { $set: { isAutoFollowEnabled: newState, updatedAt: new Date() } }
+        );
+        res.json({ success: true, isEnabled: newState });
+    } catch (error: any) {
+        console.error('[TOGGLE-AUTO-FOLLOW] Erro:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ===== ROUTE START =====
+
+// POST /api/streams/:id/toggle-auto-invite - Alterna o convite automatico
+router.post('/streams/:id/toggle-auto-invite', async (req, res) => {
+    try {
+        const streamId = req.params.id;
+        const { isEnabled } = req.body ?? {};
+        const db = getDb();
+        const sessions = db.collection('streamsessions');
+        const session = await sessions.findOne({ streamId, endTime: { $exists: false } });
+        if (!session) {
+            return res.status(404).json({ success: false, error: 'Sessao de stream nao encontrada' });
+        }
+        const userId = getUserIdFromToken(req);
+        if (userId && session.hostId !== userId) {
+            return res.status(403).json({ success: false, error: 'Apenas o host pode alterar esta configuracao' });
+        }
+        const newState = typeof isEnabled === 'boolean' ? isEnabled : !(session.isAutoPrivateInviteEnabled ?? false);
+        await sessions.updateOne(
+            { streamId, endTime: { $exists: false } },
+            { $set: { isAutoPrivateInviteEnabled: newState, updatedAt: new Date() } }
+        );
+        res.json({ success: true, isEnabled: newState });
+    } catch (error: any) {
+        console.error('[TOGGLE-AUTO-INVITE] Erro:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 
 // ===== ROUTE START =====
 router.post('/streams/:id/end-session', async (req, res) => {

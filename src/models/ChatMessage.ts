@@ -9,6 +9,7 @@ export interface IChatMessage extends Document {
     messageType: 'text' | 'image' | 'gift' | 'system';
     isRead: boolean;
     readAt?: Date;
+    sentAt?: Date;
     metadata?: {
         imageUrl?: string;
         giftId?: string;
@@ -28,6 +29,7 @@ const ChatMessageSchema: Schema = new Schema({
     messageType: { type: String, enum: ['text', 'image', 'gift', 'system'], default: 'text' },
     isRead: { type: Boolean, default: false },
     readAt: { type: Date },
+    sentAt: { type: Date, default: Date.now },
     metadata: {
         imageUrl: String,
         giftId: String,

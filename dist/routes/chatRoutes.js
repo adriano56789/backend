@@ -140,7 +140,7 @@ router.get('/:id/messages', async (req, res) => {
             messageType: message.messageType,
             isRead: message.isRead,
             readAt: message.readAt,
-            sentAt: message.sentAt,
+            sentAt: message.sentAt || message.createdAt,
             sender: senderMap[message.senderId] || { id: message.senderId, name: 'Usuário', avatarUrl: '' }
         })).reverse(); // Ordem cronológica (mais antiga primeiro)
         console.log(`📊 Encontradas ${formattedMessages.length} mensagens`);
@@ -298,7 +298,7 @@ router.post('/send', async (req, res) => {
             to: newMessage.receiverId,
             text: messageType !== 'image' ? (newMessage.content || '') : '',
             imageUrl: messageType === 'image' ? newMessage.content : undefined,
-            timestamp: newMessage.sentAt?.toISOString() || new Date().toISOString(),
+            timestamp: newMessage.sentAt?.toISOString() || newMessage.createdAt?.toISOString() || new Date().toISOString(),
             status: 'sent',
             senderName: sender?.name,
             senderAvatar: sender?.avatarUrl,

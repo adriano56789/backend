@@ -13,9 +13,18 @@ interface FcmPayload {
   title: string;
   body: string;
   data?: Record<string, string>;
+  /** Imagem grande (Big Picture) exibida no push — apenas Web push. */
+  image?: string;
 }
 
 export class NotificationService {
+
+  private static absoluteUrl(pathOrUrl?: string): string {
+    if (!pathOrUrl) return '';
+    if (/^https?:\/\//i.test(pathOrUrl)) return pathOrUrl;
+    const base = (process.env.FRONTEND_URL || 'https://livego.store').replace(/\/+$/, '');
+    return `${base}${pathOrUrl.startsWith('/') ? pathOrUrl : '/' + pathOrUrl}`;
+  }
 
   private static async createLiveNotification(payload: NotificationPayload): Promise<void> {
     await LiveNotification.create({
@@ -45,6 +54,7 @@ export class NotificationService {
           title: fcm.title,
           body: fcm.body,
           data: fcm.data || {},
+          image: fcm.image,
         });
         console.log(`[NOTIFICATION] FCM enviado para ${tokenList.length} dispositivos de ${userId}`);
       }
@@ -62,6 +72,7 @@ export class NotificationService {
           title: fcm.title,
           body: fcm.body,
           data: fcm.data || {},
+          image: fcm.image,
         });
         console.log(`[NOTIFICATION] FCM batch enviado para ${tokenList.length} dispositivos`);
       }
@@ -184,6 +195,7 @@ export class NotificationService {
     await this.sendFcmBatch(followerIds, {
       title: hostName || 'LiveGO',
       body: message,
+      image: this.absoluteUrl(hostAvatar),
       data: {
         type: 'live_started', streamKey: streamId, streamId, hostId,
         click_action: 'OPEN_STREAM',
@@ -224,6 +236,7 @@ export class NotificationService {
         await sendPushNotificationToMultiple(chunk, {
           title: hostName || 'LiveGO',
           body: streamTitle || message,
+          image: this.absoluteUrl(hostAvatar),
           data: {
             type: 'live_started',
             streamKey: streamId,

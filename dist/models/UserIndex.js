@@ -84,7 +84,12 @@ async function searchUserIndexesByName(collection, queryStr, limit = 20, filters
         { $or: [
                 { name: regex },
                 { displayName: regex },
+                { identification: regex },
                 { searchTerms: regex },
+                // 🔍 Buscar também pelo ID REAL do usuário (ex.: '6771613') e pelo
+                // identificador — sem isso, pesquisar por ID não retornava ninguém.
+                { userId: regex },
+                { id: regex },
             ] },
     ];
     if (filters?.isActive !== undefined)
