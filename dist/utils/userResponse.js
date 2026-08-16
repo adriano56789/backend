@@ -109,6 +109,7 @@ function standardizeUserResponse(user, viewerId) {
         chatPermission: user.chatPermission || "all",
         pipEnabled: user.pipEnabled !== undefined ? user.pipEnabled : true,
         streamPreviewEnabled: user.streamPreviewEnabled !== undefined ? user.streamPreviewEnabled : false,
+        screenSecurityEnabled: user.screenSecurityEnabled !== undefined ? user.screenSecurityEnabled : false,
         locationPermission: user.locationPermission || "prompt",
         showActivityStatus: user.showActivityStatus !== undefined ? user.showActivityStatus : true,
         showLocation: user.showLocation !== undefined ? user.showLocation : true,

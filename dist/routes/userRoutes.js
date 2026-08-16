@@ -217,7 +217,7 @@ exports.UserRoutes.patch("/:id", async (req, res) => {
             'chatPermission', 'pipEnabled', 'locationPermission',
             'showActivityStatus', 'showLocation', 'privateStreamSettings',
             'activeFrameId', 'obras', 'location', 'latitude', 'longitude',
-            'cadastral', 'streamPreviewEnabled'
+            'cadastral', 'streamPreviewEnabled', 'screenSecurityEnabled'
         ];
         const updateData = {};
         for (const key of allowedFields) {

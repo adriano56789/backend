@@ -5,10 +5,38 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const models_1 = require("../models");
+const auth_1 = require("../middleware/auth");
+const socket_1 = require("../socket");
 const RouletteItem_1 = require("../models/RouletteItem");
 const RouletteSpin_1 = require("../models/RouletteSpin");
 const router = express_1.default.Router();
 console.log('[ROULETTE-ROUTES] Carregando rotas da roleta...');
+// 🔒 Apenas o HOST (dono, identificado pelo JWT) pode cadastrar/alterar. O
+// espectador NUNCA cadastra nem altera nada — só vê e gira.
+function isHostOwner(req, ownerId) {
+    const tokenUserId = (0, auth_1.getUserIdFromToken)(req);
+    return !!tokenUserId && String(tokenUserId) === String(ownerId);
+}
+// 📡 Emite o estado atual da roleta para TODOS os espectadores da sala
+// (io.to(ownerId) == sala da live), para que o que o host definir apareça
+// imediatamente para todo mundo.
+async function broadcastRouletteUpdate(ownerId) {
+    try {
+        const items = await (0, RouletteItem_1.findActiveByOwner)(ownerId);
+        const userDoc = await models_1.User.findOne({ id: ownerId }).exec();
+        const spinCost = userDoc && Number(userDoc.rouletteSpinCost) > 0 ? Number(userDoc.rouletteSpinCost) : 0;
+        const io = (0, socket_1.getIO)();
+        io.to(ownerId).emit('roulette_updated', {
+            ownerId,
+            items: items.map((it) => JSON.parse(JSON.stringify(it && it.toObject ? it.toObject() : it))),
+            spinCost,
+            timestamp: new Date().toISOString(),
+        });
+    }
+    catch (error) {
+        console.error('[ROULETTE-ROUTES] Erro ao broadcast roulette_updated:', error?.message || error);
+    }
+}
 // ═══════════════════════════════════════════════════════════════════
 // ROLETA EDITÁVEL — CRUD completo de itens cadastrados pela pessoa
 // (dança, música, qualquer ação). Tudo persistido no banco.
@@ -36,6 +64,10 @@ router.post('/roulette/items', async (req, res) => {
         if (!ownerId || !label || !String(label).trim()) {
             return res.status(400).json({ error: 'ownerId e label são obrigatórios' });
         }
+        // 🔒 Só o HOST (dono da roleta) cadastra itens — espectador NUNCA.
+        if (!isHostOwner(req, ownerId)) {
+            return res.status(403).json({ error: 'Só o host pode cadastrar itens na roleta.' });
+        }
         const labelStr = String(label).trim();
         if (labelStr.length > 60) {
             return res.status(400).json({ error: 'O label deve ter no máximo 60 caracteres' });
@@ -49,6 +81,8 @@ router.post('/roulette/items', async (req, res) => {
             type: type || 'action',
             amount: Number(amount) || 0,
         });
+        // 📡 Aparece LOGO para todos os espectadores na sala
+        await broadcastRouletteUpdate(ownerId);
         res.status(201).json(JSON.parse(JSON.stringify(item)));
     }
     catch (error) {
@@ -61,6 +95,16 @@ router.put('/roulette/items/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const { label, icon, color, textColor, type, amount, isActive } = req.body || {};
+        // 🔒 Só o HOST (dono do item) altera — o token precisa bater com o ownerId do item.
+        const existing = await (0, RouletteItem_1.findItemById)(id);
+        if (!existing) {
+            return res.status(404).json({ error: 'Item não encontrado' });
+        }
+        const itemOwner = String(existing.ownerId || '');
+        const tokenUserId = (0, auth_1.getUserIdFromToken)(req);
+        if (!tokenUserId || String(tokenUserId) !== itemOwner) {
+            return res.status(403).json({ error: 'Só o host pode alterar os itens da roleta.' });
+        }
         const update = {};
         if (label !== undefined)
             update.label = String(label).trim();
@@ -80,6 +124,8 @@ router.put('/roulette/items/:id', async (req, res) => {
         if (!result) {
             return res.status(404).json({ error: 'Item não encontrado' });
         }
+        // 📡 Aparece LOGO para todos os espectadores na sala
+        await broadcastRouletteUpdate(itemOwner);
         res.json(JSON.parse(JSON.stringify(result)));
     }
     catch (error) {
@@ -91,10 +137,22 @@ router.put('/roulette/items/:id', async (req, res) => {
 router.delete('/roulette/items/:id', async (req, res) => {
     try {
         const { id } = req.params;
+        // 🔒 Só o HOST (dono do item) remove — o token precisa bater com o ownerId do item.
+        const existing = await (0, RouletteItem_1.findItemById)(id);
+        if (!existing) {
+            return res.status(404).json({ error: 'Item não encontrado' });
+        }
+        const itemOwner = String(existing.ownerId || '');
+        const tokenUserId = (0, auth_1.getUserIdFromToken)(req);
+        if (!tokenUserId || String(tokenUserId) !== itemOwner) {
+            return res.status(403).json({ error: 'Só o host pode remover itens da roleta.' });
+        }
         const result = await (0, RouletteItem_1.hardDeleteRouletteItem)(id);
         if (!result || !result.deletedCount) {
             return res.status(404).json({ error: 'Item não encontrado' });
         }
+        // 📡 Aparece LOGO para todos os espectadores na sala
+        await broadcastRouletteUpdate(itemOwner);
         res.json({ success: true, message: 'Item removido' });
     }
     catch (error) {
@@ -126,11 +184,17 @@ router.put('/roulette/cost', async (req, res) => {
         if (!ownerId) {
             return res.status(400).json({ error: 'ownerId é obrigatório' });
         }
+        // 🔒 Só o HOST define o custo — espectador NUNCA.
+        if (!isHostOwner(req, ownerId)) {
+            return res.status(403).json({ error: 'Só o host pode definir o custo da roleta.' });
+        }
         const spinCost = Math.max(0, Math.floor(Number(cost) || 0));
         const result = await models_1.User.findOneAndUpdate({ id: ownerId }, { $set: { rouletteSpinCost: spinCost } }, { new: true, upsert: false }).exec();
         if (!result) {
             return res.status(404).json({ error: 'Usuário não encontrado' });
         }
+        // 📡 Aparece LOGO para todos os espectadores na sala
+        await broadcastRouletteUpdate(ownerId);
         res.json({ ownerId, spinCost });
     }
     catch (error) {
@@ -145,8 +209,15 @@ router.put('/roulette/cost', async (req, res) => {
 router.post('/roulette/spin', async (req, res) => {
     try {
         const { userId, streamId, ownerId } = req.body || {};
-        if (!userId || !ownerId) {
+        if (!ownerId) {
             return res.status(400).json({ error: 'userId e ownerId são obrigatórios' });
+        }
+        // 🔒 O giro é feito SEMPRE pelo usuário autenticado (token) — nunca
+        // confia no userId do body (evita girar/debitar na conta de terceiros).
+        const tokenUserId = (0, auth_1.getUserIdFromToken)(req);
+        const spinningUserId = tokenUserId || (userId ? String(userId) : '');
+        if (!spinningUserId) {
+            return res.status(401).json({ error: 'Não autorizado. Faça login para girar a roleta.' });
         }
         // Buscar itens cadastrados do dono
         const items = await (0, RouletteItem_1.findActiveByOwner)(ownerId);
@@ -170,14 +241,14 @@ router.post('/roulette/spin', async (req, res) => {
         //  • o valor descontado é EXATAMENTE o custo fixo definido pela host;
         //  • o débito é imediato e nunca gera saldo negativo (sem clamp depois).
         let diamondsAfter = null;
-        if (cost > 0 && userId) {
+        if (cost > 0 && spinningUserId) {
             const activity = {
                 action: 'roulette_spin',
                 resource: 'roulette',
                 timestamp: new Date(),
                 endpoint: '/api/roulette/spin'
             };
-            const updated = await models_1.User.findOneAndUpdate({ id: userId, diamonds: { $gte: cost } }, {
+            const updated = await models_1.User.findOneAndUpdate({ id: spinningUserId, diamonds: { $gte: cost } }, {
                 $inc: { diamonds: -cost },
                 $push: { recentActivities: { $each: [activity], $slice: -50 } },
             }, { new: true }).exec();
@@ -203,7 +274,7 @@ router.post('/roulette/spin', async (req, res) => {
         }
         // Registrar o giro no histórico (cópia do item sorteado)
         await (0, RouletteSpin_1.recordSpin)({
-            userId,
+            userId: spinningUserId,
             streamId: streamId || '',
             itemLabel: item.label || 'Item',
             itemId: String(item._id || ''),

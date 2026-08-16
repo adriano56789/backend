@@ -1,11 +1,40 @@
 import express from 'express';
 import { User, Streamer } from '../models';
-import { findActiveByOwner, createRouletteItem, updateRouletteItem, hardDeleteRouletteItem } from '../models/RouletteItem';
+import { getUserIdFromToken } from '../middleware/auth';
+import { getIO } from '../socket';
+import { findActiveByOwner, findItemById, createRouletteItem, updateRouletteItem, hardDeleteRouletteItem } from '../models/RouletteItem';
 import { recordSpin, findSpinsByUser, findSpinsByStream } from '../models/RouletteSpin';
 
 const router = express.Router();
 
 console.log('[ROULETTE-ROUTES] Carregando rotas da roleta...');
+
+// 🔒 Apenas o HOST (dono, identificado pelo JWT) pode cadastrar/alterar. O
+// espectador NUNCA cadastra nem altera nada — só vê e gira.
+function isHostOwner(req: any, ownerId: string): boolean {
+    const tokenUserId = getUserIdFromToken(req);
+    return !!tokenUserId && String(tokenUserId) === String(ownerId);
+}
+
+// 📡 Emite o estado atual da roleta para TODOS os espectadores da sala
+// (io.to(ownerId) == sala da live), para que o que o host definir apareça
+// imediatamente para todo mundo.
+async function broadcastRouletteUpdate(ownerId: string) {
+    try {
+        const items = await findActiveByOwner(ownerId);
+        const userDoc = await User.findOne({ id: ownerId }).exec();
+        const spinCost = userDoc && Number(userDoc.rouletteSpinCost) > 0 ? Number(userDoc.rouletteSpinCost) : 0;
+        const io = getIO();
+        io.to(ownerId).emit('roulette_updated', {
+            ownerId,
+            items: items.map((it: any) => JSON.parse(JSON.stringify(it && it.toObject ? it.toObject() : it))),
+            spinCost,
+            timestamp: new Date().toISOString(),
+        });
+    } catch (error: any) {
+        console.error('[ROULETTE-ROUTES] Erro ao broadcast roulette_updated:', error?.message || error);
+    }
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // ROLETA EDITÁVEL — CRUD completo de itens cadastrados pela pessoa
@@ -35,6 +64,10 @@ router.post('/roulette/items', async (req, res) => {
         if (!ownerId || !label || !String(label).trim()) {
             return res.status(400).json({ error: 'ownerId e label são obrigatórios' });
         }
+        // 🔒 Só o HOST (dono da roleta) cadastra itens — espectador NUNCA.
+        if (!isHostOwner(req, ownerId)) {
+            return res.status(403).json({ error: 'Só o host pode cadastrar itens na roleta.' });
+        }
         const labelStr = String(label).trim();
         if (labelStr.length > 60) {
             return res.status(400).json({ error: 'O label deve ter no máximo 60 caracteres' });
@@ -48,6 +81,8 @@ router.post('/roulette/items', async (req, res) => {
             type: type || 'action',
             amount: Number(amount) || 0,
         });
+        // 📡 Aparece LOGO para todos os espectadores na sala
+        await broadcastRouletteUpdate(ownerId);
         res.status(201).json(JSON.parse(JSON.stringify(item)));
     } catch (error: any) {
         console.error('[ROULETTE-ROUTES] Erro ao criar item:', error);
@@ -60,6 +95,17 @@ router.put('/roulette/items/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const { label, icon, color, textColor, type, amount, isActive } = req.body || {};
+
+        // 🔒 Só o HOST (dono do item) altera — o token precisa bater com o ownerId do item.
+        const existing = await findItemById(id);
+        if (!existing) {
+            return res.status(404).json({ error: 'Item não encontrado' });
+        }
+        const itemOwner = String((existing as any).ownerId || '');
+        const tokenUserId = getUserIdFromToken(req);
+        if (!tokenUserId || String(tokenUserId) !== itemOwner) {
+            return res.status(403).json({ error: 'Só o host pode alterar os itens da roleta.' });
+        }
 
         const update: any = {};
         if (label !== undefined) update.label = String(label).trim();
@@ -74,6 +120,8 @@ router.put('/roulette/items/:id', async (req, res) => {
         if (!result) {
             return res.status(404).json({ error: 'Item não encontrado' });
         }
+        // 📡 Aparece LOGO para todos os espectadores na sala
+        await broadcastRouletteUpdate(itemOwner);
         res.json(JSON.parse(JSON.stringify(result)));
     } catch (error: any) {
         console.error('[ROULETTE-ROUTES] Erro ao atualizar item:', error);
@@ -85,10 +133,24 @@ router.put('/roulette/items/:id', async (req, res) => {
 router.delete('/roulette/items/:id', async (req, res) => {
     try {
         const { id } = req.params;
+
+        // 🔒 Só o HOST (dono do item) remove — o token precisa bater com o ownerId do item.
+        const existing = await findItemById(id);
+        if (!existing) {
+            return res.status(404).json({ error: 'Item não encontrado' });
+        }
+        const itemOwner = String((existing as any).ownerId || '');
+        const tokenUserId = getUserIdFromToken(req);
+        if (!tokenUserId || String(tokenUserId) !== itemOwner) {
+            return res.status(403).json({ error: 'Só o host pode remover itens da roleta.' });
+        }
+
         const result = await hardDeleteRouletteItem(id);
         if (!result || !result.deletedCount) {
             return res.status(404).json({ error: 'Item não encontrado' });
         }
+        // 📡 Aparece LOGO para todos os espectadores na sala
+        await broadcastRouletteUpdate(itemOwner);
         res.json({ success: true, message: 'Item removido' });
     } catch (error: any) {
         console.error('[ROULETTE-ROUTES] Erro ao remover item:', error);
@@ -121,6 +183,10 @@ router.put('/roulette/cost', async (req, res) => {
         if (!ownerId) {
             return res.status(400).json({ error: 'ownerId é obrigatório' });
         }
+        // 🔒 Só o HOST define o custo — espectador NUNCA.
+        if (!isHostOwner(req, ownerId)) {
+            return res.status(403).json({ error: 'Só o host pode definir o custo da roleta.' });
+        }
         const spinCost = Math.max(0, Math.floor(Number(cost) || 0));
         const result = await User.findOneAndUpdate(
             { id: ownerId },
@@ -130,6 +196,8 @@ router.put('/roulette/cost', async (req, res) => {
         if (!result) {
             return res.status(404).json({ error: 'Usuário não encontrado' });
         }
+        // 📡 Aparece LOGO para todos os espectadores na sala
+        await broadcastRouletteUpdate(ownerId);
         res.json({ ownerId, spinCost });
     } catch (error: any) {
         console.error('[ROULETTE-ROUTES] Erro ao salvar custo:', error);
@@ -144,8 +212,15 @@ router.put('/roulette/cost', async (req, res) => {
 router.post('/roulette/spin', async (req, res) => {
     try {
         const { userId, streamId, ownerId } = req.body || {};
-        if (!userId || !ownerId) {
+        if (!ownerId) {
             return res.status(400).json({ error: 'userId e ownerId são obrigatórios' });
+        }
+        // 🔒 O giro é feito SEMPRE pelo usuário autenticado (token) — nunca
+        // confia no userId do body (evita girar/debitar na conta de terceiros).
+        const tokenUserId = getUserIdFromToken(req);
+        const spinningUserId = tokenUserId || (userId ? String(userId) : '');
+        if (!spinningUserId) {
+            return res.status(401).json({ error: 'Não autorizado. Faça login para girar a roleta.' });
         }
 
         // Buscar itens cadastrados do dono
@@ -173,7 +248,7 @@ router.post('/roulette/spin', async (req, res) => {
         //  • o valor descontado é EXATAMENTE o custo fixo definido pela host;
         //  • o débito é imediato e nunca gera saldo negativo (sem clamp depois).
         let diamondsAfter: number | null = null;
-        if (cost > 0 && userId) {
+        if (cost > 0 && spinningUserId) {
             const activity = {
                 action: 'roulette_spin',
                 resource: 'roulette',
@@ -181,7 +256,7 @@ router.post('/roulette/spin', async (req, res) => {
                 endpoint: '/api/roulette/spin'
             };
             const updated = await User.findOneAndUpdate(
-                { id: userId, diamonds: { $gte: cost } },
+                { id: spinningUserId, diamonds: { $gte: cost } },
                 {
                     $inc: { diamonds: -cost },
                     $push: { recentActivities: { $each: [activity], $slice: -50 } },
@@ -219,7 +294,7 @@ router.post('/roulette/spin', async (req, res) => {
 
         // Registrar o giro no histórico (cópia do item sorteado)
         await recordSpin({
-            userId,
+            userId: spinningUserId,
             streamId: streamId || '',
             itemLabel: item.label || 'Item',
             itemId: String(item._id || ''),

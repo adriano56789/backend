@@ -595,6 +595,30 @@ export const initSocket = (server: any) => {
             }
         });
 
+        // 💬 CHAT PRIVADO estilo WhatsApp: indicador "digitando..." em tempo real.
+        // O remetente emite { to, typing } e o backend repassa para a sala do
+        // destinatário (user_{to}). O frontend mostra "digitando..." no header
+        // enquanto o outro usuário está escrevendo.
+        socket.on('chat_typing', async (data: { to?: string; typing?: boolean; from?: string }) => {
+            const fromId = data?.from || socket.data.userId;
+            const toId = data?.to;
+            if (!fromId || !toId || fromId === toId) return;
+            try {
+                const { User } = await import('./models/index');
+                const fromUser = await User.findOne({ id: fromId }).select('id name avatarUrl').lean();
+                io.to(`user_${toId}`).emit('chat_typing', {
+                    from: fromId,
+                    to: toId,
+                    typing: !!data?.typing,
+                    fromName: (fromUser as any)?.name || fromId,
+                    fromAvatar: (fromUser as any)?.avatarUrl || '',
+                    timestamp: Date.now(),
+                });
+            } catch (err) {
+                console.warn('[SOCKET] Erro ao repassar chat_typing:', err);
+            }
+        });
+
         socket.on('friendship_accept', async (data: { friendshipId: string; userId: string }) => {
             try {
                 const { FriendshipService } = await import('./services/FriendshipService');

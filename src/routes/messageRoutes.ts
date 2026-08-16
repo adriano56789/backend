@@ -48,6 +48,7 @@ router.get('/', async (req, res) => {
                 imageUrl: msg.messageType === 'image' ? msg.content : undefined,
                 timestamp: msg.sentAt?.toISOString() || msg.createdAt?.toISOString() || new Date().toISOString(),
                 status: msg.isRead ? 'read' : 'delivered',
+                replyTo: msg.metadata?.replyTo || undefined,
                 ...senderData
             };
         });
@@ -69,7 +70,7 @@ router.get('/chats/:userId/messages', async (req, res) => {
     try {
         const { userId } = req.params;
         const { currentUserId } = req.query;
-        const { limit = 50, offset = 0 } = req.query;
+        const { limit = 100, offset = 0 } = req.query;
 
         if (!currentUserId) {
             return res.status(400).json({ error: 'currentUserId é obrigatório' });
@@ -81,7 +82,11 @@ router.get('/chats/:userId/messages', async (req, res) => {
                 { senderId: userId, receiverId: currentUserId }
             ]
         })
-            .sort({ sentAt: 1 })
+            // ⬇️ MAIS RECENTES PRIMEIRO: antes era sentAt ASC (as 50 mais
+            // ANTIGAS) — conversas com +50 mensagens faziam as mensagens novas
+            // sumirem ao reabrir o chat. Agora traz as 100 mais novas e reverte
+            // para ordem cronológica na resposta.
+            .sort({ sentAt: -1 })
             .limit(parseInt(limit as string))
             .skip(parseInt(offset as string));
 
@@ -109,24 +114,41 @@ router.get('/chats/:userId/messages', async (req, res) => {
                 imageUrl: msg.messageType === 'image' ? msg.content : undefined,
                 timestamp: msg.sentAt?.toISOString() || msg.createdAt?.toISOString() || new Date().toISOString(),
                 status: msg.isRead ? 'read' : 'delivered',
+                replyTo: msg.metadata?.replyTo || undefined,
                 ...senderData
             };
-        });
+        }).reverse();
 
-        ChatMessage.updateMany(
-            {
-                senderId: userId,
-                receiverId: currentUserId,
-                isRead: false
-            },
-            { $set: { isRead: true } }
-        ).catch(() => {});
+        // 📖 Marcar como lidas as mensagens que o currentUser recebeu de `userId`
+        // (enquanto ele está com o chat aberto). Retorna os IDs para notificar o
+        // remetente via socket (✓✓ azul em tempo real, igual WhatsApp).
+        let readMessageIds: string[] = [];
+        const unread = await ChatMessage.find({
+            senderId: userId,
+            receiverId: currentUserId,
+            isRead: false
+        }).select('id').lean();
+
+        if (unread.length > 0) {
+            readMessageIds = unread.map((m: any) => m.id);
+            await ChatMessage.updateMany(
+                {
+                    senderId: userId,
+                    receiverId: currentUserId,
+                    isRead: false
+                },
+                { $set: { isRead: true, readAt: new Date() } }
+            ).catch(() => {});
+        }
 
         const io = req.app.get('io');
-        if (io) {
-            io.to(`user_${currentUserId}`).emit('messages_read', {
+        // 🔵 Notificar o REMETENTE que as mensagens foram lidas → ✓✓ azul no chat dele
+        if (io && readMessageIds.length > 0) {
+            io.to(`user_${userId}`).emit('messages_read', {
                 userId: currentUserId,
-                timestamp: new Date()
+                messageIds: readMessageIds,
+                chatId: `chat_private_${[userId, currentUserId].sort().join('_')}`,
+                timestamp: new Date().toISOString()
             });
         }
 
@@ -270,6 +292,59 @@ router.post('/', async (req, res) => {
     } catch (error: any) {
         console.error('❌ Erro ao enviar mensagem:', error);
         res.status(500).json({ error: 'Erro interno ao enviar mensagem' });
+    }
+});
+
+// PUT /api/messages/read - Marcar várias mensagens como lidas (batch) e
+// notificar os REMETENTES em tempo real (✓✓ azul estilo WhatsApp).
+router.put('/read', async (req, res) => {
+    try {
+        const { messageIds, userId } = req.body;
+
+        if (!userId) {
+            return res.status(400).json({ error: 'userId é obrigatório' });
+        }
+        if (!Array.isArray(messageIds) || messageIds.length === 0) {
+            return res.status(400).json({ error: 'messageIds deve ser uma lista não vazia' });
+        }
+
+        const result = await ChatMessage.updateMany(
+            {
+                id: { $in: messageIds },
+                receiverId: userId,
+                isRead: false
+            },
+            { $set: { isRead: true, readAt: new Date() } }
+        );
+
+        // Agrupar por remetente para notificar cada um
+        const affected = await ChatMessage.find({
+            id: { $in: messageIds },
+            receiverId: userId
+        }).select('senderId id').lean();
+
+        const bySender = new Map<string, string[]>();
+        affected.forEach((m: any) => {
+            const list = bySender.get(m.senderId) || [];
+            list.push(m.id);
+            bySender.set(m.senderId, list);
+        });
+
+        const io = req.app.get('io');
+        if (io) {
+            bySender.forEach((ids, senderId) => {
+                io.to(`user_${senderId}`).emit('messages_read', {
+                    userId,
+                    messageIds: ids,
+                    timestamp: new Date().toISOString()
+                });
+            });
+        }
+
+        res.json({ success: true, modifiedCount: result?.modifiedCount || 0 });
+    } catch (error: any) {
+        console.error('❌ Erro ao marcar mensagens como lidas (batch):', error);
+        res.status(500).json({ error: 'Erro interno ao marcar mensagens como lidas' });
     }
 });
 

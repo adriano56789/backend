@@ -6,6 +6,7 @@ node_modules/
 # Scripts de deploy/inspeção local (contêm credenciais — não subir)
 deploy-ssh.js
 deploy-vps.js
+deploy-backend.cjs
 srs-check.cjs
 inspect-audio.cjs
 

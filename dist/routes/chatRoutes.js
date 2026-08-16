@@ -235,7 +235,7 @@ router.post('/', async (req, res) => {
 // POST /api/chats/send - Enviar mensagem (rota simplificada)
 router.post('/send', async (req, res) => {
     try {
-        const { from, to, text, imageUrl, tempId } = req.body;
+        const { from, to, text, imageUrl, tempId, replyTo } = req.body;
         if (!from) {
             return res.status(400).json({ error: 'Campo "from" é obrigatório' });
         }
@@ -278,7 +278,8 @@ router.post('/send', async (req, res) => {
                 content: content,
                 messageType,
                 isRead: false,
-                sentAt: new Date()
+                sentAt: new Date(),
+                metadata: replyTo ? { replyTo: { text: typeof replyTo === 'string' ? replyTo : undefined, imageUrl: replyTo?.imageUrl, from: replyTo?.from, senderName: replyTo?.senderName } } : undefined
             }
         }, {
             upsert: true,
@@ -300,6 +301,7 @@ router.post('/send', async (req, res) => {
             imageUrl: messageType === 'image' ? newMessage.content : undefined,
             timestamp: newMessage.sentAt?.toISOString() || newMessage.createdAt?.toISOString() || new Date().toISOString(),
             status: 'sent',
+            replyTo: newMessage.metadata?.replyTo || undefined,
             senderName: sender?.name,
             senderAvatar: sender?.avatarUrl,
             senderLevel: sender?.level,
