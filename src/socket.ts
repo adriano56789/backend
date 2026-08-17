@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 
 import { ENV } from './config/env';
 import { User, UserStatus } from './models';
+import { emitWebhook } from './services/WebhookBroadcasterService';
 
 // EventType (local) - mantido para compatibilidade com código existente
 const EventType = {
@@ -249,7 +250,12 @@ export const initSocket = (server: any) => {
                 text: data.message || '',
                 timestamp: new Date().toISOString()
             };
+            // 🪝 Webhook LiveGo: ANTES do broadcast (pre-hook legado)
+            try { emitWebhook('LiveGo.CallbackBeforeSendMessage', { RoomId: data.streamId, FromUserId: data.userId, FromUserName: data.userName || 'Usuário', Content: data.message || '', MsgType: 'normal', Timestamp: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] before chat message', e); }
             io.to(data.streamId).emit('live_message', messagePayload);
+            
+            // 🪝 Webhook LiveGo: mensagem enviada (caminho legado send_chat_message)
+            try { emitWebhook('LiveGo.CallbackAfterSendMessage', { RoomId: data.streamId, FromUserId: data.userId, FromUserName: data.userName || 'Usuário', Content: data.message || '', MsgType: 'normal', Timestamp: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] chat message', e); }
             
             // 3. Codificar usando Protobuf e enviar como binário (para compatibilidade)
             const buffer: any = null;

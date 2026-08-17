@@ -54,6 +54,8 @@ import uploadRoutes from './routes/uploadRoutes';
 import manualRoutes from './routes/manualRoutes';
 import paymentRoutes from './routes/paymentRoutes';
 import webhookRoutes from './routes/webhookRoutes';
+import webhookBroadcasterRoutes from './routes/webhookBroadcasterRoutes';
+import { emitWebhook } from './services/WebhookBroadcasterService';
 import withdrawalRoutes from './routes/withdrawalRoutes';
 import transactionProtectionRoutes from './routes/transactionProtectionRoutes';
 import zoomRoutes from './routes/zoomRoutes';
@@ -375,6 +377,7 @@ app.use('/api/upload', imageUploadRoutes); // Novas rotas completas de upload
 app.use('/api', manualRoutes); // Rotas do manual de transmissão
 app.use('/api/payments', paymentRoutes); // Rotas do Mercado Pago
 app.use('/api/webhooks', webhookRoutes); // Rotas de webhooks
+app.use('/api/webhook', webhookBroadcasterRoutes); // API de gestão do webhook LiveGo
 app.use('/api/withdrawals', withdrawalRoutes); // Rotas de saques via Pix
 app.use('/api/transaction-protection', transactionProtectionRoutes); // Rotas de proteção contra bloqueios abusivos
 app.use('/api/level', levelRoutes); // NOVO - Sistema de Nível
@@ -575,6 +578,18 @@ io.on('connection', (socket) => {
           );
         }
       } catch (_) {}
+      // 🪝 Webhook LiveGo: membro entrou na sala (join real via join_stream)
+      try { emitWebhook('LiveGo.CallbackAfterMemberStatusChange', { RoomId: streamId, UserId: userId, Status: 'online', Action: 'join', Timestamp: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] member join', e); }
+      // 🪝 Webhook LiveGo: lotação >= 70% (requer maxViewers configurado)
+      try {
+        const { Streamer } = await import('./models/Streamer');
+        const sAfter = await Streamer.findOne({ id: streamId }).select('viewers maxViewers').lean();
+        const maxV = (sAfter && (sAfter as any).maxViewers) || 0;
+        const v = (sAfter && (sAfter as any).viewers) || 0;
+        if (maxV > 0 && v / maxV >= 0.7) {
+          emitWebhook('LiveGo.CallbackAfterCreateRoomReachingThreshold', { RoomId: streamId, Viewers: v, MaxViewers: maxV, Percent: Math.round((v / maxV) * 100), Timestamp: Date.now() });
+        }
+      } catch (e: any) { console.warn('[WEBHOOK] threshold', e); }
       // Notificar o host via NotificationService centralizado
       if (hostId && hostId !== userId) {
         try {
@@ -755,6 +770,9 @@ io.on('connection', (socket) => {
                         streamId: userEntry.streamId,
                         timestamp: new Date().toISOString()
                     });
+
+                    // 🪝 Webhook LiveGo: membro saiu da sala (disconnect real)
+                    try { emitWebhook('LiveGo.CallbackAfterMemberStatusChange', { RoomId: userEntry.streamId, UserId: userId, Status: 'offline', Action: 'leave', Timestamp: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] member leave', e); }
 
                     // Enviar apenas contagem (NÃO a lista completa de usuários)
                     const onlineCount = Array.from(onlineUsers.values())
@@ -1473,11 +1491,16 @@ io.on('connection', (socket) => {
 
             // ⚡ Broadcast em tempo real via Socket.IO — sala da stream (join_stream → socket.join(streamId))
             // O frontend escuta o evento 'live_message'. Inclui o remetente (dedupe no client).
+            // 🪝 Webhook LiveGo: ANTES do broadcast (pre-hook)
+            try { emitWebhook('LiveGo.CallbackBeforeSendMessage', { RoomId: streamId, FromUserId: userId, FromUserName: userName || '', Content: text || '', MsgType: 'normal', Timestamp: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] before message', e); }
             try {
                 io.to(streamId).emit('live_message', messagePayload);
             } catch (ioErr) {
                 console.warn('[SOCKET-LIVE-MESSAGE] Erro ao emitir socket:', ioErr);
             }
+
+            // 🪝 Webhook LiveGo: mensagem enviada na live (caminho real do app)
+            try { emitWebhook('LiveGo.CallbackAfterSendMessage', { RoomId: streamId, FromUserId: userId, FromUserName: userName || '', Content: text || '', MsgType: 'normal', Timestamp: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] live message', e); }
         } catch (error) {
             console.error('❌ Erro ao processar send_live_message:', error);
         }

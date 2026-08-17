@@ -2,6 +2,7 @@ import express from 'express';
 import { Followers, User } from '../models';
 import { findUserByAnyId, updateUserByRealId } from '../utils/idHelper';
 import { pushRecentActivity } from '../utils/activityHelpers';
+import { emitWebhook } from '../services/WebhookBroadcasterService';
 
 const router = express.Router();
 
@@ -92,6 +93,9 @@ router.post('/', async (req, res) => {
         }
 
         console.log(`✅ ${followerId} começou a seguir ${followingId}`);
+        
+        // 🪝 Webhook LiveGo: seguiu (via /api/followers)
+        try { emitWebhook('LiveGo.CallbackAfterFollow', { FollowerId: followerId, FollowedId: followingId, Timestamp: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] follow', e); }
         
         res.json({
             success: true,
@@ -282,6 +286,9 @@ router.delete('/:id', async (req, res) => {
         }
         
         console.log(`✅ ${follow.followerId} deixou de seguir ${follow.followingId}`);
+        
+        // 🪝 Webhook LiveGo: deixou de seguir (via /api/followers)
+        try { emitWebhook('LiveGo.CallbackAfterUnfollow', { FollowerId: follow.followerId, FollowedId: follow.followingId, Timestamp: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] unfollow', e); }
         
         res.json({
             success: true,

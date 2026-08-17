@@ -2,6 +2,9 @@
 /objs/
 /tmp/
 node_modules/
+.env
+.env.*
+dist/
 
 # Scripts de deploy/inspeção local (contêm credenciais — não subir)
 deploy-ssh.js

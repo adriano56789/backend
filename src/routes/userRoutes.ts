@@ -11,6 +11,7 @@ import { findUserByAnyId, updateUserByRealId } from '../utils/idHelper';
 import { blockProtection } from '../middleware/appOwnerProtection';
 import { getDb } from '../config/db';
 import { getIO } from '../socket';
+import { emitWebhook } from '../services/WebhookBroadcasterService';
 
 
 
@@ -473,6 +474,9 @@ UserRoutes.post('/:id/toggle-follow', async (req, res) => {
 
             });
 
+            // 🪝 Webhook LiveGo: deixou de seguir
+            try { emitWebhook('LiveGo.CallbackAfterUnfollow', { FollowerId: followerId, FollowedId: followingId, Timestamp: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] unfollow', e); }
+
 
 
             res.json({
@@ -690,6 +694,9 @@ UserRoutes.post('/:id/toggle-follow', async (req, res) => {
             } catch (wsErr) {
                 console.warn(`⚠️ [TOGGLE-FOLLOW] Erro ao notificar WebSocket: ${wsErr}`);
             }
+
+            // 🪝 Webhook LiveGo: seguiu
+            try { emitWebhook('LiveGo.CallbackAfterFollow', { FollowerId: followerId, FollowedId: followingId, Timestamp: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] follow', e); }
 
             res.json({
 

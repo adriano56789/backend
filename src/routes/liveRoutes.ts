@@ -9,6 +9,7 @@ import { ResponseHelper } from '../middleware/responseHelper';
 import { ENV } from '../config/env';
 import { isTranscodeVariant, TRANSCODE_VARIANT_REGEX } from '../utils/streamKeyUtils';
 import { autoEndStreamOnDisconnect } from '../services/streamEndService';
+import { emitWebhook } from '../services/WebhookBroadcasterService';
 
 import { 
 
@@ -2698,6 +2699,11 @@ router.post('/streams/:id/join', async (req, res) => {
 
         );
 
+        // 🪝 Webhook LiveGo: membro entrou (via REST /streams/:id/join)
+        try { emitWebhook('LiveGo.CallbackAfterMemberStatusChange', { RoomId: id, UserId: userId, Status: 'online', Action: 'join', Timestamp: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] member join', e); }
+        // 🪝 Webhook LiveGo: lotação >= 70%
+        try { const sAfter: any = await Streamer.findOne({ id }).select('viewers maxViewers').lean(); const maxV = (sAfter && sAfter.maxViewers) || 0; const v = (sAfter && sAfter.viewers) || 0; if (maxV > 0 && v / maxV >= 0.7) { emitWebhook('LiveGo.CallbackAfterCreateRoomReachingThreshold', { RoomId: id, Viewers: v, MaxViewers: maxV, Percent: Math.round((v / maxV) * 100), Timestamp: Date.now() }); } } catch (e: any) { console.warn('[WEBHOOK] threshold', e); }
+
 
 
         // Atualizar currentStreamId do usuário e incrementar livesJoined
@@ -3028,6 +3034,9 @@ router.post('/streams/:id/end', async (req, res) => {
 
         console.log(`[STREAM-END] Stream ${id} finalizada para usuário ${userId}`);
 
+        // 🪝 Webhook LiveGo: sala destruída (fim da live por /streams/:id/end)
+        try { emitWebhook('LiveGo.CallbackAfterDestroyRoom', { RoomId: stream.id || id, HostId: stream.hostId || userId, EndedBy: 'owner', EndTime: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] room destroyed (end)', e); }
+
         const io = req.app.get('io');
         if (io) {
             io.emit('card_removed', {
@@ -3138,6 +3147,9 @@ router.post('/streams', async (req, res) => {
             },
             { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
         );
+
+        // 🪝 Webhook LiveGo: sala criada
+        try { emitWebhook('LiveGo.CallbackAfterCreateRoom', { RoomId: streamId, RoomName: streamTitle, HostId: hostId, Owner_Account: hostId, RoomType: 'Live', StreamKey: streamKey, Category: category, Status: 'preparing', CreateTime: Math.floor(Date.now() / 1000), EventTime: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] room created', e); }
 
         res.json({ success: true, stream });
     } catch (error: any) {
@@ -4291,6 +4303,9 @@ router.post('/live/end', async (req, res) => {
             console.error('[LIVE-END] ❌ Erro em Streamer.updateOne:', stepErr.message);
         }
 
+        // 🪝 Webhook LiveGo: sala destruída (fim da live por /live/end)
+        try { emitWebhook('LiveGo.CallbackAfterDestroyRoom', { RoomId: streamId, HostId: userId, EndedBy: 'owner', EndTime: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] room destroyed (live/end)', e); }
+
         // ── Etapa 2: Atualizar status do usuário + persistir atividade ──
         try {
             await User.findOneAndUpdate(
@@ -4941,6 +4956,19 @@ router.post('/streams/:id/save', async (req, res) => {
 
         );
 
+        // 🪝 Webhook LiveGo: sala atualizada (info) + metadados
+        try {
+            emitWebhook('LiveGo.CallbackAfterUpdateRoomInfo', { RoomId: req.params.id, UpdatedFields: Object.keys(updateData), UpdateTime: Date.now() });
+            for (const f of Object.keys(updateData)) {
+                const v = updateData[f];
+                if (v === '' || v === null || v === undefined) {
+                    emitWebhook('LiveGo.CallbackAfterDelMetadata', { RoomId: req.params.id, MetadataKeys: [f], EventTime: Date.now() });
+                } else {
+                    emitWebhook('LiveGo.CallbackAfterSetMetadata', { RoomId: req.params.id, Metadata: [{ Key: f, Value: typeof v === 'object' ? JSON.stringify(v) : String(v) }], EventTime: Date.now() });
+                }
+            }
+        } catch (e: any) { console.warn('[WEBHOOK] room updated', e); }
+
 
 
         if (!stream) {
@@ -4989,6 +5017,9 @@ router.post('/streams/:id/cover', async (req, res) => {
             { returnDocument: 'after' }
 
         );
+
+        // 🪝 Webhook LiveGo: sala atualizada (cover)
+        try { emitWebhook('LiveGo.CallbackAfterUpdateRoomInfo', { RoomId: req.params.id, UpdatedFields: ['coverUrl'], CoverURL: coverUrl, UpdateTime: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] cover updated', e); }
 
 
 
@@ -5631,6 +5662,9 @@ router.post('/streams/:streamId/leave', async (req, res) => {
 
         );
 
+        // 🪝 Webhook LiveGo: membro saiu (via REST /streams/:streamId/leave)
+        try { emitWebhook('LiveGo.CallbackAfterMemberStatusChange', { RoomId: streamId, UserId: userId, Status: 'offline', Action: 'leave', Timestamp: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] member leave', e); }
+
 
 
         // Notificar via WebSocket
@@ -6043,6 +6077,9 @@ router.post('/streams/:id/end-session', async (req, res) => {
 
         }
 
+        // 🪝 Webhook LiveGo: sala destruída (fim da live por end-session)
+        try { emitWebhook('LiveGo.CallbackAfterDestroyRoom', { RoomId: streamId, HostId: stream.hostId || '', EndedBy: 'owner', EndTime: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] room destroyed (end session)', e); }
+
 
 
         // 5. Atualizar status do host
@@ -6429,6 +6466,9 @@ router.post('/streams/:id/gift', async (req, res) => {
             io.to(`user_${stream.hostId}`).emit('gift_received', giftEventData);
             console.log(`🎁 [WEBSOCKET] live_gift_received emitido para sala ${req.params.id}: ${giftName} x${amount || 1}`);
         }
+
+        // 🪝 Webhook LiveGo: presente enviado (caminho real do app /streams/:id/gift)
+        try { emitWebhook('LiveGo.CallbackAfterGift', { RoomId: req.params.id, FromUserId: fromUserId, FromUserName: sender.name || '', ToUserId: stream.hostId, ToUserName: stream.name || '', GiftName: giftName, GiftPrice: price, Quantity: amount || 1, TotalValue: totalValue, Timestamp: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] gift (liveRoutes)', e); }
 
         let updatedSender;
 
@@ -7031,6 +7071,9 @@ router.post('/lives/:id/end', async (req, res) => {
             } }
 
         );
+
+        // 🪝 Webhook LiveGo: sala destruída (fim da live por /lives/:id/end)
+        try { emitWebhook('LiveGo.CallbackAfterDestroyRoom', { RoomId: realId, HostId: userId || '', EndedBy: 'owner', EndTime: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] room destroyed (lives end)', e); }
 
 
 
@@ -7701,6 +7744,9 @@ router.post('/streams/:streamId/end', async (req: express.Request, res: express.
         }
 
         console.log(`[STREAM-END] Stream ${streamId} encerrada com sucesso por ${isOwner ? 'dono' : 'admin'}`);
+
+        // 🪝 Webhook LiveGo: sala destruída (fim da live por /streams/:streamId/end)
+        try { emitWebhook('LiveGo.CallbackAfterDestroyRoom', { RoomId: streamId, HostId: stream.hostId || '', EndedBy: isOwner ? 'owner' : 'admin', EndTime: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] room destroyed (end)', e); }
 
         const io = req.app.get('io');
         if (io) {
@@ -9330,6 +9376,33 @@ router.post("/streams/:id/publish", async (req, res) => {
             message: "Erro interno ao publicar stream",
             error: error instanceof Error ? error.message : String(error)
         });
+    }
+});
+
+// 🪝 POST /api/streams/:id/transfer-owner — transferir propriedade da sala
+router.post('/streams/:id/transfer-owner', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { newOwnerId, userId } = req.body;
+        if (!newOwnerId || !userId) {
+            return res.status(400).json({ success: false, error: 'newOwnerId e userId obrigatórios' });
+        }
+        const { Streamer } = await import('../models/index');
+        const stream = await Streamer.findOne({ id });
+        if (!stream) {
+            return res.status(404).json({ success: false, error: 'Stream não encontrada' });
+        }
+        if (stream.hostId !== userId) {
+            return res.status(403).json({ success: false, error: 'Apenas o proprietário atual pode transferir' });
+        }
+        const oldOwnerId = stream.hostId;
+        await Streamer.findOneAndUpdate({ id }, { $set: { hostId: newOwnerId } });
+        console.log(`[TRANSFER-OWNER] Sala ${id}: ${oldOwnerId} → ${newOwnerId}`);
+        try { emitWebhook('LiveGo.CallbackAfterOwnerChange', { RoomId: id, OldOwnerId: oldOwnerId, NewOwnerId: newOwnerId, Timestamp: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] owner change', e); }
+        res.json({ success: true, oldOwnerId, newOwnerId });
+    } catch (error) {
+        console.error("[TRANSFER-OWNER] Erro:", error);
+        res.status(500).json({ success: false, error: error instanceof Error ? error.message : String(error) });
     }
 });
 

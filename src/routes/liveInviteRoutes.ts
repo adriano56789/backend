@@ -3,6 +3,7 @@ import express from 'express';
 import { LiveUser, LiveInvite } from '../models/LiveInvite';
 import { Streamer, Battle, User, LiveCard } from '../models';
 import { getUserIdFromToken } from '../middleware/auth';
+import { emitWebhook } from '../services/WebhookBroadcasterService';
 
 const router = express.Router();
 
@@ -45,6 +46,12 @@ router.post('/role', async (req, res) => {
             },
             { upsert: true, returnDocument: 'after' }
         );
+
+        // 🪝 Webhook LiveGo: papel do participante alterado
+        try {
+            const roleEvent = status === 'co-host' ? 'LiveGo.CallbackAfterAdminChange' : status === 'pk-battle' ? 'LiveGo.CallbackAfterSeatListChange' : 'LiveGo.CallbackAfterMemberStatusChange';
+            emitWebhook(roleEvent, { RoomId: streamId, UserId: uid, Role: status, Timestamp: Date.now() });
+        } catch (e: any) { console.warn('[WEBHOOK] role change', e); }
 
         res.status(200).json({ success: true, status });
     } catch (error: any) {
@@ -257,15 +264,58 @@ router.post('/invite', async (req, res) => {
         if (!inviterUsername || !inviteeUsername || !inviteType || !streamId) {
             return res.status(400).json({ success: false, error: 'Campos obrigatórios faltando' });
         }
+        if (inviterUsername === inviteeUsername) {
+            return res.status(400).json({ success: false, error: 'Não é possível convidar a si mesmo' });
+        }
+
+        // 👤 Resolve nomes/avatar reais quando o cliente não envia (mostra o nome
+        // de verdade na notificação, não o ID).
+        const [inviterUser, inviteeUser] = await Promise.all([
+            User.findOne({ id: inviterUsername }).select('name avatarUrl').lean(),
+            User.findOne({ id: inviteeUsername }).select('name avatarUrl').lean()
+        ]);
+        const resolvedInviterName = inviterName || (inviterUser as any)?.name || inviterUsername;
+        const resolvedInviteeName = inviteeName || (inviteeUser as any)?.name || inviteeUsername;
+        const inviterAvatar = (inviterUser as any)?.avatarUrl || '';
+
+        // 🔍 ANTES DE CRIAR: checa se já existe um convite PENDENTE aberto entre
+        // os dois (em qualquer direção). Se existir, NÃO duplica — só re-emite.
+        const existing = await LiveInvite.findOne({
+            inviteType,
+            status: 'pending',
+            $or: [
+                { inviterUsername, inviteeUsername },
+                { inviterUsername: inviteeUsername, inviteeUsername: inviterUsername }
+            ]
+        }).sort({ createdAt: -1 }).lean();
+        if (existing) {
+            const io = (req as any).app.get('io');
+            if (io) {
+                io.to(`user_${inviteeUsername}`).emit('live_invite', {
+                    type: inviteType,
+                    inviteType,
+                    from: inviterUsername,
+                    fromUserId: inviterUsername,
+                    fromName: existing.inviterName || resolvedInviterName,
+                    fromUserName: existing.inviterName || resolvedInviterName,
+                    fromUserAvatar: inviterAvatar,
+                    streamId,
+                    inviteId: existing._id
+                });
+            }
+            return res.status(200).json({ success: true, invite: existing, alreadyExists: true, message: 'Convite já estava aberto entre vocês.' });
+        }
 
         const invite = await LiveInvite.create({
             inviterUsername,
-            inviterName: inviterName || inviterUsername,
+            inviterName: resolvedInviterName,
             inviteeUsername,
-            inviteeName: inviteeName || inviteeUsername,
+            inviteeName: resolvedInviteeName,
             inviteType,
             streamId,
-            status: 'pending'
+            status: 'pending',
+            inviteLink: 'pending',
+            srsSfuConfig: { whipUrl: 'none', whepUrl: 'none', streamKey: 'none', rtcRoomId: 'none' }
         });
 
         // Auto-reject after 30s timeout
@@ -284,13 +334,13 @@ router.post('/invite', async (req, res) => {
                         inviteId: invite._id.toString(),
                         status: 'expired',
                         from: inviteeUsername,
-                        inviteeName
+                        inviteeName: resolvedInviteeName
                     });
                     io.to(`user_${inviteeUsername}`).emit('live_invite_timeout', {
                         inviteId: invite._id.toString(),
                         type: inviteType,
                         from: inviterUsername,
-                        fromName: inviterName || inviterUsername
+                        fromName: resolvedInviterName
                     });
                 }
                 console.log(`[LiveInvite] Convite ${invite._id} expirou automaticamente (30s timeout)`);
@@ -306,8 +356,12 @@ router.post('/invite', async (req, res) => {
         if (io) {
             io.to(`user_${inviteeUsername}`).emit('live_invite', {
                 type: inviteType,
+                inviteType,
                 from: inviterUsername,
-                fromName: inviterName || inviterUsername,
+                fromUserId: inviterUsername,
+                fromName: resolvedInviterName,
+                fromUserName: resolvedInviterName,
+                fromUserAvatar: inviterAvatar,
                 streamId,
                 inviteId: invite._id
             });
@@ -320,7 +374,7 @@ router.post('/invite', async (req, res) => {
                 io,
                 inviteeUsername,
                 inviterUsername,
-                inviterName || inviterUsername,
+                resolvedInviterName,
                 inviteType,
                 invite._id.toString(),
                 streamId,
@@ -375,6 +429,9 @@ router.post('/invite/respond', async (req, res) => {
                 )
             ]);
         }
+
+        // 🪝 Webhook LiveGo: lista de assentos alterada (resposta a convite)
+        try { emitWebhook('LiveGo.CallbackAfterSeatListChange', { RoomId: invite.streamId || '', InviteId: inviteId, Action: action, InviteType: invite.inviteType || '', Inviter: invite.inviterUsername, Invitee: invite.inviteeUsername, Timestamp: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] seat change', e); }
 
         const io = (req as any).app.get('io');
         if (io) {
@@ -473,6 +530,9 @@ router.post('/co-host/exit', async (req, res) => {
             { status: 'viewing', lastActive: new Date() }
         );
 
+        // 🪝 Webhook LiveGo: lista de assentos alterada (co-host saiu)
+        try { emitWebhook('LiveGo.CallbackAfterSeatListChange', { RoomId: streamId, UserId: userId, Action: 'exit', InviteType: 'co-host', Timestamp: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] seat change (co-host exit)', e); }
+
         const io = (req as any).app.get('io');
         if (io) {
             io.to(`user_${userId}`).emit('live_cohost_exited', { userId, streamId });
@@ -508,6 +568,9 @@ router.post('/battle/exit', async (req, res) => {
             { status: 'viewing', lastActive: new Date() }
         );
 
+        // 🪝 Webhook LiveGo: lista de assentos alterada (saída da batalha)
+        try { emitWebhook('LiveGo.CallbackAfterSeatListChange', { RoomId: streamId, UserId: userId, Action: 'exit', InviteType: 'pk-battle', Timestamp: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] seat change (battle exit)', e); }
+
         if (battleId) {
             try {
                 const battle = await Battle.findById(battleId);
@@ -515,6 +578,9 @@ router.post('/battle/exit', async (req, res) => {
                     battle.status = 'finished';
                     battle.endedAt = new Date();
                     await battle.save();
+
+                    // 🪝 Webhook LiveGo: batalha encerrada (exit)
+                    try { emitWebhook('LiveGo.CallbackAfterEndBattle', { BattleId: battleId, CreateTime: battle.createdAt ? Math.floor(new Date(battle.createdAt).getTime() / 1000) : Math.floor(Date.now() / 1000), EndTime: Math.floor(Date.now() / 1000), OpType: 1, ScoreA: battle.scoreA, ScoreB: battle.scoreB, Winner: null, Reason: 'exit', EventTime: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] battle ended (exit)', e); }
 
                     const io = (req as any).app.get('io');
                     if (io) {

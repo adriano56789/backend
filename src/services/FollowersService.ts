@@ -1,6 +1,7 @@
 import { Followers } from '../models/Followers';
 import { User } from '../models/User';
 import { Friendship } from '../models/Friendship';
+import { emitWebhook } from './WebhookBroadcasterService';
 
 export class FollowersService {
   /**
@@ -111,6 +112,9 @@ export class FollowersService {
       }
 
       console.log(`👤 [FOLLOWERS] User ${followerId} followed ${followingId}`);
+
+      // 🪝 Webhook LiveGo: seguiu (cobre socket follow_user)
+      try { emitWebhook('LiveGo.CallbackAfterFollow', { FollowerId: followerId, FollowedId: followingId, Timestamp: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] follow', e); }
       
       return {
         follow,
@@ -188,6 +192,9 @@ export class FollowersService {
       }
 
       console.log(`👤 [FOLLOWERS] User ${followerId} unfollowed ${followingId}`);
+
+      // 🪝 Webhook LiveGo: deixou de seguir (cobre socket unfollow_user)
+      try { emitWebhook('LiveGo.CallbackAfterUnfollow', { FollowerId: followerId, FollowedId: followingId, Timestamp: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] unfollow', e); }
       
       return follow;
     } catch (error) {

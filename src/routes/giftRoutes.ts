@@ -5,6 +5,7 @@ import { getDb } from '../config/db';
 import { isFollowing, createFollow } from '../models/Follow';
 import { ComboService } from '../services/ComboService';
 import { GiftRankingService } from '../services/GiftRankingService';
+import { emitWebhook } from '../services/WebhookBroadcasterService';
 
 const router = express.Router();
 
@@ -331,6 +332,9 @@ async function processGiftSend(fromUserId: string, toUserId: string, giftId: str
             streamId, fromUserId, fromUser.name, fromUser.avatarUrl, totalCost, io,
           );
         }
+
+        // 🪝 Webhook LiveGo: presente enviado (caminhos /api/gifts/*)
+        try { emitWebhook('LiveGo.CallbackAfterGift', { RoomId: streamId || 'unknown', FromUserId: fromUserId, FromUserName: fromUser.name || '', ToUserId: toUserId, ToUserName: toUser.name || '', GiftId: gift.id, GiftName: gift.name || '', GiftPrice: giftPrice, Quantity: quantity, TotalValue: totalCost, Timestamp: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] gift (giftRoutes)', e); }
 
         // 🚀 SISTEMA DE BROADCAST EM TEMPO REAL - PRESENTES NA LIVE
         if (io) {

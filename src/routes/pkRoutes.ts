@@ -3,6 +3,7 @@ import { ChildProcess } from 'child_process';
 import { User, Streamer, Battle } from '../models';
 import { pushRecentActivity } from '../utils/activityHelpers';
 import { startBattleMixer, stopMixer } from '../services/FfmpegService';
+import { emitWebhook } from '../services/WebhookBroadcasterService';
 
 const router = express.Router();
 const activeMixers = new Map<string, ChildProcess>();
@@ -128,6 +129,10 @@ router.post('/start', async (req, res) => {
       .populate('streamerA', 'id name displayName avatarUrl')
       .populate('streamerB', 'id name displayName avatarUrl');
 
+    // 🪝 Webhook LiveGo: batalha criada + iniciada
+    try { emitWebhook('LiveGo.CallbackAfterCreateBattle', { BattleId: battle._id.toString(), FromRoomId: challengerId, ToRoomIdList: [opponentId], Duration: (durationSeconds || 300) * 1000, NeedResponse: false, ExtensionInfo: '', EventTime: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] battle created', e); }
+    try { emitWebhook('LiveGo.CallbackAfterStartBattle', { BattleId: battle._id.toString(), FromRoomId: challengerId, ToRoomIdList: [opponentId], StartTime: battle.startedAt ? battle.startedAt.getTime() : Date.now(), Duration: (durationSeconds || 300) * 1000, EventTime: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] battle started', e); }
+
     // Iniciar MCU fallback (FFmpeg) se ambas streams estiverem ativas
     const [streamA, streamB] = await Promise.all([
       Streamer.findOne({ hostId: challengerId, isLive: true }),
@@ -179,6 +184,8 @@ router.post('/start', async (req, res) => {
           });
         }
         console.log(`⏰ [PK Timer] Batalha ${battle._id} encerrada automaticamente por tempo limite`);
+        // 🪝 Webhook LiveGo: batalha encerrada (timer)
+        try { emitWebhook('LiveGo.CallbackAfterEndBattle', { BattleId: battle._id.toString(), Duration: pkDuration, CreateTime: Math.floor((battle.startedAt ? battle.startedAt.getTime() : Date.now()) / 1000), EndTime: Math.floor(Date.now() / 1000), OpType: 0, FromRoomId: challengerId, ToRoomIdList: [opponentId], ScoreA: currentBattle.scoreA, ScoreB: currentBattle.scoreB, Winner: winnerId || null, Reason: 'timeout', EventTime: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] battle ended (timer)', e); }
       } catch (err) {
         console.error(`[PK Timer] Erro ao encerrar batalha ${battle._id}:`, err);
       }
@@ -330,6 +337,11 @@ router.post('/end/:battleId', async (req, res) => {
       }, console.error);
     }
 
+    // 🪝 Webhook LiveGo: batalha encerrada (manual)
+    if (updated) {
+        try { emitWebhook('LiveGo.CallbackAfterEndBattle', { BattleId: battleId, CreateTime: battle.createdAt ? Math.floor(new Date(battle.createdAt).getTime() / 1000) : Math.floor(Date.now() / 1000), EndTime: Math.floor(Date.now() / 1000), OpType: 1, ScoreA: updated.scoreA, ScoreB: updated.scoreB, Winner: winnerId || null, Reason: 'manual', EventTime: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] battle ended', e); }
+    }
+
     res.json({ success: true, battle: updated });
   } catch (error: any) {
     console.error('[PK] Erro ao encerrar batalha:', error);
@@ -404,6 +416,9 @@ router.post('/invites/:inviteId/respond', async (req, res) => {
         battleId: (invite as any).battleId || null
       });
     }
+
+    // 🪝 Webhook LiveGo: lista de assentos alterada (resposta a convite PK)
+    try { emitWebhook('LiveGo.CallbackAfterSeatListChange', { RoomId: (invite as any).battleId || '', InviteId: inviteId, Action: status, InviteType: 'pk-battle', Inviter: ((invite as any).inviterId)?.id || (invite as any).inviterId || '', Invitee: ((invite as any).invitedId)?.toString() || '', Timestamp: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] seat change (pk)', e); }
 
     res.json({ success: true, invite });
   } catch (error: any) {
