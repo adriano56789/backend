@@ -3408,7 +3408,6 @@ router.get('/streams', async (req, res) => {
             notice: card.notice || '',
             metaData: card.metaData || {},
             isPrivate: card.isPrivate || false,
-            screenSecurityEnabled: card.screenSecurityEnabled || false,
             startTime: card.startTime
         }));
 
@@ -3436,14 +3435,12 @@ router.get('/streams', async (req, res) => {
                     country: stream.country || host?.country || 'br',
                     countryName: countryInfo.name,
                     flagUrl: countryInfo.flagUrl,
-                    screenSecurityEnabled: !!host?.screenSecurityEnabled,
                     host: host ? {
                         id: host.id,
                         name: host.name,
                         avatar: resolveAvatar(host),
                         level: host.level || 1,
-                        country: host.country || 'BR',
-                        screenSecurityEnabled: !!host?.screenSecurityEnabled
+                        country: host.country || 'BR'
                     } : null
                 }
             })

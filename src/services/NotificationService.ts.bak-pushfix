@@ -146,14 +146,11 @@ export class NotificationService {
   ): Promise<void> {
     const message = `${followerName} começou a seguir você`;
 
-    try {
-      await this.createLiveNotification({ userId: toUserId, streamerId: followerId, streamId: '', message });
-      this.emitSocket(io, toUserId, {
-        type: 'new_follower', followerId, followerName, followerAvatar, message,
-      });
-    } catch (inAppErr) {
-      console.warn('[NOTIFICATION] Aviso in-app de seguidor falhou (push segue):', (inAppErr as any)?.message);
-    }
+    await this.createLiveNotification({ userId: toUserId, streamerId: followerId, streamId: '', message });
+
+    this.emitSocket(io, toUserId, {
+      type: 'new_follower', followerId, followerName, followerAvatar, message,
+    });
 
     // 🚫 Push FCM: SÓ título + corpo + rota (sem avatar — Firebase não carrega imagem).
     // O avatar segue apenas pelo socket (tempo real com o app aberto).
@@ -345,20 +342,16 @@ export class NotificationService {
     const displayPreview = isImage ? '[Imagem]' : preview.substring(0, 100);
     const message = `${fromUserName}: ${displayPreview}`;
 
-    // 📝 Notificação in-app (best-effort): se falhar, o push FCM ainda roda.
-    try {
-      await this.createLiveNotification({ userId: toUserId, streamerId: fromUserId, streamId: '', message });
-      this.emitSocket(io, toUserId, {
-        type: 'new_message',
-        fromUserId,
-        fromUserName,
-        preview: displayPreview,
-        conversationId,
-        message,
-      });
-    } catch (inAppErr) {
-      console.warn('[NOTIFICATION] Aviso in-app de mensagem falhou (push segue):', (inAppErr as any)?.message);
-    }
+    await this.createLiveNotification({ userId: toUserId, streamerId: fromUserId, streamId: '', message });
+
+    this.emitSocket(io, toUserId, {
+      type: 'new_message',
+      fromUserId,
+      fromUserName,
+      preview: displayPreview,
+      conversationId,
+      message,
+    });
 
     await this.sendFcm(toUserId, {
       title: fromUserName,

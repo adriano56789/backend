@@ -22,6 +22,7 @@ export interface ILiveCard extends Document {
     notice: string;
     metaData: Map<string, string>;
     isPrivate: boolean;
+    invitedUsers: string[];
     startTime: Date | null;
     endTime?: Date | null;
 }
@@ -51,6 +52,7 @@ const LiveCardSchema = new Schema<ILiveCard>({
     notice: { type: String, default: '' },
     metaData: { type: Map, of: String, default: {} },
     isPrivate: { type: Boolean, default: false },
+    invitedUsers: { type: [String], default: [] },
     startTime: { type: Date, default: null },
     endTime: { type: Date, default: null }
 }, { timestamps: true });

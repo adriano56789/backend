@@ -15,9 +15,6 @@ function sanitizeData(data?: Record<string, string>): Record<string, string> {
   if (!data) return {};
   const clean: Record<string, string> = {};
   for (const [key, value] of Object.entries(data)) {
-    // 🔑 "from" é chave RESERVADA do FCM v1 (erro "Invalid data payload key: from").
-    // O remetente vai em senderId/fromUserName — remover "from" aqui.
-    if (key === 'from') continue;
     // Remove chaves de imagem/avatar/ícone (nunca trafegam no push)
     if (IMAGE_LIKE_FIELD.test(key)) continue;
     // Remove valores que são URLs de imagem (defesa extra)

@@ -242,8 +242,7 @@ router.post('/publish', async (req, res) => {
                     startTime: existingStream?.startTime || new Date(),
                     updatedAt: new Date(),
                     ...(streamMeta && typeof streamMeta.isPrivate === 'boolean' ? { isPrivate: streamMeta.isPrivate } : {}),
-                    ...(streamMeta && Array.isArray(streamMeta.invitedUsers) ? { invitedUsers: streamMeta.invitedUsers } : {}),
-                    ...(user && typeof user.screenSecurityEnabled === 'boolean' ? { screenSecurityEnabled: user.screenSecurityEnabled } : {})
+                    ...(streamMeta && Array.isArray(streamMeta.invitedUsers) ? { invitedUsers: streamMeta.invitedUsers } : {})
                 } },
                 { upsert: true }
             );

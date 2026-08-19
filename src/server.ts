@@ -600,6 +600,28 @@ io.on('connection', (socket) => {
         }
       }
 
+      // 🎡 Envia o estado atual da roleta para quem acabou de entrar na sala.
+      // Garante que o espectador veja EXATAMENTE os itens e o custo que o host
+      // definiu, sem depender de timing de broadcast.
+      try {
+        const { findActiveByOwner } = await import('./models/RouletteItem');
+        // 🔧 Usa hostId (já resolvido acima) em vez de streamId para garantir
+        // que busca o rouletteSpinCost no User correto do host.
+        const rouletteOwnerId = hostId || streamId;
+        const rouletteItems = await findActiveByOwner(rouletteOwnerId);
+        const rouletteUserDoc = await models.User.findOne({ id: rouletteOwnerId }).exec();
+        const spinCost = rouletteUserDoc && Number((rouletteUserDoc as any).rouletteSpinCost) > 0 ? Number((rouletteUserDoc as any).rouletteSpinCost) : 0;
+        socket.emit('roulette_updated', {
+          ownerId: rouletteOwnerId,
+          items: rouletteItems.map((it: any) => JSON.parse(JSON.stringify(it && it.toObject ? it.toObject() : it))),
+          spinCost,
+          timestamp: new Date().toISOString(),
+        });
+        console.log(`[ROULETTE] Estado da roleta enviado via join_stream para ${userId} (ownerId=${rouletteOwnerId}): ${rouletteItems.length} itens, ${spinCost}💎`);
+      } catch (rouletteErr: any) {
+        console.warn('[ROULETTE] Erro ao enviar estado via join_stream:', rouletteErr.message);
+      }
+
       // Auto-registro no chat da stream
       try {
         const { Chat } = await import('./models/index');
