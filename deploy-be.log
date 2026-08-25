@@ -1,0 +1,46 @@
+==> [1/5] Empacotando src/ ...
+    tar.gz = 3.92 MB
+==> [2/5] Conectando em 2.25.192.154 ...
+    conectado. Enviando tarball via SFTP...
+==> [3/5] Backup + extraindo em /app/backend ...
+==> [4/5] Rebuild da imagem Docker (docker compose up -d --build backend)...
+    ⏳ Pode levar vários minutos (npm ci + tsc)...
+#14 DONE 0.2s
+
+#15 [10/10] COPY .dockerignore ./
+#15 DONE 0.0s
+
+#16 exporting to image
+#16 exporting layers
+#16 exporting layers 0.4s done
+#16 exporting manifest sha256:dc0446878177778752ab7dbc7399d2a94f9524349527d65b2a6f5d84f4f0c009 done
+#16 exporting config sha256:5e16fa31ae35fcc289b3611831f529556558903bdd40fbf577e34cf6df8007a2 done
+#16 exporting attestation manifest sha256:8d3f4ebc704db7732a89d87f2ed1fa93b2100215c58b51576d042985a4df28e3 0.0s done
+#16 exporting manifest list sha256:eebfffee5025d1d70aebe4cb6ea9f887bd60463aa9790713455fdecc2b671906 done
+#16 naming to docker.io/library/app-backend:latest done
+#16 unpacking to docker.io/library/app-backend:latest
+#16 unpacking to docker.io/library/app-backend:latest 0.2s done
+#16 DONE 0.7s
+
+#17 resolving provenance for metadata file
+#17 DONE 0.0s
+ Image app-backend Built 
+ Container app-mongodb Running 
+ Container app-redis Running 
+ Container app-backend Recreate 
+ Container app-backend Recreated 
+ Container app-redis Waiting 
+ Container app-mongodb Waiting 
+ Container app-mongodb Healthy 
+ Container app-redis Healthy 
+ Container app-backend Starting 
+ Container app-backend Started 
+
+==> [5/5] Health check...
+--- container ---
+app-backend Restarting (1) Less than a second ago
+--- health ---
+000curl-fail
+
+
+========== DEPLOY BACKEND COMPLETO ==========

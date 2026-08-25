@@ -1,5 +1,5 @@
 import { LiveNotification, DeviceToken } from '../models/index';
-import { sendPushNotificationToMultiple } from './firebaseService';
+import { sendPushNotificationToMultiple } from './webPushService';
 import { getDb } from '../config/db';
 
 interface NotificationPayload {
@@ -335,12 +335,14 @@ export class NotificationService {
     fromUserName: string,
     preview: string,
     conversationId: string,
+    fromUserAvatar?: string,
   ): Promise<void> {
     if (toUserId === fromUserId) return;
 
     const isImage = preview.startsWith('http') || preview.startsWith('data:image');
     const displayPreview = isImage ? '[Imagem]' : preview.substring(0, 100);
     const message = `${fromUserName}: ${displayPreview}`;
+    const avatarUrl = this.absoluteUrl(fromUserAvatar);
 
     await this.createLiveNotification({ userId: toUserId, streamerId: fromUserId, streamId: '', message });
 
@@ -348,17 +350,25 @@ export class NotificationService {
       type: 'new_message',
       fromUserId,
       fromUserName,
+      fromUserAvatar: avatarUrl,
       preview: displayPreview,
       conversationId,
       message,
     });
 
+    // 📸 Estilo WhatsApp: título = nome de quem mandou, corpo = mensagem,
+    // imagem = avatar do remetente (o Web Push nativo carrega foto — o FCM não).
     await this.sendFcm(toUserId, {
       title: fromUserName,
       body: displayPreview,
+      image: avatarUrl || undefined,
       data: {
         type: 'new_message',
         from: fromUserId,
+        senderId: fromUserId,
+        senderName: fromUserName,
+        senderAvatar: avatarUrl,
+        text: displayPreview,
         fromUserName: fromUserName,
         conversationId,
         click_action: 'OPEN_CHAT',

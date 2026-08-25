@@ -266,32 +266,9 @@ async function processGiftSend(fromUserId: string, toUserId: string, giftId: str
         await fromUser.save();
         await toUser.save();
 
-        // Auto-follow se o gift tiver triggersAutoFollow: true
-        if (gift.triggersAutoFollow && streamId && streamId !== 'unknown' && fromUserId !== toUserId) {
-          try {
-            const coll = getDb().collection('follows');
-            const alreadyFollows = await isFollowing(coll, fromUserId, toUserId);
-            if (!alreadyFollows) {
-              await createFollow(coll, fromUserId, toUserId);
-              console.log(`🔁 [AUTO-FOLLOW] ${fromUserId} seguiu ${toUserId} (triggered by gift ${gift.name})`);
-              if (io) {
-                io.to(`user_${toUserId}`).emit('new_follower', {
-                  followerId: fromUserId,
-                  followerName: fromUser.name,
-                  followerAvatar: fromUser.avatarUrl,
-                  timestamp: new Date().toISOString()
-                });
-                io.to(`user_${fromUserId}`).emit('follow_completed', {
-                  followingId: toUserId,
-                  followingName: toUser.name,
-                  followingAvatar: toUser.avatarUrl
-                });
-              }
-            }
-          } catch (err) {
-            console.error('[AUTO-FOLLOW] Erro ao processar auto-follow:', err);
-          }
-        }
+        // ❌ AUTO-FOLLOW POR TIPO DE PRESENTE REMOVIDO ("Seguir Alto").
+        // O ÚNICO seguir automático é o da CAIXINHA "Seguir Auto" do host
+        // (Streamer.autoFollowEnabled), tratado na rota de presente do liveRoutes.
         
         // Registrar transação com upsert automático
         const transactionId = `gift_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;

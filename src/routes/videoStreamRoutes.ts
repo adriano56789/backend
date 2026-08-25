@@ -1,4 +1,4 @@
-import express from 'express';
+﻿import express from 'express';
 import { User } from '../models/User';
 import { Streamer } from '../models/Streamer';
 import { srsService } from '../services/srsService';
@@ -9,31 +9,31 @@ import { protect } from '../middleware/auth';
 const router = express.Router();
 
 // @route POST /api/video/stream/start
-// Inicia uma transmissão de vídeo e retorna URLs para o player
+// Inicia uma transmissÃ£o de vÃ­deo e retorna URLs para o player
 router.post('/stream/start', async (req, res) => {
     try {
         const { userId, streamKey, title, description } = req.body;
 
         console.log('[VIDEO-STREAM] Iniciando stream:', { userId, streamKey, title });
 
-        // Validar dados obrigatórios
+        // Validar dados obrigatÃ³rios
         if (!userId || !streamKey) {
             return res.status(400).json({
                 success: false,
-                error: 'userId e streamKey são obrigatórios'
+                error: 'userId e streamKey sÃ£o obrigatÃ³rios'
             });
         }
 
-        // Verificar se o usuário existe
+        // Verificar se o usuÃ¡rio existe
         const user = await User.findOne({ id: userId });
         if (!user) {
             return res.status(404).json({
                 success: false,
-                error: 'Usuário não encontrado'
+                error: 'UsuÃ¡rio nÃ£o encontrado'
             });
         }
 
-        // Verificar se a streamKey é válida para este usuário
+        // Verificar se a streamKey Ã© vÃ¡lida para este usuÃ¡rio
         const streamer = await Streamer.findOne({ 
             hostId: userId, 
             streamKey: streamKey 
@@ -42,7 +42,7 @@ router.post('/stream/start', async (req, res) => {
         if (!streamer) {
             return res.status(401).json({
                 success: false,
-                error: 'StreamKey inválida ou não pertence a este usuário'
+                error: 'StreamKey invÃ¡lida ou nÃ£o pertence a este usuÃ¡rio'
             });
         }
 
@@ -67,7 +67,7 @@ router.post('/stream/start', async (req, res) => {
             } }
         );
 
-        // Atualizar status do usuário
+        // Atualizar status do usuÃ¡rio
         await User.findOneAndUpdate(
             { id: userId },
             { $set: { isLive: true, currentStreamId: streamId, lastStreamStart: new Date() } }
@@ -114,7 +114,7 @@ router.post('/stream/start', async (req, res) => {
                     hls: hlsUrl,
                     flv: flvUrl,
                     webrtc: webrtcUrl,
-                    // URL direta conforme documentação SRS 6 (porta 8080)
+                    // URL direta conforme documentaÃ§Ã£o SRS 6 (porta 8080)
                     direct_hls: `http://${ENV.SRS_HOST}:${ENV.SRS_HTTP_PORT || '8080'}/live/${streamId}.m3u8`
                 },
                 rtmpUrl: `rtmp://${ENV.SRS_HOST || 'localhost'}:${ENV.SRS_RTMP_PORT || '1935'}/live/${streamKey}`,
@@ -133,31 +133,31 @@ router.post('/stream/start', async (req, res) => {
 });
 
 // @route POST /api/video/stream/stop
-// Para uma transmissão de vídeo
+// Para uma transmissÃ£o de vÃ­deo
 router.post('/stream/stop', async (req, res) => {
     try {
         const { userId, streamId } = req.body;
 
         console.log('[VIDEO-STREAM] Parando stream:', { userId, streamId });
 
-        // Validar dados obrigatórios
+        // Validar dados obrigatÃ³rios
         if (!userId || !streamId) {
             return res.status(400).json({
                 success: false,
-                error: 'userId e streamId são obrigatórios'
+                error: 'userId e streamId sÃ£o obrigatÃ³rios'
             });
         }
 
-        // Verificar se o usuário existe
+        // Verificar se o usuÃ¡rio existe
         const user = await User.findOne({ id: userId });
         if (!user) {
             return res.status(404).json({
                 success: false,
-                error: 'Usuário não encontrado'
+                error: 'UsuÃ¡rio nÃ£o encontrado'
             });
         }
 
-        // Verificar se a stream pertence a este usuário
+        // Verificar se a stream pertence a este usuÃ¡rio
         const streamer = await Streamer.findOne({ 
             id: streamId,
             hostId: userId
@@ -166,7 +166,7 @@ router.post('/stream/stop', async (req, res) => {
         if (!streamer) {
             return res.status(401).json({
                 success: false,
-                error: 'Stream não encontrada ou não pertence a este usuário'
+                error: 'Stream nÃ£o encontrada ou nÃ£o pertence a este usuÃ¡rio'
             });
         }
 
@@ -176,7 +176,7 @@ router.post('/stream/stop', async (req, res) => {
             { $set: { isLive: false, streamStatus: 'ended', endTime: new Date() } }
         );
 
-        // Atualizar status do usuário
+        // Atualizar status do usuÃ¡rio
         await User.findOneAndUpdate(
             { id: userId },
             { $set: { isLive: false, isOnline: false, currentStreamId: null, lastStreamEnd: new Date() } }
@@ -227,7 +227,7 @@ router.post('/stream/stop', async (req, res) => {
 });
 
 // @route GET /api/video/stream/:streamId/urls
-// Obtém URLs de reprodução para uma stream
+// ObtÃ©m URLs de reproduÃ§Ã£o para uma stream
 router.get('/stream/:streamId/urls', async (req, res) => {
     try {
         const { streamId } = req.params;
@@ -239,7 +239,7 @@ router.get('/stream/:streamId/urls', async (req, res) => {
         if (!streamer) {
             return res.status(404).json({
                 success: false,
-                error: 'Stream não encontrada'
+                error: 'Stream nÃ£o encontrada'
             });
         }
 
@@ -248,7 +248,7 @@ router.get('/stream/:streamId/urls', async (req, res) => {
         const flvUrl = srsService.getFlvUrl(streamId);
         const webrtcUrl = srsService.getWebRTCPlayUrl(streamId);
 
-        // Atualizar URLs no streamer se necessário
+        // Atualizar URLs no streamer se necessÃ¡rio
         await Streamer.findOneAndUpdate(
             { id: streamId },
             { $set: { hlsUrl: hlsUrl, flvUrl: flvUrl, webrtcUrl: webrtcUrl } }
@@ -284,7 +284,7 @@ router.get('/stream/:streamId/urls', async (req, res) => {
 });
 
 // @route GET /api/video/stream/:streamId/status
-// Obtém status atual de uma stream
+// ObtÃ©m status atual de uma stream
 router.get('/stream/:streamId/status', async (req, res) => {
     try {
         const { streamId } = req.params;
@@ -296,7 +296,7 @@ router.get('/stream/:streamId/status', async (req, res) => {
         if (!streamer) {
             return res.status(404).json({
                 success: false,
-                error: 'Stream não encontrada'
+                error: 'Stream nÃ£o encontrada'
             });
         }
 
@@ -337,16 +337,16 @@ router.post('/stream/webrtc/publish', async (req, res) => {
         if (!streamId || !offerSdp) {
             return res.status(400).json({
                 success: false,
-                error: 'streamId e offerSdp são obrigatórios'
+                error: 'streamId e offerSdp sÃ£o obrigatÃ³rios'
             });
         }
 
-        // Verificar se a stream existe e pertence ao usuário
+        // Verificar se a stream existe e pertence ao usuÃ¡rio
         const streamer = await Streamer.findOne({ id: streamId });
         if (!streamer) {
             return res.status(404).json({
                 success: false,
-                error: 'Stream não encontrada'
+                error: 'Stream nÃ£o encontrada'
             });
         }
 
@@ -359,7 +359,7 @@ router.post('/stream/webrtc/publish', async (req, res) => {
             // Atualizar status do stream
             await Streamer.findOneAndUpdate(
                 { id: streamId },
-                { $set: { isLive: true, streamStatus: 'active', startTime: new Date(), webrtcSessionId: result.sessionid } }
+                { $set: { isLive: true, streamStatus: 'active', startTime: new Date(), kickedUsers: [], webrtcSessionId: result.sessionid } }
             );
 
             // Criar/atualizar LiveCard
@@ -428,16 +428,16 @@ router.post('/stream/webrtc/play', async (req, res) => {
         if (!streamId || !offerSdp) {
             return res.status(400).json({
                 success: false,
-                error: 'streamId e offerSdp são obrigatórios'
+                error: 'streamId e offerSdp sÃ£o obrigatÃ³rios'
             });
         }
 
-        // Verificar se a stream existe e está ativa
+        // Verificar se a stream existe e estÃ¡ ativa
         const streamer = await Streamer.findOne({ id: streamId, isLive: true });
         if (!streamer) {
             return res.status(404).json({
                 success: false,
-                error: 'Stream não encontrada ou não está ativa'
+                error: 'Stream nÃ£o encontrada ou nÃ£o estÃ¡ ativa'
             });
         }
 
@@ -481,11 +481,11 @@ router.get('/http/live/:filename', async (req, res) => {
     try {
         const { filename } = req.params;
 
-        // Usar configurações centralizadas do ENV
+        // Usar configuraÃ§Ãµes centralizadas do ENV
         const srsHost = ENV.SRS_HOST || 'localhost';
         const srsHttpPort = ENV.SRS_HTTP_PORT || '8080';
 
-        // Forçar HTTP para comunicação interna backend -> SRS para maior performance e evitar erros de SSL
+        // ForÃ§ar HTTP para comunicaÃ§Ã£o interna backend -> SRS para maior performance e evitar erros de SSL
         let srsUrl = `http://${srsHost}:${srsHttpPort}/live/${filename}`;
 
         console.log(`[VIDEO-STREAM] Proxying HLS request: ${filename} -> ${srsUrl}`);
@@ -521,7 +521,7 @@ router.get('/http/live/:filename', async (req, res) => {
             });
             res.send(proxied);
         } else {
-            // Para .ts/.flv: usa requestBuffer (binário) — única chamada HTTP
+            // Para .ts/.flv: usa requestBuffer (binÃ¡rio) â€” Ãºnica chamada HTTP
             let bufResp = await httpClient.requestBuffer('GET', srsUrl);
 
             // Fallback: Se falhar com o prefixo 'stream_', tentar sem
@@ -557,7 +557,7 @@ router.get('/http/live/:filename', async (req, res) => {
 });
 
 // @route POST /api/rtc/v1/publish
-// Proxy SDP offer → SRS via WHIP (backende-proxy flow)
+// Proxy SDP offer â†’ SRS via WHIP (backende-proxy flow)
 router.post('/rtc/v1/publish', async (req, res) => {
     try {
         const { streamUrl, sdp, streamKey } = req.body;
@@ -565,7 +565,7 @@ router.post('/rtc/v1/publish', async (req, res) => {
         if (!streamUrl || !sdp) {
             return res.status(400).json({
                 success: false,
-                error: 'streamUrl e sdp são obrigatórios'
+                error: 'streamUrl e sdp sÃ£o obrigatÃ³rios'
             });
         }
 
@@ -580,7 +580,7 @@ router.post('/rtc/v1/publish', async (req, res) => {
             if (streamKey) {
                 await Streamer.findOneAndUpdate(
                     { id: streamKey },
-                { $set: { isLive: true, streamStatus: 'active', startTime: new Date(), webrtcSessionId: result.sessionid } }
+                { $set: { isLive: true, streamStatus: 'active', startTime: new Date(), kickedUsers: [], webrtcSessionId: result.sessionid } }
                 );
 
                 // Criar/atualizar LiveCard
@@ -640,7 +640,7 @@ router.post('/rtc/v1/publish', async (req, res) => {
 });
 
 // @route DELETE /api/rtc/v1/stop/:sessionId
-// Encerra sessão WebRTC no SRS
+// Encerra sessÃ£o WebRTC no SRS
 router.delete('/rtc/v1/stop/:sessionId', async (req, res) => {
     try {
         const { sessionId } = req.params;
@@ -673,7 +673,7 @@ router.delete('/rtc/v1/stop/:sessionId', async (req, res) => {
 });
 
 // @route POST /api/rtc/v1/play
-// Proxy SDP offer → SRS via WHEP (backende-proxy flow)
+// Proxy SDP offer â†’ SRS via WHEP (backende-proxy flow)
 router.post('/rtc/v1/play', async (req, res) => {
     try {
         const { streamUrl, sdp } = req.body;
@@ -681,7 +681,7 @@ router.post('/rtc/v1/play', async (req, res) => {
         if (!streamUrl || !sdp) {
             return res.status(400).json({
                 success: false,
-                error: 'streamUrl e sdp são obrigatórios'
+                error: 'streamUrl e sdp sÃ£o obrigatÃ³rios'
             });
         }
 
@@ -720,15 +720,15 @@ router.post('/rtc/v1/play', async (req, res) => {
 });
 
 // @route GET /api/rtc/ice-servers
-// Retorna servidores ICE com STUN público (Google) + endpoint para obter credenciais TURN dinâmicas
-// NOTA: Credenciais TURN estáticas não funcionam com coturn (usa HMAC time-based auth).
-// O frontend DEVE chamar POST /api/turn/credentials para obter credenciais TURN válidas.
+// Retorna servidores ICE com STUN pÃºblico (Google) + endpoint para obter credenciais TURN dinÃ¢micas
+// NOTA: Credenciais TURN estÃ¡ticas nÃ£o funcionam com coturn (usa HMAC time-based auth).
+// O frontend DEVE chamar POST /api/turn/credentials para obter credenciais TURN vÃ¡lidas.
 router.get('/rtc/ice-servers', (req, res) => {
   const { TURN_HOST, TURN_PORT } = ENV;
   // Usar ENV.BACKEND_URL (que tem valor consistente) em vez de process.env diretamente
   const backendUrl = (ENV.BACKEND_URL || process.env.BACKEND_URL || '').replace(/\/+$/, '');
   // Se BACKEND_URL estiver configurado como raiz (ex: https://livego.store),
-  // o endpoint TURN será /api/turn/credentials sob essa URL
+  // o endpoint TURN serÃ¡ /api/turn/credentials sob essa URL
   const turnEndpoint = backendUrl 
     ? `${backendUrl}/api/turn/credentials`
     : '/api/turn/credentials';
@@ -736,10 +736,10 @@ router.get('/rtc/ice-servers', (req, res) => {
   res.json({
     success: true,
     iceServers: [
-      // STUN público do Google (sempre funciona fora da rede)
+      // STUN pÃºblico do Google (sempre funciona fora da rede)
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
-      // STUN customizado (se disponível)
+      // STUN customizado (se disponÃ­vel)
       { urls: `stun:${TURN_HOST}:${TURN_PORT}` },
       // TURN - o frontend deve obter credenciais via POST /api/turn/credentials
     ],
@@ -747,16 +747,16 @@ router.get('/rtc/ice-servers', (req, res) => {
   });
 });
 
-// Helper para construir URL base do SRS — usa ENV.SRS_API_URL centralizado
+// Helper para construir URL base do SRS â€” usa ENV.SRS_API_URL centralizado
 const getSrsApiBaseUrl = (): string => {
   return ENV.SRS_API_URL;
 };
 
 /**
  * Remove candidatos ICE com IPs privados (Docker/internalos) do SDP,
- * mantendo apenas candidatos com IP público ou relay (TURN).
+ * mantendo apenas candidatos com IP pÃºblico ou relay (TURN).
  * Isso evita que o cliente tente conectar em IPs 172.x.x.x ou 10.x.x.x
- * que só funcionam dentro da rede Docker.
+ * que sÃ³ funcionam dentro da rede Docker.
  */
 function rewritePrivateIpsInSdp(sdp: string, publicIp?: string): string {
   const privateRanges = [
@@ -767,19 +767,19 @@ function rewritePrivateIpsInSdp(sdp: string, publicIp?: string): string {
     /^0\..*/,
   ];
 
-  // Se não tem IP público configurado, manter apenas candidatos relay (TURN)
+  // Se nÃ£o tem IP pÃºblico configurado, manter apenas candidatos relay (TURN)
   if (!publicIp) {
-    // Remove candidatos host com IP privado, mantém relay e srflx
+    // Remove candidatos host com IP privado, mantÃ©m relay e srflx
     return sdp.split('\r\n').filter(line => {
       if (!line.startsWith('a=candidate:')) return true;
       const parts = line.split(' ');
       // Formato: a=candidate:fundation 1 udp 2130706431 192.168.1.1 3478 typ host
-      // O IP é o 4º campo (index 4) em candidatos típicos
+      // O IP Ã© o 4Âº campo (index 4) em candidatos tÃ­picos
       // Procurar IP na linha
       const ipMatch = line.match(/a=candidate:[^ ]+ [^ ]+ [^ ]+ [^ ]+ ([^ ]+)/);
       if (!ipMatch) return true;
       const ip = ipMatch[1];
-      // Verificar se é IP privado
+      // Verificar se Ã© IP privado
       for (const range of privateRanges) {
         if (range.test(ip)) return false; // Remove candidato com IP privado
       }
@@ -787,7 +787,7 @@ function rewritePrivateIpsInSdp(sdp: string, publicIp?: string): string {
     }).join('\r\n');
   }
 
-  // Se tem IP público, substituir IPs privados nos candidatos
+  // Se tem IP pÃºblico, substituir IPs privados nos candidatos
   return sdp.split('\r\n').map(line => {
     if (!line.startsWith('a=candidate:')) return line;
     const ipMatch = line.match(/a=candidate:[^ ]+ [^ ]+ [^ ]+ [^ ]+ ([^ ]+)/);
@@ -795,7 +795,7 @@ function rewritePrivateIpsInSdp(sdp: string, publicIp?: string): string {
     const ip = ipMatch[1];
     for (const range of privateRanges) {
       if (range.test(ip)) {
-        // Substituir IP privado pelo IP público
+        // Substituir IP privado pelo IP pÃºblico
         return line.replace(ip, publicIp);
       }
     }
@@ -808,3 +808,4 @@ function rewritePrivateIpsInSdp(sdp: string, publicIp?: string): string {
 // sem passar pelo backend Node.js para evitar erro 401 de autenticacao
 
 export default router;
+

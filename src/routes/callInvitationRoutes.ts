@@ -26,6 +26,105 @@ async function broadcastGuestList(roomId: string, io: any) {
   });
 }
 
+// POST /api/call-invitation/request — Espectador solicita chamada ao host
+router.post('/request', async (req, res) => {
+  try {
+    const guestId = getUserIdFromToken(req);
+    if (!guestId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { hostId, streamId } = req.body;
+    if (!hostId || !streamId) {
+      return res.status(400).json({ error: 'hostId e streamId são obrigatórios' });
+    }
+
+    const stream = await Streamer.findOne({ id: streamId, isLive: true, streamStatus: 'active' });
+    if (!stream) {
+      return res.status(404).json({ error: 'Stream não encontrada ou não está ativa' });
+    }
+
+    const guest = await User.findOne({ id: guestId });
+    if (!guest) return res.status(404).json({ error: 'Usuário não encontrado' });
+
+    if (guestId === hostId) {
+      return res.status(400).json({ error: 'Não é possível chamar a si mesmo' });
+    }
+
+    const existing = await CallInvitation.findOne({
+      hostId, guestId, roomId: stream.roomId || streamId, status: 'pending'
+    });
+    if (existing) {
+      // 🔁 REENVIO LIVRE: se a pessoa ainda não entrou/aceitou, o host PODE
+      // mandar de novo quantas vezes quiser — só reemitimos a notificação.
+      const io = req.app.get('io');
+      if (io) {
+        io.to(`user_${hostId}`).emit('call_invitation', {
+          type: 'call_request',
+          invitation: {
+            id: existing._id.toString(),
+            guestId,
+            guestName: guest.name || guestId,
+            guestAvatar: guest.avatarUrl || '',
+            guestLevel: guest.level || 1,
+            roomId: existing.roomId,
+            streamId: existing.streamId,
+          }
+        });
+      }
+      return res.json({ success: true, invitationId: existing._id.toString(), resent: true, guestStreamKey: `call_${streamId}_${guestId}` });
+    }
+
+    const guestStreamKey = `call_${streamId}_${guestId}`;
+
+    const invitation = await CallInvitation.create({
+      hostId,
+      hostName: stream.name || hostId,
+      guestId,
+      guestName: guest.name || guestId,
+      roomId: stream.roomId || streamId,
+      streamId: stream.id as string,
+      streamKey: guestStreamKey,
+      status: 'pending'
+    });
+
+    const invitationId = invitation._id.toString();
+    const io = req.app.get('io');
+    if (io) {
+      io.to(`user_${hostId}`).emit('call_invitation', {
+        type: 'call_request',
+        invitation: {
+          id: invitationId,
+          guestId,
+          guestName: guest.name || guestId,
+          guestAvatar: guest.avatarUrl || '',
+          guestLevel: guest.level || 1,
+          roomId: invitation.roomId,
+          streamId: invitation.streamId,
+        }
+      });
+      io.to(`user_${guestId}`).emit('call_invitation', {
+        type: 'call_request_sent',
+        invitation: { id: invitationId, hostId, streamId }
+      });
+    }
+
+    try {
+      const { NotificationService } = await import('../services/NotificationService');
+      await NotificationService.notifyCallInvitation(
+        io, hostId, guestId, guest.name || guestId, invitationId,
+        invitation.roomId as string, invitation.streamId as string,
+      );
+    } catch (notifErr) {
+      console.error('[CallInvitation] Erro NotificationService request:', notifErr);
+    }
+
+    console.log(`📞 [Call Request] Guest ${guestId} solicitou chamada com host ${hostId} na stream ${streamId}`);
+    res.json({ success: true, invitationId, guestStreamKey });
+  } catch (error: any) {
+    console.error('❌ [Call Request] Erro ao solicitar chamada:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // POST /api/call-invitation/invite
 router.post('/invite', async (req, res) => {
   try {
@@ -53,7 +152,38 @@ router.post('/invite', async (req, res) => {
       hostId, guestId, roomId: stream.roomId, status: 'pending'
     });
     if (existing) {
-      return res.status(400).json({ error: 'Já existe um convite ativo para este usuário' });
+      // 🔁 REENVIO LIVRE: enquanto o convidado não aceitar/entrar, o convite
+      // PODE ser reenviado quantas vezes quiser — reemitimos a notificação.
+      const io = req.app.get('io');
+      const invitationId = existing._id.toString();
+      if (io) {
+        io.to(`user_${guestId}`).emit('call_invitation', {
+          type: 'invitation_received',
+          invitation: {
+            id: invitationId,
+            hostId: existing.hostId,
+            hostName: existing.hostName,
+            roomId: existing.roomId,
+            streamId: existing.streamId,
+            streamTitle: stream.name,
+            guest: {
+              id: guest.id, name: guest.name, avatarUrl: guest.avatarUrl || '',
+              level: guest.level || 1, diamonds: guest.diamonds || 0,
+              fans: guest.fans || 0, following: guest.following || 0,
+              isVIP: guest.isVIP || false, isAvatarProtected: guest.isAvatarProtected || false
+            }
+          }
+        });
+        io.to(`user_${hostId}`).emit('guest_invitation_sent', {
+          invitationId,
+          guestId,
+          guestName: guestName || guest.name,
+          hostId,
+          roomId: existing.roomId,
+          streamId: existing.streamId
+        });
+      }
+      return res.json({ success: true, invitationId, resent: true });
     }
 
     const invitation = await CallInvitation.create({
@@ -242,7 +372,7 @@ router.post('/respond', async (req, res) => {
       } catch (notifErr) { console.error('[CallInvitation] Erro NotificationService decline:', notifErr); }
     }
 
-    res.json({ success: true, status: invitation.status });
+    res.json({ success: true, status: invitation.status, guestStreamKey: invitation.streamKey, signalingUrl: invitation.signalingUrl });
   } catch (error: any) {
     console.error('❌ [Call Invitation] Erro ao responder convite:', error);
     res.status(500).json({ error: error.message });

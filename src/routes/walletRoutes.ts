@@ -3,7 +3,7 @@ import { PurchaseRecord, GiftTransaction, User, Streamer, BannedEntity, Purchase
 import { standardizeUserResponse } from '../utils/userResponse';
 import { calculateBRLFromDiamonds } from '../utils/diamondConversion';
 import FraudDetectionMiddleware from '../middleware/fraudDetection';
-import mercadoPagoService from '../services/mercadoPagoService';
+import payoneerService from '../services/payoneerService'; // Payoneer — único provedor (MP removido)
 import { protect, AuthRequest } from '../middleware/auth';
 import { paymentRateLimit } from '../middleware/rateLimit';
 import {
@@ -429,27 +429,39 @@ router.post('/withdraw/:userId', protect, FraudDetectionMiddleware.detectFraud, 
         const platform_fee_brl = brl_amount * 0.20;
         const net_amount_brl = brl_amount - platform_fee_brl;
         
-        // Verificar configuração do Mercado Pago
-        if (!mercadoPagoService.isConfigured()) {
-            console.error('❌ [WITHDRAW] Mercado Pago não está configurado');
-            return res.status(500).json({ error: 'Serviço de pagamento não configurado' });
-        }
-        
+        // ═══ PAYONEER — único provedor (Mercado Pago removido) ═══
         // Gerar referência externa única
         const external_reference = `withdraw_${userId}_${Date.now()}`;
-        
-        // Preparar requisição para Mercado Pago
+
+        // Preparar descrição do saque
         const withdrawalRequest = {
             amount: net_amount_brl,
             description: `LiveGo - Saque de ${amount} diamantes (Líquido: R$ ${net_amount_brl.toFixed(2)})`,
             external_reference,
             payer_email: user.withdrawal_method.details.pixKey || user.withdrawal_method.details.email || user.email
         };
-        
-        console.log(`🔄 [WITHDRAW] Enviando para Mercado Pago - Ref: ${external_reference}`);
-        
-        // Realizar saque no Mercado Pago
-        const mpWithdrawal = await mercadoPagoService.makeWithdrawal(withdrawalRequest);
+
+        console.log(`🔄 [WITHDRAW] Enviando para Payoneer - Ref: ${external_reference}`);
+
+        // Realizar saque via Payoneer (fila pronta quando credenciais não estão no .env)
+        let mpWithdrawal: any;
+        try {
+            if (payoneerService.isConfigured()) {
+                const payout = await payoneerService.createPayout({
+                    userId,
+                    recipientReference: `livego_${userId}`,
+                    amountLocal: net_amount_brl,
+                    currency: 'BRL',
+                    description: withdrawalRequest.description,
+                });
+                mpWithdrawal = { id: payout.payoutId, status: payout.status, net_amount: net_amount_brl, fee_amount: 0 };
+            } else {
+                mpWithdrawal = { id: external_reference, status: 'queued', net_amount: net_amount_brl, fee_amount: 0 };
+                console.log('[WITHDRAW] Payoneer não configurado — saque registrado na fila');
+            }
+        } catch (e: any) {
+            return res.status(502).json({ error: 'Falha ao enviar saque ao Payoneer', details: e.message });
+        }
         
         // Atualizar saldo do usuário (após confirmação do Mercado Pago)
         const newEarnings = currentEarnings - amount;

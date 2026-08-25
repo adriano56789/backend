@@ -4,14 +4,16 @@ interface RequiredVar {
   name: string;
   hint: string;
   strictlyRequired?: boolean;
+  /** Permanece opcional mesmo em produção — o sistema opera em modo fila até ser configurado */
+  explicitlyOptional?: boolean;
 }
 
 const requiredVars: RequiredVar[] = [
   { name: 'MONGODB_URI', hint: 'mongodb://usuario:senha@host:porta/banco', strictlyRequired: true },
   { name: 'JWT_SECRET', hint: 'qualquer string segura de 32+ caracteres', strictlyRequired: true },
-  { name: 'MERCADO_PAGO_ACCESS_TOKEN', hint: 'token de acesso da API do Mercado Pago' },
-  { name: 'MERCADO_PAGO_CLIENT_ID', hint: 'client ID do Mercado Pago' },
-  { name: 'MERCADO_PAGO_CLIENT_SECRET', hint: 'client secret do Mercado Pago' },
+  // Payoneer: opcional por design — saques ficam na fila até as credenciais da empresa serem conectadas no .env
+  { name: 'PAYONEER_CLIENT_ID', hint: 'client ID da API Payouts do Payoneer', explicitlyOptional: true },
+  { name: 'PAYONEER_CLIENT_SECRET', hint: 'client secret da API Payouts do Payoneer', explicitlyOptional: true },
 ];
 
 export function validateEnv(): void {
@@ -23,7 +25,9 @@ export function validateEnv(): void {
 
   for (const v of requiredVars) {
     if (!process.env[v.name]) {
-      if (v.strictlyRequired || isProduction || useRealApis) {
+      if (v.explicitlyOptional) {
+        missingOptional.push(`${v.name} — ${v.hint || 'sem descrição'} (opcional: saques ficam na fila até configurar)`);
+      } else if (v.strictlyRequired || isProduction || useRealApis) {
         missingStrict.push(`${v.name} — ${v.hint || 'sem descrição'}`);
       } else {
         missingOptional.push(`${v.name} — ${v.hint || 'sem descrição'}`);

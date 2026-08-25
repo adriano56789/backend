@@ -62,3 +62,5 @@ export { StreamRoom } from './StreamRoom';
 
 export { RouletteItem, IRouletteItem } from './RouletteItem';
 export { RouletteSpin, IRouletteSpin } from './RouletteSpin';
+export { StreamBan } from './StreamBan';
+export { ContentViolation } from './ContentViolation';

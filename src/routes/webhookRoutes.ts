@@ -2,8 +2,7 @@ import express from 'express';
 import { Order, Streamer, User, LiveCard, StreamParticipant, StreamLike, GiftTransaction, ChatMessage, Gift } from '../models';
 import { isTranscodeVariant } from '../utils/streamKeyUtils';
 import { autoEndStreamOnDisconnect } from '../services/streamEndService';
-// @ts-ignore - local mercadopago SDK
-const { WebhookSignatureValidator } = require('mercadopago');
+import crypto from 'crypto';
 
 const router = express.Router();
 
@@ -496,158 +495,53 @@ router.post('/', async (req, res) => {
     }
 });
 
-// Webhook do Mercado Pago para receber notificações de pagamento
-router.post('/mercadopago', async (req, res) => {
+// ═══ MERCADO PAGO REMOVIDO — webhook desativado (410 Gone) ═══
+router.post('/mercadopago', (_req, res) => {
+    res.status(410).json({ gone: true, reason: 'Mercado Pago removido. Provedor atual: Payoneer.' });
+});
+
+// ═══ Webhook do Payoneer — eventos de payout (Pix/USD/EUR) ═══
+// Configure a URL no painel Payoneer: https://api.livego.store/api/webhooks/payoneer
+// Validação: header X-Payoneer-Signature (HMAC-SHA256 do corpo bruto com PAYONEER_WEBHOOK_SECRET)
+router.post('/payoneer', express.raw({ type: '*/*' }), async (req, res) => {
     try {
-        // Validar assinatura do webhook
-        try {
-            WebhookSignatureValidator.validate({
-                xSignature: req.headers['x-signature'],
-                xRequestId: req.headers['x-request-id'],
-                dataId: req.query['data.id'] as string | undefined,
-                secret: process.env.MERCADO_PAGO_WEBHOOK_SECRET || '',
-                toleranceSeconds: 300,
-            });
-        } catch (err: any) {
-            console.warn('[WEBHOOK] Assinatura inválida (modo não-bloqueante):', err.reason);
-            // Non-blocking: loga mas não rejeita
+        const secret = process.env.PAYONEER_WEBHOOK_SECRET;
+        if (secret) {
+            const signature = String(req.headers['x-payoneer-signature'] || '');
+            const expected = crypto.createHmac('sha256', secret).update(req.body).digest('hex');
+            if (signature !== expected) {
+                console.warn('[WEBHOOK PAYONEER] Assinatura inválida — rejeitado');
+                return res.status(401).json({ error: 'Assinatura inválida' });
+            }
         }
 
-        console.log('[WEBHOOK] Notificação recebida do Mercado Pago:', JSON.stringify(req.body, null, 2));
+        let event: any = req.body;
+        if (Buffer.isBuffer(event)) {
+            try { event = JSON.parse(event.toString('utf8')); } catch { event = {}; }
+        }
+        console.log('[WEBHOOK PAYONEER] Evento recebido:', JSON.stringify(event));
 
-        // Verificar se é uma notificação de pagamento
-        if (req.body.type === 'payment') {
-            const paymentId = req.body.data.id;
-            console.log(`[WEBHOOK] Processando pagamento ${paymentId}`);
+        // Estrutura típica: { payout_id, status, ... } ou { event_type, data }
+        const payoutId = event?.payout_id || event?.data?.payout_id;
+        const payoutStatus = String(event?.status || event?.data?.status || '').toUpperCase();
 
-            // Buscar informações do pagamento usando SDK v3
-            const { paymentClient } = await import('../config/mercadoPago');
-            const paymentData = await paymentClient.get({ id: paymentId });
-
-            console.log(`[WEBHOOK] Status do pagamento ${paymentId}: ${paymentData.status}`);
-
-            // Procurar ordem associada a este pagamento
-            const order = await Order.findOne({ mpPaymentId: paymentId });
-            
-            if (!order) {
-                console.log(`[WEBHOOK] Ordem não encontrada para pagamento ${paymentId}`);
-                return res.status(404).json({ error: 'Ordem não encontrada' });
-            }
-
-            console.log(`[WEBHOOK] Ordem ${order.id} encontrada para pagamento ${paymentId}`);
-
-            // Se o pagamento foi aprovado e a ordem ainda está pendente
-            if (paymentData.status === 'approved' && order.status === 'pending') {
-                console.log(`[WEBHOOK] Pagamento aprovado! Processando ordem ${order.id}`);
-
-                // Atualizar status da ordem
-                await Order.findOneAndUpdate(
-                    { id: order.id },
-                    { 
-                        $set: {
-                            status: 'paid',
-                            paymentConfirmationId: paymentId,
-                            confirmedAt: new Date(),
-                            paymentStatus: 'approved'
-                        }
-                    }
-                );
-
-                const io = req.app.get('io');
-                if (io) {
-                    io.emit('order_updated', { userId: order.userId, orderId: order.id, status: 'paid' });
-                }
-
-                // Creditar diamantes para o usuário + persistir atividade
-                const User = (await import('../models')).User;
-                const user = await User.findOneAndUpdate(
-                    { id: order.userId },
-                    { 
-                        $inc: { diamonds: order.diamonds },
-                        $push: { recentActivities: { $each: [{
-                                action: 'webhook_payment_processed',
-                                resource: 'webhook_mercadopago',
-                                timestamp: new Date(),
-                                endpoint: '/api/webhook/mercadopago'
-                            }], $slice: -50 } }
+        if (payoutId && ['COMPLETED', 'FAILED', 'REJECTED'].includes(payoutStatus)) {
+            const PurchaseRecord = (await import('../models')).PurchaseRecord;
+            await PurchaseRecord.findOneAndUpdate(
+                { 'metadata.payoutId': payoutId },
+                {
+                    $set: {
+                        status: payoutStatus === 'COMPLETED' ? 'Concluído' : 'Falhou',
+                        'metadata.payoneer_status': payoutStatus,
                     },
-                    { returnDocument: 'after' }
-                );
-
-                if (!user) {
-                    console.log(`[WEBHOOK] Usuário não encontrado: ${order.userId}`);
-                    return res.status(404).json({ error: 'Usuário não encontrado' });
                 }
-
-                console.log(`[WEBHOOK] SUCESSO! Usuário ${user.name} recebeu ${order.diamonds} diamantes. Saldo atual: ${user.diamonds}`);
-
-                // Registrar compra no histórico
-                const PurchaseRecord = (await import('../models')).PurchaseRecord;
-                await PurchaseRecord.create({
-                    id: `purchase_${order.id}_${Date.now()}`,
-                    userId: order.userId,
-                    type: 'purchase_diamonds',
-                    description: `Compra de ${order.diamonds} diamantes - Pagamento confirmado: ${paymentId}`,
-                    amountBRL: order.amount,
-                    amountCoins: order.diamonds,
-                    status: 'Concluído'
-                });
-
-                console.log(`[WEBHOOK] Compra registrada no histórico para usuário ${order.userId}`);
-
-                // Emitir WebSocket para atualizar frontend em tempo real
-                if (io) {
-                    io.to('user_' + order.userId).emit('diamonds_updated', {
-                        userId: order.userId,
-                        diamonds: user.diamonds,
-                        change: order.diamonds,
-                        source: 'purchase'
-                    });
-                    console.log(`[WEBHOOK] WebSocket emitido para usuário ${order.userId}`);
-                }
-
-            } else if (paymentData.status === 'rejected' || paymentData.status === 'cancelled') {
-                console.log(`[WEBHOOK] Pagamento rejeitado/cancelado: ${paymentId}`);
-                
-                // Persistir atividade de pagamento rejeitado
-                const User = (await import('../models')).User;
-                await User.findOneAndUpdate(
-                    { id: order.userId },
-                    { 
-                        $push: { recentActivities: { $each: [{
-                                action: 'webhook_payment_rejected',
-                                resource: 'webhook_mercadopago',
-                                timestamp: new Date(),
-                                endpoint: '/api/webhook/mercadopago'
-                            }], $slice: -50 } }
-                    }
-                ).catch(console.error);
-                
-                await Order.findOneAndUpdate(
-                    { id: order.id },
-                    { 
-                        $set: {
-                            status: 'cancelled',
-                            paymentStatus: paymentData.status,
-                            cancelledAt: new Date()
-                        }
-                    }
-                );
-
-                const io2 = req.app.get('io');
-                if (io2) {
-                    io2.emit('order_updated', { userId: order.userId, orderId: order.id, status: 'cancelled' });
-                }
-            }
-
-        } else if (req.body.type === 'merchant_order') {
-            console.log(`[WEBHOOK] Merchant order recebido: ${req.body.data.id}`);
+            ).catch(() => {});
+            console.log(`[WEBHOOK PAYONEER] Payout ${payoutId} → ${payoutStatus}`);
         }
 
         res.status(200).json({ received: true });
-
     } catch (error: any) {
-        console.error('[WEBHOOK] Erro ao processar webhook:', error);
+        console.error('[WEBHOOK PAYONEER] Erro:', error.message);
         res.status(500).json({ error: error.message });
     }
 });

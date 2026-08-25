@@ -354,9 +354,14 @@ router.get('/ranking/:period', async (req, res) => {
                     const streamer = await User.findOne({ id: stream.hostId });
                     
                     if (streamer) {
-                        const streamerObj = streamer.toObject ? streamer.toObject() : streamer;
+                        // 🔒 Só campos PÚBLICOS — nunca vazar senha/email/localização/carteira
                         liveRanking.push({
-                            ...streamerObj,
+                            id: streamer.id,
+                            name: streamer.name,
+                            avatarUrl: streamer.avatarUrl || '',
+                            level: (streamer as any).level || 1,
+                            gender: (streamer as any).gender || 'not_specified',
+                            age: (streamer as any).age || 0,
                             contribution: session.giftsReceived, // Presentes recebidos na live atual
                             streamId: stream.id,
                             streamTitle: stream.message, // Usar message em vez de title
@@ -466,8 +471,6 @@ router.get('/ranking/:period', async (req, res) => {
         
         // Para cada usuário, verificar se tem contadores > 0
         const validUsers = users.map(user => {
-            const userObj = user.toObject ? user.toObject() : user;
-            
             // Usar receptores para ranking (diamantes recebidos) - contador principal
             let contribution = user.receptores || 0;
             
@@ -478,17 +481,17 @@ router.get('/ranking/:period', async (req, res) => {
                 return null;
             }
             
+            // 🔒 Só campos PÚBLICOS — nunca vazar senha/email/localização/carteira
             return {
-                ...userObj,
+                id: user.id,
+                name: user.name,
+                avatarUrl: user.avatarUrl || '',
+                level: (user as any).level || 1,
+                gender: (user as any).gender || 'not_specified',
+                age: (user as any).age || 0,
                 contribution: contribution,
                 rank: 0, // Será atribuído após ordenação
-                period: period,
-                debug: {
-                    diamonds: user.diamonds || 0,
-                    receptores: user.receptores || 0,
-                    enviados: user.enviados || 0,
-                    source: 'counters' // Indica que usa contadores, não transações
-                }
+                period: period
             };
         }).filter(user => user !== null && user.contribution > 0);
         

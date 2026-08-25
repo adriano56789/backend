@@ -21,6 +21,19 @@ router.get('/users', async (req, res) => {
         const userId = getUserIdFromToken(req);
         
         const results = await UserSearchService.searchUsers(q, parseInt(limit as string));
+
+        // ⛔ BAN POR CONTA: hosts que bloquearam este usuário somem da busca
+        let filtered = results;
+        if (userId) {
+            try {
+                const { StreamBan } = await import('../models');
+                const bans = await StreamBan.find({ bannedUserId: String(userId) }).select('hostId').lean();
+                const bannedHostIds = new Set(bans.map(b => b.hostId));
+                filtered = results.filter((u: any) => !bannedHostIds.has(String(u.id)));
+            } catch (e) {
+                console.warn('[SEARCH] Falha ao filtrar bloqueadores:', e);
+            }
+        }
         
         // Persistir atividade de busca se usuário estiver autenticado
         if (userId) {
@@ -41,8 +54,8 @@ router.get('/users', async (req, res) => {
         res.json({
             success: true,
             query: q,
-            count: results.length,
-            users: results
+            count: filtered.length,
+            users: filtered
         });
     } catch (error: any) {
         console.error('Erro na busca de usuários:', error);

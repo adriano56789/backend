@@ -1,7 +1,7 @@
 import express from 'express';
 import { Order, User, PurchaseRecord, PurchaseAuditTrail } from '../models';
 import FraudDetectionMiddleware from '../middleware/fraudDetection';
-import mercadoPagoService from '../services/mercadoPagoService';
+
 import { protect, AuthRequest } from '../middleware/auth';
 import { requirePaymentAuth } from '../middleware/paymentSecurity';
 import { paymentRateLimit } from '../middleware/rateLimit';
@@ -9,7 +9,7 @@ import { paymentRateLimit } from '../middleware/rateLimit';
 const router = express.Router();
 
 // Confirmar compra de diamantes
-// Frontend chama com { orderId } — backend consulta Mercado Pago real para validar
+// Frontend chama com { orderId } � backend consulta Mercado Pago real para validar
 router.post('/confirm',
     protect,
     requirePaymentAuth,
@@ -48,54 +48,12 @@ router.post('/confirm',
             return res.status(400).json({ error: 'Status da order não permite confirmação' });
         }
 
-        let resolvedPaymentConfirmationId = paymentConfirmationId;
-
-        // Se frontend chamou sem paymentConfirmationId, consultar Mercado Pago real
+        // �"��"��"� MERCADO PAGO REMOVIDO: consulta direta ao gateway não existe mais �"��"��"�
         if (!paymentConfirmationId) {
-            if (!order.mpPaymentId) {
-                return res.status(400).json({
-                    error: 'Pagamento não iniciado',
-                    details: 'Nenhum pagamento Mercado Pago associado a esta order'
-                });
-            }
-
-            try {
-                const paymentResult = await mercadoPagoService.getPaymentStatus(order.mpPaymentId);
-
-                if (paymentResult.status === 'approved') {
-                    resolvedPaymentConfirmationId = order.mpPaymentId;
-                } else if (paymentResult.status === 'pending' || paymentResult.status === 'in_process') {
-                    return res.json({
-                        status: 'pending',
-                        message: 'Pagamento ainda não aprovado pelo Mercado Pago'
-                    });
-                } else {
-                    await Order.findOneAndUpdate(
-                        { id: orderId },
-                        {
-                            $set: {
-                                status: 'failed',
-                                paymentStatus: paymentResult.status,
-                                paymentData: paymentResult
-                            }
-                        }
-                    );
-
-                    const io = req.app.get('io');
-                    io.emit('order_updated', { userId: order.userId, orderId: order.id, status: 'failed' });
-
-                    return res.status(400).json({
-                        error: 'Pagamento não aprovado',
-                        status: paymentResult.status
-                    });
-                }
-            } catch (mpError: any) {
-                console.error(`[PURCHASE ERROR] Erro ao consultar Mercado Pago:`, mpError);
-                return res.status(502).json({
-                    error: 'Erro ao consultar gateway de pagamento',
-                    details: mpError.message
-                });
-            }
+            return res.status(503).json({
+                error: 'Pagamentos em transição',
+                details: 'O Mercado Pago foi desativado. Depósitos retornarão em breve com o novo provedor.',
+            });
         } else {
             // Validação de segurança: se paymentConfirmationId foi fornecido, paymentStatus precisa ser 'approved'
             if (paymentStatus !== 'approved') {
@@ -114,6 +72,7 @@ router.post('/confirm',
                 });
             }
         }
+        const resolvedPaymentConfirmationId = paymentConfirmationId;
 
         // ATUALIZAR STATUS PARA PAID
         const updatedOrder = await Order.findOneAndUpdate(
@@ -205,3 +164,4 @@ router.post('/confirm',
 });
 
 export default router;
+

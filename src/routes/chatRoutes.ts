@@ -349,7 +349,7 @@ router.post('/send', async (req, res) => {
             const { NotificationService } = await import('../services/NotificationService');
             const senderName = (sender as any)?.name || 'Alguém';
             const preview = messageType === 'image' ? '[Imagem]' : (text || '');
-            await NotificationService.notifyNewMessage(io, to, from, senderName, preview, conversationId);
+            await NotificationService.notifyNewMessage(io, to, from, senderName, preview, conversationId, (sender as any)?.avatarUrl);
         } catch (notifErr) {
             console.error('[NOTIFICATION] Erro ao notificar mensagem:', notifErr);
         }
@@ -433,12 +433,12 @@ router.post('/:id/messages', async (req, res) => {
             const io = req.app.get('io');
             const receiverIds = chat.participants.filter((p: string) => p !== senderId);
             if (receiverIds.length > 0) {
-                const sender = await User.findOne({ id: senderId }).select('name');
+                const sender = await User.findOne({ id: senderId }).select('name avatarUrl');
                 const senderName = sender?.name || 'Alguém';
                 const preview = messageType === 'image' ? '[Imagem]' : content;
                 for (const receiverId of receiverIds) {
                     await NotificationService.notifyNewMessage(
-                        io, receiverId, senderId, senderName, preview, id
+                        io, receiverId, senderId, senderName, preview, id, (sender as any)?.avatarUrl
                     );
                 }
             }

@@ -278,6 +278,7 @@ router.post('/', async (req, res) => {
                     senderName,
                     bodyPreview,
                     conversationId,
+                    (sender as any)?.avatarUrl,
                 );
             } catch (notifErr) {
                 console.error('[MESSAGES] Erro NotificationService:', notifErr);

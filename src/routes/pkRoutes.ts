@@ -258,6 +258,76 @@ router.post('/vote', async (req, res) => {
   }
 });
 
+// POST /api/pk/end — encerrar batalha por userId+streamId (frontend)
+router.post('/end', async (req, res) => {
+  try {
+    const { userId, streamId } = req.body;
+    if (!userId || !streamId) {
+      return res.status(400).json({ error: 'userId e streamId são obrigatórios' });
+    }
+
+    const user = await User.findOne({ id: userId });
+    if (!user) {
+      return res.status(404).json({ error: 'Usuário não encontrado' });
+    }
+
+    const battle: any = await Battle.findOne({
+      $or: [
+        { streamerA: user._id },
+        { streamerB: user._id }
+      ],
+      status: 'active'
+    }).sort({ createdAt: -1 });
+
+    if (!battle) {
+      return res.json({ success: true, message: 'Nenhuma batalha ativa encontrada' });
+    }
+
+    // Limpar timer automático
+    const existingTimer = battleTimers.get(battle._id.toString());
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+      battleTimers.delete(battle._id.toString());
+    }
+
+    const update: any = { status: 'finished', endedAt: new Date() };
+    if (battle.scoreA > battle.scoreB) update.winner = battle.streamerA;
+    else if (battle.scoreB > battle.scoreA) update.winner = battle.streamerB;
+
+    const updated = await Battle.findByIdAndUpdate(battle._id, update, { returnDocument: 'after' });
+
+    const io = req.app.get('io');
+    if (io) {
+      const populated = await updated?.populate('streamerA streamerB winner');
+      const streamerAUser = populated?.streamerA as any;
+      const streamerBUser = populated?.streamerB as any;
+      [streamerAUser?.id, streamerBUser?.id].forEach(uid => {
+        if (uid) {
+          io.to(`user_${uid}`).emit('pk_battle_end', {
+            battleId: battle._id.toString(),
+            winner: update.winner || null,
+            scoreA: updated?.scoreA || 0,
+            scoreB: updated?.scoreB || 0,
+            endedAt: update.endedAt,
+            reason: 'manual'
+          });
+        }
+      });
+    }
+
+    const mixer = activeMixers.get(battle._id.toString());
+    if (mixer) {
+      stopMixer(mixer);
+      activeMixers.delete(battle._id.toString());
+    }
+
+    res.json({ success: true, battle: updated });
+  } catch (error: any) {
+    console.error('[PK] Erro ao encerrar batalha:', error);
+    res.status(500).json({ error: 'Erro ao encerrar batalha' });
+  }
+});
+
 // POST /api/pk/end/:battleId — encerrar batalha
 router.post('/end/:battleId', async (req, res) => {
   try {

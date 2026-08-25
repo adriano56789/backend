@@ -175,6 +175,21 @@ UserRoutes.get('/:id', async (req, res) => {
             let user = await User.findOne({ id: paramId }).lean();
             if (user) {
                 const userObj = typeof (user as any).toObject === 'function' ? (user as any).toObject() : user;
+                // 🔧 FIX FÃS: contar seguidores REAIS também neste retorno antecipado.
+                // Antes só o fallback (case-insensitive/_id) recalculava, e o contador
+                // denormalizado User.fans podia estar corrompido (ex.: -1 em vez de 3).
+                try {
+                    const [realFansEarly, realFollowingEarly] = await Promise.all([
+                        Followers.countDocuments({ followingId: user.id, isActive: true }),
+                        Followers.countDocuments({ followerId: user.id, isActive: true }),
+                    ]);
+                    if ((userObj.following ?? 0) !== realFollowingEarly) userObj.following = realFollowingEarly;
+                    if ((userObj.fans ?? 0) !== realFansEarly) {
+                        userObj.fans = Math.max(realFansEarly, userObj.followersList?.length || 0);
+                        // 🩹 Auto-reparo do contador podre (não bloqueia a resposta)
+                        User.updateOne({ id: user.id }, { $set: { fans: userObj.fans } }).catch(() => {});
+                    }
+                } catch { /* usa o valor do doc */ }
                 req.params.id = user.id;
                 return res.json(standardizeUserResponse(userObj, getUserIdFromToken(req)));
             }
@@ -253,7 +268,12 @@ UserRoutes.get('/:id', async (req, res) => {
                 Followers.countDocuments({ followingId: user.id, isActive: true }),
                 Followers.countDocuments({ followerId: user.id, isActive: true })
             ]);
-            userObj.fans = realFans > 0 ? realFans : (userObj.followersList?.length || 0);
+            const computedFans = Math.max(realFans, userObj.followersList?.length || 0);
+            if ((userObj.fans ?? 0) !== computedFans) {
+                // 🩹 Auto-reparo do contador denormalizado corrompido
+                User.updateOne({ id: user.id }, { $set: { fans: computedFans } }).catch(() => {});
+            }
+            userObj.fans = computedFans;
             userObj.following = realFollowing > 0 ? realFollowing : (userObj.followingList?.length || 0);
 
             return res.json(standardizeUserResponse(userObj, currentUserId));
@@ -1587,6 +1607,61 @@ UserRoutes.get('/:id/messages', async (req, res) => {
         console.error('Error getting conversations:', error);
 
         res.status(500).json({ error: error.message });
+
+    }
+
+});
+
+// 🗑️ DELETE /api/users/:id/messages/:partnerId - Apagar histórico do chat privado
+// Remove TODAS as mensagens trocadas entre os dois usuários. Como a lista de
+// conversas é derivada das mensagens, a conversa some da lista automaticamente.
+UserRoutes.delete('/:id/messages/:partnerId', async (req, res) => {
+
+    try {
+
+        const userId = req.params.id;
+        const partnerId = req.params.partnerId;
+
+        // Segurança: apenas o próprio dono do histórico pode apagá-lo
+        const requesterId = getUserIdFromToken(req) || (req.query.requesterId as string);
+        if (!requesterId || String(requesterId) !== String(userId)) {
+            return res.status(403).json({ success: false, error: 'Sem permissão para apagar este histórico' });
+        }
+
+        if (!partnerId) {
+            return res.status(400).json({ success: false, error: 'partnerId é obrigatório' });
+        }
+
+        console.log(`🗑️ Apagando histórico entre ${userId} e ${partnerId}`);
+
+        const { ChatMessage, Chat } = await import('../models/index');
+
+        const result = await (ChatMessage as any).deleteMany({
+            $or: [
+                { senderId: userId, receiverId: partnerId },
+                { senderId: partnerId, receiverId: userId }
+            ]
+        });
+
+        // Limpar lastMessage do documento Chat (se existir) para manter consistência
+        try {
+            await (Chat as any).updateMany(
+                { participants: { $all: [userId, partnerId] } },
+                { $set: { lastMessage: null, updatedAt: new Date() } }
+            );
+        } catch (chatErr) {
+            console.warn('⚠️ Falha ao limpar lastMessage do Chat (não crítico):', chatErr);
+        }
+
+        console.log(`✅ Histórico apagado: ${result.deletedCount || 0} mensagens removidas`);
+
+        res.json({ success: true, deletedCount: result.deletedCount || 0 });
+
+    } catch (error: any) {
+
+        console.error('❌ Erro ao apagar histórico do chat:', error);
+
+        res.status(500).json({ success: false, error: error.message });
 
     }
 

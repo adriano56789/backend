@@ -57,6 +57,7 @@ import webhookRoutes from './routes/webhookRoutes';
 import webhookBroadcasterRoutes from './routes/webhookBroadcasterRoutes';
 import { emitWebhook } from './services/WebhookBroadcasterService';
 import withdrawalRoutes from './routes/withdrawalRoutes';
+import payoneerRoutes from './routes/payoneerRoutes'; // NOVO - Payoneer ÚNICO provedor (Pix/USD/EUR)
 import transactionProtectionRoutes from './routes/transactionProtectionRoutes';
 import zoomRoutes from './routes/zoomRoutes';
 import userStatusRoutes from './routes/userStatusRoutes';
@@ -79,7 +80,7 @@ import streamAccessRoutes from './routes/streamAccessRoutes';
 
 import UserStatusManager from './middleware/UserStatusManager';
 import notificationRoutes from './routes/notificationRoutes';
-import { initFirebase } from './services/firebaseService';
+import { initWebPush } from './services/webPushService';
 import { blockBase64Middleware } from './middleware/blockBase64';
 
 
@@ -183,7 +184,7 @@ connectDB().then(async () => {
 
     server.listen(port, '0.0.0.0', () => {
         console.log(`🌍 API Server started on http://127.0.0.1:${port}`);
-        initFirebase();
+        initWebPush();
     });
 }).catch(error => {
     console.error('❌ [DB] Falha na conexão com MongoDB:', error.message);
@@ -379,6 +380,7 @@ app.use('/api/payments', paymentRoutes); // Rotas do Mercado Pago
 app.use('/api/webhooks', webhookRoutes); // Rotas de webhooks
 app.use('/api/webhook', webhookBroadcasterRoutes); // API de gestão do webhook LiveGo
 app.use('/api/withdrawals', withdrawalRoutes); // Rotas de saques via Pix
+app.use('/api/payoneer', payoneerRoutes); // NOVO - Payoneer: único provedor de saques (Pix BRL/USD/EUR)
 app.use('/api/transaction-protection', transactionProtectionRoutes); // Rotas de proteção contra bloqueios abusivos
 app.use('/api/level', levelRoutes); // NOVO - Sistema de Nível
 app.use('/api', userStatusRoutes); // Rotas de status online do usuário
@@ -402,6 +404,8 @@ app.use('/api', liveRoutes); // handles /api/live, /api/streams, /api/rtc, /api/
 app.use('/api', likesRoutes); // handles stream likes
 app.use('/api', settingsRoutes); // handles /api/settings, /api/notifications/settings
 app.use('/api/pk', pkRoutes);
+import protectionRoutes from './routes/protectionRoutes';
+app.use('/api/protection', protectionRoutes); // 🔒 Proteção de conteúdo: violações + bans permanentes
 
 app.use('/api/live', liveInviteRoutes); // NOVO - Convites Co-Host/PK com SRS SFU WebRTC
 app.use('/api/interactions', interactionRoutes); // handles /api/interactions/presents, /api/interactions/streams
@@ -598,6 +602,28 @@ io.on('connection', (socket) => {
         } catch (notifErr: any) {
           console.error('[NOTIFICATION] Erro ao notificar join stream:', notifErr?.message || notifErr);
         }
+      }
+
+      // 🎡 Envia o estado atual da roleta para quem acabou de entrar na sala.
+      // Garante que o espectador veja EXATAMENTE os itens e o custo que o host
+      // definiu, sem depender de timing de broadcast.
+      try {
+        const { findActiveByOwner } = await import('./models/RouletteItem');
+        // 🔧 Usa hostId (já resolvido acima) em vez de streamId para garantir
+        // que busca o rouletteSpinCost no User correto do host.
+        const rouletteOwnerId = hostId || streamId;
+        const rouletteItems = await findActiveByOwner(rouletteOwnerId);
+        const rouletteUserDoc = await models.User.findOne({ id: rouletteOwnerId }).exec();
+        const spinCost = rouletteUserDoc && Number((rouletteUserDoc as any).rouletteSpinCost) > 0 ? Number((rouletteUserDoc as any).rouletteSpinCost) : 0;
+        socket.emit('roulette_updated', {
+          ownerId: rouletteOwnerId,
+          items: rouletteItems.map((it: any) => JSON.parse(JSON.stringify(it && it.toObject ? it.toObject() : it))),
+          spinCost,
+          timestamp: new Date().toISOString(),
+        });
+        console.log(`[ROULETTE] Estado da roleta enviado via join_stream para ${userId} (ownerId=${rouletteOwnerId}): ${rouletteItems.length} itens, ${spinCost}💎`);
+      } catch (rouletteErr: any) {
+        console.warn('[ROULETTE] Erro ao enviar estado via join_stream:', rouletteErr.message);
       }
 
       // Auto-registro no chat da stream
@@ -948,7 +974,8 @@ io.on('connection', (socket) => {
                         senderId,
                         sender.name || 'Alguém',
                         preview,
-                        chatId
+                        chatId,
+                        (sender as any).avatarUrl || '',
                     );
                 }
             } catch (notifErr) {

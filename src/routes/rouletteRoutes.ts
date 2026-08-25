@@ -4,6 +4,7 @@ import { getUserIdFromToken } from '../middleware/auth';
 import { getIO } from '../socket';
 import { findActiveByOwner, findItemById, createRouletteItem, updateRouletteItem, hardDeleteRouletteItem } from '../models/RouletteItem';
 import { recordSpin, findSpinsByUser, findSpinsByStream } from '../models/RouletteSpin';
+import { getDb } from '../config/db';
 
 const router = express.Router();
 
@@ -18,21 +19,47 @@ function isHostOwner(req: any, ownerId: string): boolean {
 
 // 📡 Emite o estado atual da roleta para TODOS os espectadores da sala
 // (io.to(ownerId) == sala da live), para que o que o host definir apareça
-// imediatamente para todo mundo.
+// imediatamente para todo mundo. Também emite para a sala pessoal do host
+// (user_{ownerId}) como fallback de garantia.
 async function broadcastRouletteUpdate(ownerId: string) {
     try {
         const items = await findActiveByOwner(ownerId);
         const userDoc = await User.findOne({ id: ownerId }).exec();
         const spinCost = userDoc && Number(userDoc.rouletteSpinCost) > 0 ? Number(userDoc.rouletteSpinCost) : 0;
+        const payload = {
+            ownerId,
+            items: items.map((it: any) => JSON.parse(JSON.stringify(it && it.toObject ? it.toObject() : it))),
+            spinCost,
+            timestamp: new Date().toISOString(),
+        };
         const io = getIO();
-        io.to(ownerId).emit('roulette_updated', {
+        // Envia para a sala da live (espectadores + host)
+        io.to(ownerId).emit('roulette_updated', payload);
+        // Fallback: também envia para a sala pessoal do host (user_{ownerId})
+        io.to(`user_${ownerId}`).emit('roulette_updated', payload);
+        console.log(`[ROULETTE-ROUTES] 📡 Broadcast roulette_updated para sala "${ownerId}" + user_${ownerId}: ${items.length} itens, ${spinCost}💎`);
+    } catch (error: any) {
+        console.error('[ROULETTE-ROUTES] Erro ao broadcast roulette_updated:', error?.message || error);
+    }
+}
+
+// 📡 Envia o estado atual da roleta para um CLIENTE ESPECÍFICO (via socket).
+// Usado quando um espectador abre a roleta ou reconecta — garante que ele
+// recebe o estado EXATO que o host definiu, sem depender de timing de sala.
+export async function sendRouletteStateToClient(socket: any, ownerId: string) {
+    try {
+        const items = await findActiveByOwner(ownerId);
+        const userDoc = await User.findOne({ id: ownerId }).exec();
+        const spinCost = userDoc && Number(userDoc.rouletteSpinCost) > 0 ? Number(userDoc.rouletteSpinCost) : 0;
+        socket.emit('roulette_updated', {
             ownerId,
             items: items.map((it: any) => JSON.parse(JSON.stringify(it && it.toObject ? it.toObject() : it))),
             spinCost,
             timestamp: new Date().toISOString(),
         });
+        console.log(`[ROULETTE-ROUTES] 📡 Estado da roleta enviado para socket ${socket.id} (ownerId=${ownerId}): ${items.length} itens, ${spinCost}💎`);
     } catch (error: any) {
-        console.error('[ROULETTE-ROUTES] Erro ao broadcast roulette_updated:', error?.message || error);
+        console.error('[ROULETTE-ROUTES] Erro ao enviar estado para socket:', error?.message || error);
     }
 }
 
@@ -270,25 +297,96 @@ router.post('/roulette/spin', async (req, res) => {
             diamondsAfter = Number.isFinite(after) ? Math.max(0, after) : 0;
         }
 
-        // 💎 OS DIAMANTES DO GIRO VÃO DIRETO PARA A HOST — o espectador paga e
-        // quem criou a roleta (a host) recebe TUDO. Sem outra parada.
+        // 💎 OS DIAMANTES DO GIRO VÃO DIRETO PARA A HOST — FLUXO IDÊNTICO AO ENVIO
+        // DE PRESENTES (giftRoutes): live + widget + stream session + earnings/receptores.
         if (cost > 0 && ownerId) {
             try {
-                // Widget da host (mesmo padrão dos presentes recebidos)
+                // Acumula na LIVE (doc da stream pelo streamId) — igual [LIVE GIFT]
+                if (streamId && streamId !== 'unknown') {
+                    await Streamer.findOneAndUpdate(
+                        { id: streamId },
+                        { $inc: { diamonds: cost } },
+                        { upsert: true }
+                    ).exec();
+
+                    // 💾 STREAM SESSION: acumula moedas para o resumo da live (igual presentes)
+                    try {
+                        const { incrementCoins } = await import('../models/StreamSession');
+                        const db = getDb();
+                        await incrementCoins(db.collection('streamsessions') as any, streamId, cost);
+                    } catch (sessionErr: any) {
+                        console.warn(`⚠️ [ROULETTE] Erro ao salvar moedas no StreamSession: ${sessionErr?.message || sessionErr}`);
+                    }
+                }
+
+                // Widget da host — igual gifts ([toUserId] == ownerId aqui)
                 await Streamer.findOneAndUpdate(
                     { id: ownerId },
                     { $inc: { diamonds: cost } },
                     { upsert: true }
                 ).exec();
-                // Ganhos da host na carteira (mesmo padrão dos presentes recebidos)
+
+                // 💎 Saldo REAL da host: earnings/receptores — MESMOS CAMPOS dos presentes
                 await User.findOneAndUpdate(
                     { id: ownerId },
-                    { $inc: { earnings: cost, receptores: cost } },
-                    { upsert: false }
+                    {
+                        $inc: { earnings: cost, receptores: cost },
+                        $set: { lastSeen: new Date().toISOString() }
+                    },
+                    { upsert: true }
                 ).exec();
-                console.log(`[ROULETTE-ROUTES] 💎 ${cost} diamantes do giro creditados direto para a host ${ownerId}.`);
+                console.log(`[ROULETTE-ROUTES] 💎 ${cost} diamantes do giro creditados na host ${ownerId} (fluxo de presentes).`);
             } catch (hostErr: any) {
                 console.warn('[ROULETTE-ROUTES] Erro ao creditar diamantes na host (continuando):', hostErr.message);
+            }
+        }
+
+        // 📡 EVENTOS EM TEMPO REAL — MESMOS DOS PRESENTES:
+        //  • diamonds_updated → espectador vê o débito na hora
+        //  • earnings_updated (GLOBAL) → carteira/saldo da host atualiza na hora
+        //  • live_coins_updated (GLOBAL) → contador da live sobe na hora
+        if (cost > 0) {
+            try {
+                const io = getIO();
+                // 1) Espectador: novo saldo
+                const spinnerDoc = await User.findOne({ id: spinningUserId }).select('diamonds enviados').lean();
+                if (spinnerDoc) {
+                    io.to(`user_${spinningUserId}`).emit('diamonds_updated', {
+                        userId: spinningUserId,
+                        diamonds: (spinnerDoc as any).diamonds,
+                        enviados: (spinnerDoc as any).enviados,
+                        change: -cost,
+                        timestamp: new Date().toISOString(),
+                        source: 'roulette_spin'
+                    });
+                }
+                // 2) Host: eventos idênticos aos presentes
+                const hostDoc = await User.findOne({ id: ownerId }).select('earnings receptores').lean();
+                io.emit('earnings_updated', {
+                    userId: ownerId,
+                    diamonds: cost,
+                    totalEarnings: Number((hostDoc as any)?.earnings ?? 0),
+                    receptores: Number((hostDoc as any)?.receptores ?? 0),
+                    timestamp: new Date().toISOString(),
+                    source: 'roulette_spin',
+                    fromUser: spinningUserId,
+                    giftName: 'Roleta',
+                    streamId: streamId || ''
+                });
+                if (streamId && streamId !== 'unknown') {
+                    const updatedStream = await Streamer.findOne({ id: streamId }).select('diamonds').lean();
+                    io.emit('live_coins_updated', {
+                        streamId,
+                        coins: cost,
+                        totalCoins: (updatedStream as any)?.diamonds || 0,
+                        timestamp: new Date().toISOString(),
+                        fromUser: spinningUserId,
+                        giftName: 'Roleta'
+                    });
+                }
+                console.log(`[ROULETTE-ROUTES] 📡 Eventos emitidos (diamonds_updated/earnings_updated/live_coins_updated).`);
+            } catch (emitErr: any) {
+                console.warn('[ROULETTE-ROUTES] Erro ao emitir eventos:', emitErr.message);
             }
         }
 
@@ -308,8 +406,6 @@ router.post('/roulette/spin', async (req, res) => {
             success: true,
             item: JSON.parse(JSON.stringify(item)),
             diamondsAfter,
-            // 💎 Valor EXATO debitado — o app usa pra confirmar que o que mostrou
-            // na roleta (definido pela host) foi exatamente o que saiu do saldo.
             cost,
         });
     } catch (error: any) {

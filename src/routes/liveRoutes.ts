@@ -1543,7 +1543,7 @@ router.post('/srs/hook', async (req, res) => {
             await User.findOneAndUpdate({ id: hostId }, { $set: { isLive: true, currentStreamId: hostId } }).catch(() => {});
             await LiveCard.findOneAndUpdate(
                 { hostId },
-                { $set: { hostId, name: userName, avatar: userAvatar, streamKey, isLive: true, streamStatus: 'active', startTime: new Date(), updatedAt: new Date() } },
+                { $set: { hostId, name: userName, avatar: userAvatar, streamKey, isLive: true, streamStatus: 'active', startTime: new Date(), kickedUsers: [], updatedAt: new Date() } },
                 { upsert: true }
             ).catch(() => {});
 
@@ -3137,6 +3137,7 @@ router.post('/streams', async (req, res) => {
                     isLive: false,
                     streamStatus: 'preparing',
                     startTime: new Date(),
+                    kickedUsers: [],
                     viewers: 0,
                     country: finalCountry,
                     latitude: user.latitude,
@@ -3267,6 +3268,25 @@ router.get('/streams', async (req, res) => {
             baseFilter.isPrivate = true;
         } else {
             baseFilter.category = cat;
+        }
+
+        // ⛔ BAN POR CONTA: usuário bloqueado por um host NÃO vê as lives dele
+        // em lugar nenhum (cards, seguidos, busca). Perfil do host some pra ele.
+        if (userId) {
+            try {
+                const { StreamBan } = await import('../models');
+                const bans = await StreamBan.find({ bannedUserId: String(userId) }).select('hostId').lean();
+                const bannedHostIds = bans.map(b => b.hostId);
+                if (bannedHostIds.length > 0) {
+                    if (Array.isArray((baseFilter.hostId as any)?.$in)) {
+                        baseFilter.hostId.$in = baseFilter.hostId.$in.filter((id: string) => !bannedHostIds.includes(String(id)));
+                    } else {
+                        baseFilter.hostId = { $nin: bannedHostIds };
+                    }
+                }
+            } catch (banErr) {
+                console.warn('[STREAMS] Falha ao filtrar hosts bloqueadores:', banErr);
+            }
         }
 
         if (cursor) {
@@ -5150,6 +5170,21 @@ router.get('/streams/:id/online-users', async (req, res) => {
 
 
 
+        // 💎 DIAMANTES POR SESSÃO DE LIVE: o streamKey é REUTILIZADO entre lives,
+        // então filtrar só por streamId mostrava diamantes de sessões antigas.
+        // Filtramos também por createdAt >= startTime DA LIVE ATUAL — quando a
+        // live encerra e uma nova começa, os contadores voltam ao zero. O saldo
+        // real do criador (GiftTransaction histórico) NÃO é apagado.
+        const streamDoc: any = await Streamer.findOne({
+            $or: [{ id: streamId }, { streamKey: streamId }]
+        }).select('startTime').lean();
+        const sessionStart: Date | null = streamDoc?.startTime ? new Date(streamDoc.startTime) : null;
+        const sessionFilter: any = (sessionStart && !isNaN(sessionStart.getTime()))
+            ? { createdAt: { $gte: sessionStart } }
+            : {};
+
+
+
         // Buscar usu+�rios marcados como online nesta stream no banco de dados
 
         const onlineUsersInStream = await User.find({
@@ -5194,11 +5229,11 @@ router.get('/streams/:id/online-users', async (req, res) => {
 
             
 
-            // Buscar usu+�rios que enviaram presentes nesta live
+            // Buscar usu+�rios que enviaram presentes nesta live (SESSÃO ATUAL)
 
             const giftSenders = await GiftTransaction.aggregate([
 
-                { $match: { streamId: streamId } },
+                { $match: { streamId: streamId, ...sessionFilter } },
 
                 { $group: { _id: '$fromUserId', totalValue: { $sum: '$totalValue' } } },
 
@@ -5274,7 +5309,9 @@ router.get('/streams/:id/online-users', async (req, res) => {
 
         const liveGiftTransactions = await GiftTransaction.find({
 
-            streamId: streamId
+            streamId: streamId,
+
+            ...sessionFilter
 
         }).select('fromUserId totalValue');
 
@@ -5748,23 +5785,41 @@ router.post('/streams/:streamId/leave', async (req, res) => {
 // ===== ROUTE START =====
 
 // POST /api/streams/:id/toggle-mic - Alterna o microfone do host
+// 🔧 FIX: era a PRIMEIRA de duas rotas com o mesmo path (a segunda era código
+// morto). Antes retornava 404 quando não havia streamsession ativa e tinha a
+// semântica do estado invertida. Agora: persiste no Streamer SEMPRE (sessão é
+// opcional), aceita estado explícito `microphoneEnabled` do front e emite os
+// dois flags coerentes (isMuted = !enabled).
 router.post('/streams/:id/toggle-mic', async (req, res) => {
     try {
         const streamId = req.params.id;
         const db = getDb();
         const sessions = db.collection('streamsessions');
         const session = await sessions.findOne({ streamId, endTime: { $exists: false } });
-        if (!session) {
-            return res.status(404).json({ success: false, error: 'Sessao de stream nao encontrada' });
-        }
         const userId = getUserIdFromToken(req);
-        if (userId && session.hostId !== userId) {
+        if (userId && session && String(session.hostId) !== String(userId)) {
             return res.status(403).json({ success: false, error: 'Apenas o host pode alternar o microfone' });
         }
-        const newMicState = !(session.isMicrophoneMuted ?? false);
-        await sessions.updateOne(
-            { streamId, endTime: { $exists: false } },
-            { $set: { isMicrophoneMuted: newMicState, updatedAt: new Date() } }
+        // Estado atual: sessão (se existir) ou doc do Streamer; undefined = ligado.
+        let currentEnabled: boolean;
+        if (session) {
+            currentEnabled = !(session as any).isMicrophoneMuted;
+        } else {
+            const streamDoc = await Streamer.findOne({ id: streamId }).select('microphoneEnabled').lean();
+            currentEnabled = ((streamDoc as any)?.microphoneEnabled) !== false;
+        }
+        const desired = (req.body || {}).microphoneEnabled;
+        const enabled = typeof desired === 'boolean' ? desired : !currentEnabled;
+        // Persiste na sessão (se houver) e SEMPRE no Streamer — mesmo sem sessão ativa.
+        if (session) {
+            await sessions.updateOne(
+                { streamId, endTime: { $exists: false } },
+                { $set: { isMicrophoneMuted: !enabled, updatedAt: new Date() } }
+            );
+        }
+        await Streamer.findOneAndUpdate(
+            { id: streamId },
+            { $set: { microphoneEnabled: enabled } }
         );
         const io = req.app.get('io');
         if (io) {
@@ -5772,12 +5827,13 @@ router.post('/streams/:id/toggle-mic', async (req, res) => {
                 streamId,
                 roomId: streamId,
                 userId,
-                isMuted: newMicState,
-                microphoneEnabled: newMicState,
+                isMuted: !enabled,
+                microphoneEnabled: enabled,
                 timestamp: new Date().toISOString()
             });
         }
-        res.json({ success: true, isMuted: newMicState });
+        console.log(`[TOGGLE-MIC] Stream ${streamId}: microfone ${enabled ? 'ATIVADO' : 'MUTADO'} por ${userId || 'host'}`);
+        res.json({ success: true, isMuted: !enabled, microphoneEnabled: enabled });
     } catch (error: any) {
         console.error('[TOGGLE-MIC] Erro:', error);
         res.status(500).json({ success: false, error: error.message });
@@ -5787,23 +5843,36 @@ router.post('/streams/:id/toggle-mic', async (req, res) => {
 // ===== ROUTE START =====
 
 // POST /api/streams/:id/toggle-sound - Alterna o som do stream
+// 🔧 FIX: mesmos problemas do toggle-mic (404 sem sessão + semântica invertida).
+// Agora funciona com ou sem sessão ativa e aceita estado explícito.
 router.post('/streams/:id/toggle-sound', async (req, res) => {
     try {
         const streamId = req.params.id;
         const db = getDb();
         const sessions = db.collection('streamsessions');
         const session = await sessions.findOne({ streamId, endTime: { $exists: false } });
-        if (!session) {
-            return res.status(404).json({ success: false, error: 'Sessao de stream nao encontrada' });
-        }
         const userId = getUserIdFromToken(req);
-        if (userId && session.hostId !== userId) {
+        if (userId && session && String(session.hostId) !== String(userId)) {
             return res.status(403).json({ success: false, error: 'Apenas o host pode alternar o som' });
         }
-        const newSoundState = !(session.isStreamMuted ?? false);
-        await sessions.updateOne(
-            { streamId, endTime: { $exists: false } },
-            { $set: { isStreamMuted: newSoundState, updatedAt: new Date() } }
+        let currentEnabled: boolean;
+        if (session) {
+            currentEnabled = !(session as any).isStreamMuted;
+        } else {
+            const streamDoc = await Streamer.findOne({ id: streamId }).select('soundEnabled').lean();
+            currentEnabled = ((streamDoc as any)?.soundEnabled) !== false;
+        }
+        const desired = (req.body || {}).soundEnabled;
+        const enabled = typeof desired === 'boolean' ? desired : !currentEnabled;
+        if (session) {
+            await sessions.updateOne(
+                { streamId, endTime: { $exists: false } },
+                { $set: { isStreamMuted: !enabled, updatedAt: new Date() } }
+            );
+        }
+        await Streamer.findOneAndUpdate(
+            { id: streamId },
+            { $set: { soundEnabled: enabled } }
         );
         const io = req.app.get('io');
         if (io) {
@@ -5811,12 +5880,13 @@ router.post('/streams/:id/toggle-sound', async (req, res) => {
                 streamId,
                 roomId: streamId,
                 userId,
-                isMuted: newSoundState,
-                soundEnabled: newSoundState,
+                isMuted: !enabled,
+                soundEnabled: enabled,
                 timestamp: new Date().toISOString()
             });
         }
-        res.json({ success: true, isMuted: newSoundState });
+        console.log(`[TOGGLE-SOUND] Stream ${streamId}: som ${enabled ? 'ATIVADO' : 'MUTADO'} por ${userId || 'host'}`);
+        res.json({ success: true, isMuted: !enabled, soundEnabled: enabled });
     } catch (error: any) {
         console.error('[TOGGLE-SOUND] Erro:', error);
         res.status(500).json({ success: false, error: error.message });
@@ -5826,6 +5896,10 @@ router.post('/streams/:id/toggle-sound', async (req, res) => {
 // ===== ROUTE START =====
 
 // POST /api/streams/:id/toggle-auto-follow - Alterna o seguimento automatico
+// 🔧 FIX: era a PRIMEIRA de duas rotas com o mesmo path (a 2ª era código
+// morto). Antes retornava 404 sem sessão ativa e gravava APENAS na sessão —
+// o fluxo de presentes lê Streamer.autoFollowEnabled, então o toggle não
+// surtia efeito real. Agora grava SEMPRE no Streamer (sessão opcional).
 router.post('/streams/:id/toggle-auto-follow', async (req, res) => {
     try {
         const streamId = req.params.id;
@@ -5833,19 +5907,34 @@ router.post('/streams/:id/toggle-auto-follow', async (req, res) => {
         const db = getDb();
         const sessions = db.collection('streamsessions');
         const session = await sessions.findOne({ streamId, endTime: { $exists: false } });
-        if (!session) {
-            return res.status(404).json({ success: false, error: 'Sessao de stream nao encontrada' });
-        }
         const userId = getUserIdFromToken(req);
-        if (userId && session.hostId !== userId) {
+        if (userId && session && String(session.hostId) !== String(userId)) {
             return res.status(403).json({ success: false, error: 'Apenas o host pode alterar esta configuracao' });
         }
-        const newState = typeof isEnabled === 'boolean' ? isEnabled : !(session.isAutoFollowEnabled ?? false);
-        await sessions.updateOne(
-            { streamId, endTime: { $exists: false } },
-            { $set: { isAutoFollowEnabled: newState, updatedAt: new Date() } }
+        let currentState = false;
+        if (session) {
+            currentState = !!(session as any).isAutoFollowEnabled;
+        } else {
+            const doc = await Streamer.findOne({ id: streamId }).select('autoFollowEnabled').lean();
+            currentState = !!((doc as any)?.autoFollowEnabled);
+        }
+        const newState = typeof isEnabled === 'boolean' ? isEnabled : !currentState;
+        if (session) {
+            await sessions.updateOne(
+                { streamId, endTime: { $exists: false } },
+                { $set: { isAutoFollowEnabled: newState, updatedAt: new Date() } }
+            );
+        }
+        await Streamer.findOneAndUpdate(
+            { id: streamId },
+            { $set: { autoFollowEnabled: newState } }
         );
-        res.json({ success: true, isEnabled: newState });
+        const io = req.app.get('io');
+        if (io) {
+            io.to(streamId).emit('auto_follow_toggled', { streamId, roomId: streamId, userId, autoFollowEnabled: newState, isEnabled: newState, timestamp: new Date().toISOString() });
+        }
+        console.log(`[TOGGLE-AUTO-FOLLOW] Stream ${streamId}: ${newState ? 'ON' : 'OFF'} por ${userId || 'host'}`);
+        res.json({ success: true, isEnabled: newState, autoFollowEnabled: newState });
     } catch (error: any) {
         console.error('[TOGGLE-AUTO-FOLLOW] Erro:', error);
         res.status(500).json({ success: false, error: error.message });
@@ -5855,6 +5944,8 @@ router.post('/streams/:id/toggle-auto-follow', async (req, res) => {
 // ===== ROUTE START =====
 
 // POST /api/streams/:id/toggle-auto-invite - Alterna o convite automatico
+// 🔧 FIX: mesmos problemas do auto-follow (404 sem sessão + gravava só na
+// sessão; o fluxo de presentes lê Streamer.autoInviteEnabled).
 router.post('/streams/:id/toggle-auto-invite', async (req, res) => {
     try {
         const streamId = req.params.id;
@@ -5862,19 +5953,34 @@ router.post('/streams/:id/toggle-auto-invite', async (req, res) => {
         const db = getDb();
         const sessions = db.collection('streamsessions');
         const session = await sessions.findOne({ streamId, endTime: { $exists: false } });
-        if (!session) {
-            return res.status(404).json({ success: false, error: 'Sessao de stream nao encontrada' });
-        }
         const userId = getUserIdFromToken(req);
-        if (userId && session.hostId !== userId) {
+        if (userId && session && String(session.hostId) !== String(userId)) {
             return res.status(403).json({ success: false, error: 'Apenas o host pode alterar esta configuracao' });
         }
-        const newState = typeof isEnabled === 'boolean' ? isEnabled : !(session.isAutoPrivateInviteEnabled ?? false);
-        await sessions.updateOne(
-            { streamId, endTime: { $exists: false } },
-            { $set: { isAutoPrivateInviteEnabled: newState, updatedAt: new Date() } }
+        let currentState = false;
+        if (session) {
+            currentState = !!(session as any).isAutoPrivateInviteEnabled;
+        } else {
+            const doc = await Streamer.findOne({ id: streamId }).select('autoInviteEnabled').lean();
+            currentState = !!((doc as any)?.autoInviteEnabled);
+        }
+        const newState = typeof isEnabled === 'boolean' ? isEnabled : !currentState;
+        if (session) {
+            await sessions.updateOne(
+                { streamId, endTime: { $exists: false } },
+                { $set: { isAutoPrivateInviteEnabled: newState, updatedAt: new Date() } }
+            );
+        }
+        await Streamer.findOneAndUpdate(
+            { id: streamId },
+            { $set: { autoInviteEnabled: newState } }
         );
-        res.json({ success: true, isEnabled: newState });
+        const io = req.app.get('io');
+        if (io) {
+            io.to(streamId).emit('auto_invite_toggled', { streamId, roomId: streamId, userId, autoInviteEnabled: newState, isAutoPrivateInviteEnabled: newState, isEnabled: newState, timestamp: new Date().toISOString() });
+        }
+        console.log(`[TOGGLE-AUTO-INVITE] Stream ${streamId}: ${newState ? 'ON' : 'OFF'} por ${userId || 'host'}`);
+        res.json({ success: true, isEnabled: newState, autoInviteEnabled: newState });
     } catch (error: any) {
         console.error('[TOGGLE-AUTO-INVITE] Erro:', error);
         res.status(500).json({ success: false, error: error.message });
@@ -6682,6 +6788,53 @@ router.post('/streams/:id/gift', async (req, res) => {
 
 
 
+        // 🔄 SEGUIR AUTOMÁTICO (por PRESENTE): só vale se o host MARCOU a caixa
+        // "Seguir Auto". Quem MANDA PRESENTE na live passa a ser seguido PELO
+        // HOST automaticamente. Quem NÃO manda presente, NÃO é seguido.
+        if ((stream as any).autoFollowEnabled && stream.hostId && String(stream.hostId) !== String(fromUserId)) {
+            try {
+                const hostId = String(stream.hostId);
+                const gifterId = String(fromUserId);
+                const existingFollow = await Followers.findOne({ followerId: hostId, followingId: gifterId, isActive: true });
+                if (!existingFollow) {
+                    const inactiveFollow = await Followers.findOne({ followerId: hostId, followingId: gifterId, isActive: false });
+                    if (inactiveFollow) {
+                        await Followers.findOneAndUpdate(
+                            { followerId: hostId, followingId: gifterId, isActive: false },
+                            { $set: { isActive: true, followedAt: new Date() }, $unset: { unfollowedAt: 1 } }
+                        );
+                    } else {
+                        await Followers.create({
+                            id: `followers_${hostId}_${gifterId}`,
+                            followerId: hostId,
+                            followingId: gifterId,
+                            followedAt: new Date(),
+                            isActive: true
+                        });
+                    }
+                    // Host segue +1; quem mandou presente ganha fã +1
+                    await User.findOneAndUpdate({ id: hostId }, { $inc: { following: 1 }, $addToSet: { followingList: gifterId } });
+                    await User.findOneAndUpdate({ id: gifterId }, { $inc: { fans: 1 }, $addToSet: { followersList: hostId }, $set: { isFollowed: true } });
+
+                    // Avisa em tempo real que o host passou a seguir o remetente
+                    const ioAuto = req.app.get('io') || (global as any).io;
+                    if (ioAuto) {
+                        ioAuto.to(`user_${gifterId}`).emit('new_follower', {
+                            followerId: hostId,
+                            followerName: updatedReceiver?.name || 'Host',
+                            followerAvatar: updatedReceiver?.avatarUrl || '',
+                            autoFollow: true,
+                            timestamp: new Date().toISOString()
+                        });
+                    }
+                    try { emitWebhook('LiveGo.CallbackAfterFollow', { FollowerId: hostId, FollowedId: gifterId, AutoFollow: true, Timestamp: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] auto-follow', e); }
+                    console.log(`[AUTO-FOLLOW] Host ${hostId} agora segue ${gifterId} (mandou presente na live ${req.params.id})`);
+                }
+            } catch (autoFollowErr: any) {
+                console.warn('[AUTO-FOLLOW] Erro no seguir automático:', autoFollowErr?.message || autoFollowErr);
+            }
+        }
+
         res.json({
 
             success: true,
@@ -7003,11 +7156,9 @@ router.get('/lives/:id', async (req, res) => {
 
         const isDirectApiAccess = !referer || (referer.includes('localhost') && userAgent.includes('curl'));
 
-        
-
         // Usar ID real diretamente (sem mapeamento)
 
-        const streamer: any = await Streamer.findOne({ id });
+        const streamer: any = await Streamer.findOne({ id }).lean();
 
         
 
@@ -7019,13 +7170,13 @@ router.get('/lives/:id', async (req, res) => {
 
         }
 
+        // 🔄 RESTAURAÇÃO APÓS F5/REFRESH: retornar o documento REAL (id,
+        // hostId e streamKey inclusos). O mapper "protegido" trocava o id
+        // por um hash e omitia streamKey/hostId — ao recarregar a página em
+        // /live/:id o player assinava um stream INEXISTENTE e a sala ficava
+        // com tela preta. Os mesmos dados já são expostos pelo feed de cards.
 
-
-        // Transformar streamer para formato protegido usando mapper flex+vel
-
-        const protectedStream = mapStreamToProtectedFlexible(streamer as any);
-
-        res.json(protectedStream);
+        res.json({ success: true, stream: streamer });
 
     } catch (error: any) {
 
@@ -9405,6 +9556,12 @@ router.post('/streams/:id/transfer-owner', async (req, res) => {
         res.status(500).json({ success: false, error: error instanceof Error ? error.message : String(error) });
     }
 });
+
+// ===== SEGUIR AUTO / AUTO CONVITE =====
+// ⚠️ As rotas toggle-mic, toggle-sound, toggle-auto-follow e toggle-auto-invite
+// ficam definidas UMA ÚNICA VEZ (linhas ~5793-5975). Versões duplicadas aqui
+// eram código morto (o Express usa a primeira rota registrada) e foram
+// removidas para evitar confusão.
 
 export default router;
 

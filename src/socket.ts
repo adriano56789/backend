@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken';
 import { ENV } from './config/env';
 import { User, UserStatus } from './models';
 import { emitWebhook } from './services/WebhookBroadcasterService';
+import { findActiveByOwner } from './models/RouletteItem';
 
 // EventType (local) - mantido para compatibilidade com código existente
 const EventType = {
@@ -486,6 +487,36 @@ export const initSocket = (server: any) => {
                 console.error(' [USER] Error adding EXP:', error);
             }
             
+            // 🎡 Envia o estado atual da roleta para quem acabou de entrar na sala.
+            // Garante que o espectador veja EXATAMENTE os itens e o custo que o host
+            // definiu, sem depender de timing de broadcast.
+            if (data.streamId) {
+                try {
+                    // 🔧 Resolver o hostId REAL da stream — rouletteSpinCost está no
+                    // User do HOST, não no Streamer. Em streams onde streamId ≠ hostId,
+                    // buscar direto pelo User do host evita retornar spinCost = 0.
+                    let rouletteOwnerId = data.streamId;
+                    try {
+                        const StreamerModel = (await import('./models/Streamer')).Streamer;
+                        const streamDoc = await StreamerModel.findOne({ id: data.streamId }).select('hostId').lean();
+                        if (streamDoc && (streamDoc as any).hostId) rouletteOwnerId = (streamDoc as any).hostId;
+                    } catch {}
+
+                    const items = await findActiveByOwner(rouletteOwnerId);
+                    const rouletteUserDoc = await User.findOne({ id: rouletteOwnerId }).exec();
+                    const spinCost = rouletteUserDoc && Number((rouletteUserDoc as any).rouletteSpinCost) > 0 ? Number((rouletteUserDoc as any).rouletteSpinCost) : 0;
+                    socket.emit('roulette_updated', {
+                        ownerId: rouletteOwnerId,
+                        items: items.map((it: any) => JSON.parse(JSON.stringify(it && it.toObject ? it.toObject() : it))),
+                        spinCost,
+                        timestamp: new Date().toISOString(),
+                    });
+                    console.log(` [ROULETTE] Estado da roleta enviado para ${data.streamId} na entrada (ownerId=${rouletteOwnerId}): ${items.length} itens, ${spinCost}💎`);
+                } catch (rouletteErr: any) {
+                    console.warn('[ROULETTE] Erro ao enviar estado na entrada:', rouletteErr.message);
+                }
+            }
+            
             // Codificar usando Protobuf e enviar como binário
             const buffer: any = null;
             if (buffer) {
@@ -494,6 +525,32 @@ export const initSocket = (server: any) => {
                 io.to(data.streamId).emit('binary_data', buffer);
                 
                 console.log(` [PROTOBUF] User joined encoded and broadcasted:`, buffer.length, 'bytes');
+            }
+        });
+        
+        // 🎡 REQUISIÇÃO DE ESTADO DA ROLETA — espectador abre a roleta ou reconecta
+        // e solicita o estado ATUAL (itens + custo) diretamente. Garante que o
+        // espectador veja EXATAMENTE o que o host cadastrou, sem depender de
+        // timing de broadcast ou sala de socket.
+        socket.on('request_roulette_state', async (data: { ownerId?: string }) => {
+            const ownerId = data?.ownerId;
+            if (!ownerId) {
+                console.warn('[ROULETTE] request_roulette_state sem ownerId');
+                return;
+            }
+            try {
+                const items = await findActiveByOwner(ownerId);
+                const rouletteUserDoc = await User.findOne({ id: ownerId }).exec();
+                const spinCost = rouletteUserDoc && Number((rouletteUserDoc as any).rouletteSpinCost) > 0 ? Number((rouletteUserDoc as any).rouletteSpinCost) : 0;
+                socket.emit('roulette_updated', {
+                    ownerId,
+                    items: items.map((it: any) => JSON.parse(JSON.stringify(it && it.toObject ? it.toObject() : it))),
+                    spinCost,
+                    timestamp: new Date().toISOString(),
+                });
+                console.log(` [ROULETTE] Estado da roleta enviado via request para ${socket.id}: ${items.length} itens, ${spinCost}💎`);
+            } catch (err: any) {
+                console.warn('[ROULETTE] Erro ao enviar estado via request:', err.message);
             }
         });
         

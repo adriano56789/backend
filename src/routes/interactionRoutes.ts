@@ -277,42 +277,41 @@ router.get('/streams/:id/access-check', async (req, res) => {
         } else {
             const invitedUsers: string[] = Array.isArray(stream.invitedUsers) ? stream.invitedUsers : [];
 
-            // Convite privado ligado: exige convite + TODAS as regras ativas (AND)
-            if (settings.privateInvite) {
-                if (!invitedUsers.includes(requestingUser)) {
-                    canJoin = false;
-                    reason = 'Você precisa ser convidado para entrar nesta sala privada';
-                } else {
-                    const followerCheck = settings.followersOnly
-                        ? await Followers.findOne({
-                            followerId: requestingUser,
-                            followingId: stream.hostId,
-                            isActive: true
-                        })
-                        : true;
-                    const fanCheck = settings.fansOnly
-                        ? await Followers.findOne({
-                            followerId: requestingUser,
-                            followingId: stream.hostId,
-                            isActive: true
-                        })
-                        : true;
-                    const friendCheck = settings.friendsOnly
-                        ? await Friendship.findOne({
-                            $or: [
-                                { userId1: requestingUser, userId2: stream.hostId },
-                                { userId1: stream.hostId, userId2: requestingUser }
-                            ],
-                            isActive: true
-                        })
-                        : true;
-
-                    canJoin = !!followerCheck && !!fanCheck && !!friendCheck;
-                    reason = canJoin ? '' : 'Você não atende aos critérios do criador para entrar nesta sala';
-                }
+            // 🔒 SE A STREAM É PRIVADA → SÓ ENTRA QUEM FOI CONVIDADO.
+            // independentemente do setting privateInvite. O convite é OBRIGATÓRIO
+            // para salas privadas.
+            if (!invitedUsers.includes(requestingUser)) {
+                canJoin = false;
+                reason = 'Você precisa ser convidado para entrar nesta sala privada';
             } else {
-                // Convite privado desligado: sem restrições extras além da privacidade da transmissão
-                canJoin = true;
+                // Usuário está na lista de convidados — agora verifica as regras
+                // adicionais do host (followersOnly, fansOnly, friendsOnly) se ativas.
+                const followerCheck = settings.followersOnly
+                    ? await Followers.findOne({
+                        followerId: requestingUser,
+                        followingId: stream.hostId,
+                        isActive: true
+                    })
+                    : true;
+                const fanCheck = settings.fansOnly
+                    ? await Followers.findOne({
+                        followerId: requestingUser,
+                        followingId: stream.hostId,
+                        isActive: true
+                    })
+                    : true;
+                const friendCheck = settings.friendsOnly
+                    ? await Friendship.findOne({
+                        $or: [
+                            { userId1: requestingUser, userId2: stream.hostId },
+                            { userId1: stream.hostId, userId2: requestingUser }
+                        ],
+                        isActive: true
+                    })
+                    : true;
+
+                canJoin = !!followerCheck && !!fanCheck && !!friendCheck;
+                reason = canJoin ? '' : 'Você não atende aos critérios do criador para entrar nesta sala';
             }
         }
         
@@ -662,29 +661,67 @@ router.get('/feed/photos', async (req, res) => {
         const userFilter = userId ? { userId } : {};
         
         // Buscar conteúdo de múltiplos modelos — apenas upload real de usuários
-        const [userPhotoFeed, videoFeed] = await Promise.all([
+        // 📸 Fotos do PERFIL: mesma fonte da aba Obras (User.obras; se vazio,
+        // cai para a galeria ProfilePhoto). ⚠️ User usa campo `id`, não `userId`.
+        const userObrasFilter = userId ? { id: userId } : {};
+        const [userPhotoFeed, videoFeed, usersWithObras] = await Promise.all([
             UserPhoto.find({ ...userFilter, isPublic: true }).sort({ postedAt: -1 }).limit(15).lean(),
-            UserVideo.find({ ...userFilter, isPublic: true }).sort({ postedAt: -1 }).limit(15).lean()
+            UserVideo.find({ ...userFilter, isPublic: true }).sort({ postedAt: -1 }).limit(15).lean(),
+            User.find({ ...userObrasFilter }).select('id obras').limit(50).lean()
         ]);
 
-        console.log(`📸 [CONTENT FEED] Encontrados: ${userPhotoFeed.length} UserPhoto, ${videoFeed.length} UserVideo`);
+        // Fallback: usuários SEM obras → usar galeria ProfilePhoto (igual à aba Obras)
+        const emptyObrasIds = usersWithObras
+            .filter((u: any) => !Array.isArray(u.obras) || u.obras.length === 0)
+            .map((u: any) => u.id);
+        const galleryFallback = emptyObrasIds.length > 0
+            ? await ProfilePhoto.find({ userId: { $in: emptyObrasIds }, isActive: true, photoType: 'gallery' })
+                .sort({ createdAt: -1 }).limit(30).lean()
+            : [];
+
+        const obrasFeed = usersWithObras.flatMap((u: any) =>
+            (Array.isArray(u.obras) ? u.obras : []).filter((o: any) => o && o.url).map((o: any) => ({
+                id: o.id,
+                userId: u.id,
+                photoUrl: o.url,
+                likes: typeof o.likes === 'number' ? o.likes : 0,
+                createdAt: o.createdAt || o.uploadedAt,
+                postedAt: o.createdAt || o.uploadedAt
+            }))
+        ).concat(galleryFallback.map((p: any) => ({
+            id: p.obraId || p._id,
+            userId: p.userId,
+            photoUrl: p.photoUrl,
+            likes: typeof p.likes === 'number' ? p.likes : 0,
+            createdAt: p.createdAt,
+            postedAt: p.createdAt
+        })));
+
+        console.log(`📸 [CONTENT FEED] Encontrados: ${userPhotoFeed.length} UserPhoto, ${videoFeed.length} UserVideo, ${obrasFeed.length} Obras (fotos de perfil)`);
 
         // Combinar todos os feeds
         const allContent = [
-            ...userPhotoFeed.map((p: any) => ({ 
-                ...p, 
+            ...userPhotoFeed.map((p: any) => ({
+                ...p,
                 source: 'UserPhoto',
                 contentType: 'photo',
                 mediaUrl: p.photoUrl,
                 thumbnailUrl: p.photoUrl
             })),
-            ...videoFeed.map((v: any) => ({ 
-                ...v, 
+            ...videoFeed.map((v: any) => ({
+                ...v,
                 source: 'UserVideo',
                 contentType: 'video',
                 mediaUrl: v.videoUrl,
                 thumbnailUrl: v.thumbnailUrl,
                 duration: v.duration
+            })),
+            ...obrasFeed.map((p: any) => ({
+                ...p,
+                source: 'ProfilePhoto',
+                contentType: 'photo',
+                mediaUrl: p.photoUrl,
+                thumbnailUrl: p.photoUrl
             }))
         ];
 
@@ -1549,9 +1586,24 @@ router.post('/streams/:id/kick', kickProtection, async (req, res) => {
             });
         }
 
-        // Lógica normal de kick (pode ser implementada depois)
-        console.log(`✅ [KICK] Usuário ${userId} pode ser expulso da stream ${streamId}`);
-        
+        // 🔐 REGRA: APENAS O HOST DA TRANSMISSÃO (ou o dono do app) pode expulsar
+        if (kickerId !== APP_OWNER_ID && String(kickerId) !== String(stream.hostId)) {
+            return res.status(403).json({
+                success: false,
+                error: 'Apenas o apresentador pode expulsar espectadores',
+                protection: 'HOST_ONLY_KICK'
+            });
+        }
+
+        // 👢 Expulsão PERSISTENTE na sessão atual da live:
+        // o usuário é adicionado a kickedUsers → se tentar entrar de novo,
+        // é expulso automaticamente. A lista só é limpa quando a host
+        // ENCERRA e abre uma NOVA transmissão.
+        await Streamer.updateOne(
+            { id: streamId },
+            { $addToSet: { kickedUsers: String(userId) } }
+        );
+
         // Emitir WebSocket para notificar o kick
         const io = req.app.get('io');
         if (io) {

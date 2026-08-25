@@ -29,11 +29,15 @@ export const ENV = {
   HTTPS_CERT_PATH: process.env.HTTPS_CERT_PATH || "cert.pem",
   HTTPS_KEY_PATH: process.env.HTTPS_KEY_PATH || "key.pem",
 
-  // Mercado Pago
-  MERCADO_PAGO_ACCESS_TOKEN: process.env.MERCADO_PAGO_ACCESS_TOKEN || "",
-  MERCADO_PAGO_PUBLIC_KEY: process.env.MERCADO_PAGO_PUBLIC_KEY || "",
-  MERCADO_PAGO_CLIENT_ID: process.env.MERCADO_PAGO_CLIENT_ID || "",
-  MERCADO_PAGO_CLIENT_SECRET: process.env.MERCADO_PAGO_CLIENT_SECRET || "",
+  // Payoneer — ÚNICO provedor de pagamentos/saques (Pix BRL, USD, EUR)
+  PAYONEER_CLIENT_ID: process.env.PAYONEER_CLIENT_ID || "",
+  PAYONEER_CLIENT_SECRET: process.env.PAYONEER_CLIENT_SECRET || "",
+  PAYONEER_PROGRAM_ID: process.env.PAYONEER_PROGRAM_ID || "",
+  PAYONEER_ENVIRONMENT: process.env.PAYONEER_ENVIRONMENT || "sandbox",
+  PAYONEER_WEBHOOK_SECRET: process.env.PAYONEER_WEBHOOK_SECRET || "",
+  // Conta Payoneer do DONO da plataforma — recebe os 20% de cada saque automaticamente
+  PAYONEER_PLATFORM_EMAIL: process.env.PAYONEER_PLATFORM_EMAIL || "",
+  PAYONEER_PLATFORM_RECIPIENT: process.env.PAYONEER_PLATFORM_RECIPIENT || "",
 
   // Webhooks
   WEBHOOK_URL: process.env.WEBHOOK_URL || "",
@@ -54,10 +58,10 @@ export const ENV = {
   // SRS - URL HTTPS pública para HLS/FLV (via proxy Nginx)
   SRS_PUBLIC_URL: (process.env.SRS_PUBLIC_URL || process.env.BACKEND_URL || "https://api.livego.store").replace(/\/+$/, "") + "/api/video/http",
 
-  // Firebase Cloud Messaging
-  FIREBASE_PROJECT_ID: process.env.FIREBASE_PROJECT_ID || "",
-  FIREBASE_CLIENT_EMAIL: process.env.FIREBASE_CLIENT_EMAIL || "",
-  FIREBASE_PRIVATE_KEY: process.env.FIREBASE_PRIVATE_KEY || "",
+  // Web Push nativo (VAPID) — sem Firebase
+  VAPID_PUBLIC_KEY: process.env.VAPID_PUBLIC_KEY || "",
+  VAPID_PRIVATE_KEY: process.env.VAPID_PRIVATE_KEY || "",
+  VAPID_SUBJECT: process.env.VAPID_SUBJECT || "mailto:admin@livego.store",
 
   // TURN/Coturn
   TURN_SECRET: process.env.TURN_SECRET || "dev_turn_secret_key_change_me",
