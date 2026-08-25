@@ -1,6 +1,6 @@
 // @ts-nocheck
 import express from 'express';
-import { User, Streamer, Gift, GiftTransaction, Followers, UserStatus, Visitor, ChatMessage, Chat, Conversation, Friendship, Invitation, Message, Photo, UserPhoto, ProfilePhoto, UserVideo } from '../models';
+import { User, Streamer, Gift, GiftTransaction, Followers, UserStatus, Visitor, ChatMessage, Chat, Conversation, Friendship, Invitation, Message, Photo, UserPhoto, ProfilePhoto, UserVideo, LiveCard } from '../models';
 import { pushRecentActivity } from '../utils/activityHelpers';
 import { kickProtection } from '../middleware/appOwnerProtection';
 import { getUserIdFromToken } from '../middleware/auth';
@@ -128,6 +128,12 @@ router.post('/streams/:id/private-invite', async (req, res) => {
             { id: streamId },
             { $addToSet: { invitedUsers: userId } }
         );
+        // 🔒 Espelhar o convite no LiveCard — a listagem de salas privadas
+        // (categoria private) filtra por invitedUsers para só convidados verem.
+        await LiveCard.updateOne(
+            { $or: [{ hostId: streamId }, { streamKey: streamId }] },
+            { $addToSet: { invitedUsers: userId } }
+        ).catch(() => {});
         console.log(`💾 [PRIVATE INVITE] Usuário ${userId} adicionado aos convidados do stream ${streamId}`);
 
         // Persistir atividade de convite privado

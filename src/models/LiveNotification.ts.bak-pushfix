@@ -13,7 +13,7 @@ export interface ILiveNotification extends Document {
 const LiveNotificationSchema: Schema = new Schema({
   userId: { type: String, required: true, index: true },
   streamerId: { type: String, required: true, index: true },
-  streamId: { type: String, default: '' },
+  streamId: { type: String, required: true },
   read: { type: Boolean, default: false },
   message: { type: String }
 }, { timestamps: true });

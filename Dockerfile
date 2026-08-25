@@ -1,50 +1,25 @@
-# Multi-stage build: nginx from source
-FROM ubuntu:22.04 AS builder
+FROM node:22-alpine
 
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    libpcre3-dev \
-    libssl-dev \
-    zlib1g-dev \
-    wget \
-    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
 
-WORKDIR /src
-COPY . /src/nginx
+COPY package.json package-lock.json* ./
+COPY sdk-nodejs /sdk-nodejs
+RUN npm ci
 
-WORKDIR /src/nginx
-RUN auto/configure \
-    --with-http_ssl_module \
-    --with-http_v2_module \
-    --with-http_realip_module \
-    --with-http_stub_status_module \
-    --with-http_gzip_static_module \
-    --with-pcre \
-    --with-http_sub_module \
-    --with-stream \
-    --with-stream_ssl_module \
-    --with-http_addition_module
+COPY tsconfig.json ./
+COPY src ./src
 
-RUN make -j$(nproc) && make install
+RUN npm run build
 
-# Stage 2: runtime
-FROM ubuntu:22.04
+RUN mkdir -p uploads
 
-RUN apt-get update && apt-get install -y \
-    ca-certificates \
-    libpcre3 \
-    libssl3 \
-    zlib1g \
-    && rm -rf /var/lib/apt/lists/*
+COPY .dockerignore ./
 
-COPY --from=builder /usr/local/nginx /usr/local/nginx
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV WS_PORT=3001
+ENV HOST=0.0.0.0
 
-COPY nginx.conf /usr/local/nginx/conf/nginx.conf
+EXPOSE 3000 3001
 
-RUN mkdir -p /usr/local/nginx/html
-
-EXPOSE 80 443
-
-STOPSIGNAL SIGQUIT
-
-CMD ["/usr/local/nginx/sbin/nginx", "-g", "daemon off;"]
+CMD ["node", "dist/server.js"]
