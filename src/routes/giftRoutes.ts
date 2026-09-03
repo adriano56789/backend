@@ -6,6 +6,9 @@ import { isFollowing, createFollow } from '../models/Follow';
 import { ComboService } from '../services/ComboService';
 import { GiftRankingService } from '../services/GiftRankingService';
 import { emitWebhook } from '../services/WebhookBroadcasterService';
+import { consumeRiskDiamonds, applyHostHold } from '../services/riskEngine';
+
+const RISK_HOLD_MS = 7 * 24 * 60 * 60 * 1000;
 
 const router = express.Router();
 
@@ -143,6 +146,11 @@ async function processGiftSend(fromUserId: string, toUserId: string, giftId: str
             resource: 'monetary_transaction',
             endpoint: '/api/gifts/send'
         });
+
+        // ═══ ANTI-CHARGEBACK: consumir diamantes de compra suspeita (FIFO) ═══
+        // Se parte do valor gasto veio de uma compra sinalizada como SUSPEITA,
+        // o earnings correspondente do host fica retido por 7 dias.
+        const consumedRiskRefs = await consumeRiskDiamonds(fromUserId, totalCost);
         
         // Se for presente para stream, acumular diamantes na stream E no widget da streamer
         if (streamId && streamId !== 'unknown') {
@@ -201,7 +209,10 @@ async function processGiftSend(fromUserId: string, toUserId: string, giftId: str
                 }).lean();
                 if (activeBattle) {
                     const field = activeBattle.streamerA.toString() === toUser._id.toString() ? 'scoreA' : 'scoreB';
-                    await Battle.findOneAndUpdate({ _id: activeBattle._id }, {
+                    // Validação de ciclo de vida: só soma se a batalha ainda está ativa
+                    // (como erro 100006 da Tencent). findOneAndUpdate com status:'active'
+                    // garante atomicidade — não conta gift que chega pós-término.
+                    await Battle.findOneAndUpdate({ _id: activeBattle._id, status: 'active' }, {
                         $inc: { [field]: totalCost }
                     });
                     if (io) {
@@ -265,6 +276,22 @@ async function processGiftSend(fromUserId: string, toUserId: string, giftId: str
         // Salvar ambos os usuários no banco
         await fromUser.save();
         await toUser.save();
+
+        // ═══ ANTI-CHARGEBACK: aplicar retenção (hold) de 7d no earnings do host ═══
+        // para a parcela originada de compra suspeita.
+        if (consumedRiskRefs.length > 0) {
+            for (const cr of consumedRiskRefs) {
+                await applyHostHold(
+                    toUserId,
+                    cr.amount,
+                    cr.ref,
+                    new Date(Date.now() + RISK_HOLD_MS)
+                ).catch((e: any) =>
+                    console.warn(`[RISK] Falha ao aplicar hold no host ${toUserId} (ref ${cr.ref})`, e?.message)
+                );
+            }
+            console.log(`[RISK] Presentes de ${fromUserId} -> ${toUserId}: ${consumedRiskRefs.reduce((s, r) => s + r.amount, 0)} diamantes em análise retidos no saque do host por 7 dias.`);
+        }
 
         // ❌ AUTO-FOLLOW POR TIPO DE PRESENTE REMOVIDO ("Seguir Alto").
         // O ÚNICO seguir automático é o da CAIXINHA "Seguir Auto" do host

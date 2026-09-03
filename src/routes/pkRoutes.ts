@@ -117,6 +117,18 @@ router.post('/start', async (req, res) => {
       return res.status(404).json({ error: 'Um dos usuários não foi encontrado' });
     }
 
+    // 🛡️ Anti-duplicidade (como erro 100006 da Tencent): não criar NOVA batalha
+    // se já existe uma ativa entre os dois streamers.
+    const existingBattle = await Battle.findOne({
+      $or: [
+        { streamerA: challenger._id, streamerB: opponent._id, status: 'active' },
+        { streamerA: opponent._id, streamerB: challenger._id, status: 'active' }
+      ]
+    }).lean();
+    if (existingBattle) {
+      return res.status(409).json({ error: 'Já existe uma batalha PK ativa entre esses dois streamers', battleId: (existingBattle as any)._id.toString() });
+    }
+
     const battle: any = await Battle.create({
       streamerA: challenger._id,
       streamerB: opponent._id,
@@ -419,17 +431,49 @@ router.post('/end/:battleId', async (req, res) => {
   }
 });
 
-// POST /api/pk/heart — batimento cardíaco (keepalive)
+// POST /api/pk/heart — coração da PK: incrementa o SCORE da sala (OpType=accumulate)
+// Como o set_battle_score da Tencent: cada coração soma pontos a uma das salas.
 router.post('/heart', async (req, res) => {
-  const userId = req.body.userId || req.headers['user-id'] as string;
-  if (userId) {
-    await pushRecentActivity(userId, {
-      action: 'pk_heart_sent',
-      resource: 'pk_battle',
-      endpoint: '/api/pk/heart'
-    });
+  try {
+    const { battleId, team } = req.body;
+    if (!battleId || !team || (team !== 'A' && team !== 'B')) {
+      return res.status(400).json({ success: false, error: 'battleId e team (A|B) são obrigatórios' });
+    }
+
+    const battle: any = await Battle.findById(battleId);
+    // Validação de ciclo de vida (como erro 100006 da Tencent):
+    // só é permitido somar se a batalha ainda está ativa.
+    if (!battle || battle.status !== 'active') {
+      return res.status(400).json({ success: false, error: 'Batalha não está ativa (não iniciada ou já finalizada)' });
+    }
+
+    const field = team === 'A' ? 'scoreA' : 'scoreB';
+    await Battle.findByIdAndUpdate(battleId, { $inc: { [field]: 1 } });
+    const updated = await Battle.findById(battleId).select('scoreA scoreB');
+
+    const io = req.app.get('io');
+    if (io && updated) {
+      io.to(`battle_${battleId}`).emit('pk_score_update', {
+        battleId,
+        scoreA: updated.scoreA,
+        scoreB: updated.scoreB
+      });
+    }
+
+    const userId = req.body.userId || req.headers['user-id'] as string;
+    if (userId) {
+      await pushRecentActivity(userId, {
+        action: 'pk_heart_sent',
+        resource: 'pk_battle',
+        endpoint: '/api/pk/heart'
+      });
+    }
+
+    res.json({ success: true, scoreA: updated?.scoreA || 0, scoreB: updated?.scoreB || 0 });
+  } catch (error: any) {
+    console.error('[PK] Erro ao processar coração:', error);
+    res.status(500).json({ success: false, error: 'Erro ao processar coração' });
   }
-  res.json({ success: true });
 });
 
 // GET /api/pk/invites/pending/:userId — convites PK pendentes

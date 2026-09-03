@@ -9,7 +9,7 @@ export interface IOrder {
     diamonds: number;
     status: 'pending' | 'paid' | 'failed' | 'cancelled';
     paymentStatus?: 'pending' | 'approved' | 'rejected' | 'cancelled';
-    paymentMethod?: 'pix' | 'credit_card';
+    paymentMethod?: 'pix' | 'credit_card' | 'payoneer' | 'card' | 'payoneer_account';
     pixCode?: string;
     pixExpiration?: Date;
     paymentConfirmationId?: string;
@@ -18,6 +18,8 @@ export interface IOrder {
     mpPaymentId?: string;
     externalReference?: string;
     pixQrCode?: string;
+    paymentSessionId?: string;
+    redirectUrl?: string;
     createdAt: Date;
     updatedAt: Date;
 }

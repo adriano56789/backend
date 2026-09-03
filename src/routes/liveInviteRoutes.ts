@@ -430,6 +430,71 @@ router.post('/invite/respond', async (req, res) => {
             ]);
         }
 
+        // ⚔️ PK-BATTLE aceito → criar a Battle automaticamente e avisar os dois
+        // lados via socket (emitido para as salas user_* que funcionam sempre,
+        // independente de estar dentro de uma stream).
+        let pkBattleId: string | null = null;
+        if (action === 'accepted' && invite.inviteType === 'pk-battle') {
+            try {
+                const [inviterUser, inviteeUser] = await Promise.all([
+                    User.findOne({ id: invite.inviterUsername }).select('_id id name avatarUrl'),
+                    User.findOne({ id: invite.inviteeUsername }).select('_id id name avatarUrl')
+                ]);
+                if (inviterUser && inviteeUser && inviterUser._id && inviteeUser._id) {
+                    // Anti-duplicidade: se já existe batalha ativa, não criar outra.
+                    const existingBattle = await Battle.findOne({
+                        $or: [
+                            { streamerA: inviterUser._id, streamerB: inviteeUser._id, status: 'active' },
+                            { streamerA: inviteeUser._id, streamerB: inviterUser._id, status: 'active' }
+                        ]
+                    }).lean();
+                    if (!existingBattle) {
+                        const battle = await Battle.create({
+                            streamerA: inviterUser._id,
+                            streamerB: inviteeUser._id,
+                            status: 'active',
+                            durationSeconds: 300,
+                            startedAt: new Date()
+                        });
+                        pkBattleId = battle._id.toString();
+
+                        // 🪝 Webhook LiveGo: batalha criada + iniciada
+                        try { emitWebhook('LiveGo.CallbackAfterCreateBattle', { BattleId: pkBattleId, FromRoomId: invite.inviterUsername, ToRoomIdList: [invite.inviteeUsername], Duration: 300000, NeedResponse: false, ExtensionInfo: '', EventTime: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] battle created', e); }
+                        try { emitWebhook('LiveGo.CallbackAfterStartBattle', { BattleId: pkBattleId, FromRoomId: invite.inviterUsername, ToRoomIdList: [invite.inviteeUsername], StartTime: Date.now(), Duration: 300000, EventTime: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] battle started', e); }
+
+                        const ioLocal = (req as any).app.get('io');
+                        if (ioLocal) {
+                            const startPayload = {
+                                battleId: pkBattleId,
+                                streamerA: invite.inviterUsername,
+                                streamerAId: inviterUser.id,
+                                streamerAName: inviterUser.name,
+                                streamerAAvatar: inviterUser.avatarUrl || '',
+                                streamerB: invite.inviteeUsername,
+                                streamerBId: inviteeUser.id,
+                                streamerBName: inviteeUser.name,
+                                streamerBAvatar: inviteeUser.avatarUrl || '',
+                                opponentId: invite.inviteeUsername,
+                                streamId: invite.streamId,
+                                durationSeconds: 300,
+                                startedAt: new Date().toISOString()
+                            };
+                            [invite.inviterUsername, invite.inviteeUsername].forEach(uid => {
+                                ioLocal.to(`user_${uid}`).emit('pk_battle_start', startPayload);
+                            });
+                            console.log(`[PK] Battle ${pkBattleId} criada a partir do convite aceito de ${invite.inviterUsername} vs ${invite.inviteeUsername}`);
+                        }
+                    } else {
+                        pkBattleId = (existingBattle as any)._id.toString();
+                    }
+                } else {
+                    console.warn('[PK] Não foi possível criar battle: usuários não encontrados no aceite');
+                }
+            } catch (pkErr) {
+                console.error('[PK] Erro ao criar battle a partir do convite aceito:', pkErr);
+            }
+        }
+
         // 🪝 Webhook LiveGo: lista de assentos alterada (resposta a convite)
         try { emitWebhook('LiveGo.CallbackAfterSeatListChange', { RoomId: invite.streamId || '', InviteId: inviteId, Action: action, InviteType: invite.inviteType || '', Inviter: invite.inviterUsername, Invitee: invite.inviteeUsername, Timestamp: Date.now() }); } catch (e: any) { console.warn('[WEBHOOK] seat change', e); }
 
@@ -438,7 +503,16 @@ router.post('/invite/respond', async (req, res) => {
             io.to(`user_${invite.inviterUsername}`).emit('live_invite_response', {
                 inviteId,
                 status: action,
-                from: invite.inviteeUsername
+                from: invite.inviteeUsername,
+                inviteType: invite.inviteType,
+                battleId: pkBattleId
+            });
+            // Confirmação para o próprio convidado (para fechar o modal de aceite)
+            io.to(`user_${invite.inviteeUsername}`).emit('live_invite_confirmed', {
+                inviteId,
+                status: action,
+                inviteType: invite.inviteType,
+                battleId: pkBattleId
             });
         }
 

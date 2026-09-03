@@ -50,6 +50,23 @@ export interface IUser extends Document {
   earnings: number;
   earnings_withdrawn: number;
   diamonds_purchased: number;
+  earnings_locked: number;
+  earnings_debt: number;
+  risk_diamonds: number;
+  risk_holds: Array<{
+    ref: string;
+    amount: number;
+    expiresAt: Date;
+    status: 'held' | 'released' | 'charged_back';
+    createdAt: Date;
+  }>;
+  risk_ledger: Array<{
+    ref: string;
+    amount: number;
+    remaining: number;
+    expiresAt: Date;
+    createdAt: Date;
+  }>;
   withdrawal_method?: { method: string; details: any };
   cadastral?: {
     documentType: 'cpf' | 'cnpj';
@@ -167,6 +184,23 @@ const UserSchema: Schema = new Schema({
   earnings: { type: Number, default: 0 },
   earnings_withdrawn: { type: Number, default: 0 },
   diamonds_purchased: { type: Number, default: 0 },
+  earnings_locked: { type: Number, default: 0 },
+  earnings_debt: { type: Number, default: 0 },
+  risk_diamonds: { type: Number, default: 0 },
+  risk_holds: [{
+    ref: { type: String, default: '' },
+    amount: { type: Number, default: 0 },
+    expiresAt: { type: Date },
+    status: { type: String, enum: ['held', 'released', 'charged_back'], default: 'held' },
+    createdAt: { type: Date, default: Date.now },
+  }],
+  risk_ledger: [{
+    ref: { type: String, default: '' },
+    amount: { type: Number, default: 0 },
+    remaining: { type: Number, default: 0 },
+    expiresAt: { type: Date },
+    createdAt: { type: Date, default: Date.now },
+  }],
   withdrawal_method: { type: Object },
   cadastral: { type: Object },
   bio: { type: String },

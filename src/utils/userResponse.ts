@@ -90,6 +90,8 @@ export function standardizeUserResponse(user: any, viewerId?: string | null): an
         lastSeen: hideActivity ? null : user.lastSeen,
         currentStreamId: hideActivity ? "" : user.currentStreamId || "",
         permanentStreamId: user.permanentStreamId || "",
+        isFollowed: !!user.isFollowed,
+        isFriend: !!user.isFriend,
         diamonds: user.diamonds || 0,
         earnings: user.earnings || 0,
         earnings_withdrawn: user.earnings_withdrawn || 0,

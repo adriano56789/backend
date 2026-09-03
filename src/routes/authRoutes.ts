@@ -53,15 +53,30 @@ router.post('/register', async (req, res) => {
             return res.status(400).json({ error: 'Por favor, forneça email e senha' });
         }
 
-        const userExists = await User.findOne({ email });
+        const cleanEmail = String(email).trim().toLowerCase();
+
+        // 🔒 PROTECÃO ANTIFRAUDE: bloqueia cadastro com email fake/descartável/suspeito
+        const { getEmailGuardResult } = await import('../utils/emailGuard');
+        const emailGuard = getEmailGuardResult(cleanEmail);
+        if (emailGuard.block) {
+            return res.status(400).json({ error: emailGuard.reason || 'Email não permitido para cadastro' });
+        }
+
+        // 📝 Auditoria (não bloqueia ninguém): guarda de onde/qual domínio veio o cadastro.
+        // Regra: ninguém é impedido de criar conta — só e-mail falso é rejeitado.
+        const forwardedFor = req.headers['x-forwarded-for'];
+        const ip = (typeof forwardedFor === 'string' ? forwardedFor.split(',')[0].trim() : '') || req.ip || req.socket?.remoteAddress || 'unknown';
+        const emailDomain = cleanEmail.split('@')[1] || '';
+
+        const userExists = await User.findOne({ email: cleanEmail });
         if (userExists) {
-            return res.status(400).json({ error: 'Usuário já existe' });
+            return res.status(400).json({ error: 'Este email já está em uso. Cada conta precisa usar um email diferente (próprio e verdadeiro).' });
         }
 
         // Verificar se o email é válido e existe (não bloqueante - apenas log)
         try {
             const { validateEmail } = await import('../utils/emailValidator');
-            const emailCheck = await validateEmail(email);
+            const emailCheck = await validateEmail(cleanEmail);
             if (!emailCheck.valid) {
                 console.warn('[REGISTER] Email validation warning:', emailCheck.reason);
             }
@@ -110,8 +125,8 @@ router.post('/register', async (req, res) => {
             id: newUserId, // ID real gerado automaticamente (não MongoDB _id)
             permanentStreamId: permanentStreamId,
             identification: "pending", // Será atualizado após criação
-            name: email.split('@')[0].replace(/[^a-zA-Z0-9]/g, ' ') || 'Usuário',
-            email: email?.trim().toLowerCase() || "",
+            name: cleanEmail.split('@')[0].replace(/[^a-zA-Z0-9]/g, ' ') || 'Usuário',
+            email: cleanEmail,
             password: hashedPassword,
             
             // Campos básicos do usuário - normalizados
@@ -144,7 +159,10 @@ router.post('/register', async (req, res) => {
             // Valores padrão mínimos - sem estados automáticos
             diamonds: 1000, // Valor inicial padrão
             createdAt: new Date(),
-            updatedAt: new Date()
+            updatedAt: new Date(),
+            registrationIp: ip,
+            emailDomain,
+            registrationUserAgent: String(req.headers['user-agent'] || '').slice(0, 240),
         };
 
         
@@ -643,6 +661,44 @@ router.post('/validate', async (req, res) => {
         }
     } catch (error: any) {
         res.status(500).json({ error: error.message });
+    }
+});
+
+// @route POST /api/auth/refresh
+// Renova silenciosamente o token da sessão (best-effort): verifica o Bearer
+// atual, busca o usuário fresh e emite um token novo de longa duração.
+router.post('/refresh', async (req, res) => {
+    try {
+        const rawToken = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+        if (!rawToken) {
+            return res.status(401).json({ success: false, error: 'Token não informado' });
+        }
+
+        let decoded: any = null;
+        try {
+            decoded = jwt.verify(rawToken, JWT_SECRET);
+        } catch (verifyError) {
+            try { decoded = jwt.decode(rawToken); } catch { decoded = null; }
+        }
+
+        const userId = decoded && decoded.id;
+        if (!userId) {
+            return res.status(401).json({ success: false, error: 'Token inválido' });
+        }
+
+        const user = await User.findOne({ id: String(userId) }).lean();
+        if (!user) {
+            return res.status(404).json({ success: false, error: 'Usuário não encontrado' });
+        }
+
+        const token = jwt.sign({ id: user.id, _id: user.id }, JWT_SECRET, { expiresIn: '30d' });
+
+        await User.findOneAndUpdate({ id: user.id }, { $set: { token } }).catch(() => {});
+
+        res.json({ success: true, token, user: standardizeUserResponse(user) });
+        console.log(`[AUTH] 🔄 Token renovado para o usuário ${user.id}`);
+    } catch (error: any) {
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 

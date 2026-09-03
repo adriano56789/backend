@@ -59,6 +59,8 @@ import { emitWebhook } from './services/WebhookBroadcasterService';
 import withdrawalRoutes from './routes/withdrawalRoutes';
 import payoneerRoutes from './routes/payoneerRoutes'; // NOVO - Payoneer ÚNICO provedor (Pix/USD/EUR)
 import transactionProtectionRoutes from './routes/transactionProtectionRoutes';
+import chargebackRoutes from './routes/chargebackRoutes';
+import estornoRoutes from './routes/estornoRoutes';
 import zoomRoutes from './routes/zoomRoutes';
 import userStatusRoutes from './routes/userStatusRoutes';
 import levelRoutes from './routes/levelRoutes'; // NOVO - Sistema de Nível
@@ -77,6 +79,10 @@ import userIdRoutes from './routes/userIdRoutes';
 import turnRoutes from './routes/turnRoutes';
 import stunRoutes from './routes/stunRoutes';
 import streamAccessRoutes from './routes/streamAccessRoutes';
+import videoQualityRoutes from './routes/videoQualityRoutes';
+import cohostRoutes from './routes/cohostRoutes';
+import beautyStoreRoutes from './routes/beautyStoreRoutes';
+import voiceRoomRoutes from './routes/voiceRoomRoutes';
 
 import UserStatusManager from './middleware/UserStatusManager';
 import notificationRoutes from './routes/notificationRoutes';
@@ -224,6 +230,19 @@ setInterval(async () => {
     }
 }, 10 * 60 * 1000);
 
+// Liberar automaticamente retenções anti-chargeback vencidas (a cada 30 min)
+setInterval(async () => {
+    try {
+        const { releaseAllExpiredHolds } = await import('./services/riskEngine');
+        const released = await releaseAllExpiredHolds(200);
+        if (released > 0) {
+            console.log(`[RISK] ${released} diamantes de retenções vencidas liberados automaticamente.`);
+        }
+    } catch (e: any) {
+        console.error('[RISK] Erro ao liberar retenções vencidas:', e.message);
+    }
+}, 30 * 60 * 1000);
+
 // Middleware CORS - configurado antes de tudo
 const allowedOrigins = ENV.CORS_ORIGIN.split(',').map(o => o.trim());
 
@@ -300,6 +319,11 @@ app.get('/api/health', (req, res) => {
         environment: process.env.NODE_ENV || 'development'
     });
 });
+
+// 💬 Salas de VOZ — montado ANTES de qualquer rota /api catch-all
+// (liveRoutes/metadataRoutes têm GET /:streamId etc. que engoliriam
+// GET /api/voice-rooms antes da listagem ser alcançada)
+app.use('/api/voice-rooms', voiceRoomRoutes);
 
 // Rotas da API PRIMEIRO (antes dos arquivos estáticos)
 app.use('/api', likesRoutes); // NOVO - Sistema de Likes - MOVIDO PARA O INÍCIO
@@ -382,6 +406,8 @@ app.use('/api/webhook', webhookBroadcasterRoutes); // API de gestão do webhook 
 app.use('/api/withdrawals', withdrawalRoutes); // Rotas de saques via Pix
 app.use('/api/payoneer', payoneerRoutes); // NOVO - Payoneer: único provedor de saques (Pix BRL/USD/EUR)
 app.use('/api/transaction-protection', transactionProtectionRoutes); // Rotas de proteção contra bloqueios abusivos
+app.use('/api/fraud', chargebackRoutes); // Nova - Chargeback/estorno por fraude comprovada
+app.use('/api/estorno', estornoRoutes); // Nova - Pedido de estorno (comprador) + revisão (admin)
 app.use('/api/level', levelRoutes); // NOVO - Sistema de Nível
 app.use('/api', userStatusRoutes); // Rotas de status online do usuário
 app.use('/api/convert', base64ConversionRoutes); // NOVO - Sistema de Conversão Base64
@@ -403,6 +429,9 @@ app.use('/api/gifts', giftRoutes); // giftRoutes - galeria de presentes por live
 app.use('/api', liveRoutes); // handles /api/live, /api/streams, /api/rtc, /api/lives, /api/permissions
 app.use('/api', likesRoutes); // handles stream likes
 app.use('/api', settingsRoutes); // handles /api/settings, /api/notifications/settings
+app.use('/api', videoQualityRoutes); // QUALIDADE DE VIDEO - resolução, denoise, nitidez
+app.use('/api', cohostRoutes); // COHOST - conexão de co-host para PK/live conjunta
+app.use('/api', beautyStoreRoutes); // BEAUTY STORE - estilo Tencent setSmooth/setWhiten/setRuddy
 app.use('/api/pk', pkRoutes);
 import protectionRoutes from './routes/protectionRoutes';
 app.use('/api/protection', protectionRoutes); // 🔒 Proteção de conteúdo: violações + bans permanentes
@@ -696,6 +725,30 @@ io.on('connection', (socket) => {
     socket.on('join_stream', async (data: { streamId: string }) => {
       await handleJoinStream(data?.streamId);
     });
+
+    // ─── WebRTC signaling para salas de voz (mesh audio) ───
+    const webrtcRelay = (event: string) => (data: any) => {
+      try {
+        const { to, roomId } = data || {};
+        if (!to) return;
+        const target = io.sockets.sockets.get(to);
+        // Fluxo via sala por roomId: encaminha para todos que estão na sala de voz
+        if (roomId) {
+          const roomSockets = io.sockets.adapter.rooms.get(roomId);
+          if (roomSockets) {
+            io.to(roomId).emit(event, data);
+          }
+        } else if (target) {
+          io.to(to).emit(event, data);
+        }
+      } catch (error) {
+        console.error(`[WebRTC] Erro ao encaminhar ${event}:`, error);
+      }
+    };
+
+    socket.on('voice_webrtc_offer', webrtcRelay('voice_webrtc_offer'));
+    socket.on('voice_webrtc_answer', webrtcRelay('voice_webrtc_answer'));
+    socket.on('voice_webrtc_ice', webrtcRelay('voice_webrtc_ice'));
 
     // REMOVIDO: leave_stream - lógica movida para disconnect para evitar duplicação
     // socket.on('leave_stream', async (data: { userId: string; streamId: string }) => {
@@ -1487,6 +1540,28 @@ io.on('connection', (socket) => {
             const user = await User.findOne({ id: userId }).select('name displayName avatarUrl level activeFrameId').lean();
             const userName = (user as any)?.name || (user as any)?.displayName;
             if (!user || !userName) return;
+
+            // 🚫 Espectador BLOQUEADO pelo HOST da live: a mensagem NÃO é
+            // persistida nem broadcast para ninguém. O remetente recebe aviso.
+            try {
+                const { Streamer, Block } = await import('./models/index');
+                const streamDoc = await Streamer.findOne({ id: streamId }).select('hostId').lean();
+                const liveHostId = (streamDoc as any)?.hostId;
+                if (liveHostId && String(liveHostId) !== String(userId)) {
+                    const block = await Block.findOne({ blockerId: liveHostId, blockedId: userId, isActive: true }).lean();
+                    if (block) {
+                        socket.emit('live_message_blocked', {
+                            reason: 'Você foi proibido de falar',
+                            blockedUserId: userId,
+                            text
+                        });
+                        try { emitWebhook('LiveGo.CallbackBeforeSendMessage', { RoomId: streamId, FromUserId: userId, FromUserName: userName || '', Content: text || '', MsgType: 'normal', Timestamp: Date.now(), Blocked: true }); } catch (e: any) { console.warn('[WEBHOOK] blocked live message', e); }
+                        return;
+                    }
+                }
+            } catch (blockErr) {
+                console.warn('[LIVE-BLOCK] Erro ao verificar bloqueio:', blockErr);
+            }
 
             const messagePayload: any = {
                 userId,

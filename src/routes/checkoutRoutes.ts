@@ -6,6 +6,7 @@ import { requirePaymentAuth, validatePackageAmounts } from '../middleware/paymen
 import { pushRecentActivity } from '../utils/activityHelpers';
 import { paymentRateLimit } from '../middleware/rateLimit';
 import { DIAMOND_PACKAGES } from '../utils/diamondConversion';
+import { evaluatePurchaseRisk } from '../services/riskEngine';
 
 const router = express.Router();
 
@@ -179,6 +180,33 @@ router.post('/confirm',
         const io = req.app.get('io');
         io.emit('order_updated', { userId: order.userId, orderId: order.id, status: 'paid' });
 
+        // ═══ SISTEMA ANTI-CHARGEBACK: avaliar risco da compra ═══
+        const riskBuyer = await User.findOne({ id: req.user?.id }).select('createdAt');
+        const approvedToday = await Order.countDocuments({
+            userId: req.user?.id, status: 'paid',
+            confirmedAt: { $gte: new Date(new Date().setHours(0, 0, 0, 0)) },
+        });
+        const verdict = evaluatePurchaseRisk({
+            order: updatedOrder || order,
+            user: riskBuyer,
+            providerRisk: (req.body as any)?.paymentRisk,
+            ordersTodayApproved: approvedToday,
+        });
+
+        // Marcar a order com o status de risco
+        await Order.findOneAndUpdate(
+            { id: orderId },
+            {
+                $set: {
+                    riskStatus: verdict.risky ? 'hold' : 'safe',
+                    riskScore: verdict.riskScore,
+                    riskReasons: verdict.reasons,
+                    riskHoldExpiresAt: verdict.holdExpiresAt,
+                },
+            },
+            { returnDocument: 'after' }
+        ).catch(() => {});
+
         const user = await import('../models').then(m => m.User).then(U => U.findOneAndUpdate(
             { id: order.userId },
             { 
@@ -195,6 +223,33 @@ router.post('/confirm',
         if (!user) {
             console.log(`[PURCHASE ERROR] Usuário não encontrado: ${order.userId}`);
             return res.status(404).json({ error: 'User not found' });
+        }
+
+        // Se a compra for SUSPEITA, marcar esses diamantes como em análise
+        if (verdict.risky) {
+            const holdExpires = verdict.holdExpiresAt || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+            const existingLedger: any[] = user.risk_ledger || [];
+            const mergedRef = existingLedger.find((l: any) => l.ref === order.id);
+            await User.findOneAndUpdate(
+                { id: order.userId },
+                mergedRef
+                    ? { $set: { [`risk_ledger.${existingLedger.indexOf(mergedRef)}.remaining`]: mergedRef.remaining + order.diamonds } }
+                    : {
+                          $push: {
+                              risk_ledger: {
+                                  ref: order.id,
+                                  amount: order.diamonds,
+                                  remaining: order.diamonds,
+                                  expiresAt: holdExpires,
+                                  createdAt: new Date(),
+                              },
+                          },
+                          $inc: { risk_diamonds: order.diamonds },
+                      }
+            );
+            console.log(`[RISK] Compra ${order.id} marcada como SUSPEITA. ${order.diamonds} diamantes em análise. Motivos: ${verdict.reasons.join(', ')}`);
+        } else {
+            console.log(`[RISK] Compra ${order.id} considerada SEGURA (score=${verdict.riskScore}).`);
         }
 
         // Audit trail: diamantes entregues
@@ -222,6 +277,7 @@ router.post('/confirm',
             amountBRL: order.amount,
             amountCoins: order.diamonds,
             status: 'Concluído',
+            metadata: { orderId },
         });
 
         res.json({ success: true, user, order: updatedOrder });

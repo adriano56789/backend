@@ -235,22 +235,28 @@ export async function createDepositSession(params: {
     userId: string;
     amountBRL: number;
     diamonds: number;
+    orderId?: string;
+    method?: string;
     description?: string;
 }): Promise<{ sessionId: string; redirectUrl: string | null; raw: any }> {
+    if (!isConfigured()) {
+        throw new Error('PAYONEER_NOT_CONFIGURED');
+    }
+    const method = params.method || 'payoneer';
     const body = {
         program_id: process.env.PAYONEER_PROGRAM_ID,
-        reference: `livego_dep_${params.userId}_${Date.now()}`,
+        reference: params.orderId ? `livego_ord_${params.orderId}` : `livego_dep_${params.userId}_${Date.now()}`,
         amount: Number(params.amountBRL.toFixed(2)),
         currency: 'BRL',
-        description: (params.description || `LiveGo — ${params.diamonds} diamantes`).slice(0, 140),
-        return_url: process.env.FRONTEND_URL ? `${process.env.FRONTEND_URL}/wallet` : undefined,
-        cancel_url: process.env.FRONTEND_URL ? `${process.env.FRONTEND_URL}/shop` : undefined,
-        metadata: { source: 'livego', user_id: params.userId, diamonds: params.diamonds },
+        description: (params.description || `LiveGo — ${params.diamonds} diamantes (${method})`).slice(0, 140),
+        return_url: process.env.FRONTEND_URL ? `${process.env.FRONTEND_URL}/wallet?purchase=result&orderId=${params.orderId || ''}` : undefined,
+        cancel_url: process.env.FRONTEND_URL ? `${process.env.FRONTEND_URL}/wallet?purchase=cancelled` : undefined,
+        metadata: { source: 'livego', user_id: params.userId, diamonds: params.diamonds, order_id: params.orderId, method },
     };
     const res = await payoneerRequest('post', '/checkout/sessions', body);
     return {
         sessionId: res.session_id || res.id || '',
-        redirectUrl: res.redirect_url || res.payment_page_url || null,
+        redirectUrl: res.redirect_url || res.payment_page_url || res.redirect?.url || null,
         raw: res,
     };
 }

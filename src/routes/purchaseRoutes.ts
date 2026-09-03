@@ -5,6 +5,7 @@ import FraudDetectionMiddleware from '../middleware/fraudDetection';
 import { protect, AuthRequest } from '../middleware/auth';
 import { requirePaymentAuth } from '../middleware/paymentSecurity';
 import { paymentRateLimit } from '../middleware/rateLimit';
+import { evaluatePurchaseRisk } from '../services/riskEngine';
 
 const router = express.Router();
 
@@ -87,6 +88,33 @@ router.post('/confirm',
             { returnDocument: 'after' }
         );
 
+        // ═══ SISTEMA ANTI-CHARGEBACK: avaliar risco da compra ═══
+        const riskBuyer = await User.findOne({ id: req.user?.id }).select('createdAt');
+        const approvedToday = await Order.countDocuments({
+            userId: req.user?.id, status: 'paid',
+            confirmedAt: { $gte: new Date(new Date().setHours(0, 0, 0, 0)) },
+        });
+        const verdict = evaluatePurchaseRisk({
+            order: updatedOrder || order,
+            user: riskBuyer,
+            providerRisk: (req.body as any)?.paymentRisk,
+            ordersTodayApproved: approvedToday,
+        });
+
+        // Marcar a order com o status de risco
+        await Order.findOneAndUpdate(
+            { id: orderId },
+            {
+                $set: {
+                    riskStatus: verdict.risky ? 'hold' : 'safe',
+                    riskScore: verdict.riskScore,
+                    riskReasons: verdict.reasons,
+                    riskHoldExpiresAt: verdict.holdExpiresAt,
+                },
+            },
+            { returnDocument: 'after' }
+        ).catch(() => {});
+
         const io = req.app.get('io');
         io.emit('order_updated', { userId: order.userId, orderId: order.id, status: 'paid' });
 
@@ -109,6 +137,34 @@ router.post('/confirm',
             },
             { returnDocument: 'after' }
         );
+
+        // Se a compra for SUSPEITA, marcar esses diamantes como em análise:
+        // utilizáveis in-app, mas o saque da parte correspondente fica retido por 7 dias.
+        if (verdict.risky && user) {
+            const holdExpires = verdict.holdExpiresAt || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+            const existingLedger: any[] = user.risk_ledger || [];
+            const mergedRef = existingLedger.find((l: any) => l.ref === order.id);
+            await User.findOneAndUpdate(
+                { id: order.userId },
+                mergedRef
+                    ? { $set: { [`risk_ledger.${existingLedger.indexOf(mergedRef)}.remaining`]: mergedRef.remaining + order.diamonds } }
+                    : {
+                          $push: {
+                              risk_ledger: {
+                                  ref: order.id,
+                                  amount: order.diamonds,
+                                  remaining: order.diamonds,
+                                  expiresAt: holdExpires,
+                                  createdAt: new Date(),
+                              },
+                          },
+                          $inc: { risk_diamonds: order.diamonds },
+                      }
+            );
+            console.log(`[RISK] Compra ${order.id} marcada como SUSPEITA. ${order.diamonds} diamantes em análise (lib. em ${verdict.holdDays}d). Motivos: ${verdict.reasons.join(', ')}`);
+        } else {
+            console.log(`[RISK] Compra ${order.id} considerada SEGURA (score=${verdict.riskScore}).`);
+        }
 
         if (!user) {
             return res.status(404).json({ error: 'User not found' });
@@ -137,6 +193,7 @@ router.post('/confirm',
             amountBRL: order.amount,
             amountCoins: order.diamonds,
             status: 'Concluído',
+            metadata: { orderId },
         });
 
         // WebSocket: notificar usuário em tempo real (io já declarado acima)

@@ -291,7 +291,7 @@ router.post('/', async (req, res) => {
             const receiverId = participantIds[0];
             const permCheck = await canSendMessage(userId, receiverId);
             if (!permCheck.allowed) {
-                return res.status(403).json({ success: false, error: permCheck.reason, code: 'CHAT_PERMISSION_DENIED' });
+                return res.status(403).json({ success: false, error: permCheck.reason, code: permCheck.code || 'CHAT_PERMISSION_DENIED' });
             }
         }
 

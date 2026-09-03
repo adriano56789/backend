@@ -1,12 +1,16 @@
 import express from 'express';
 
-import { User, Streamer, Gift, Message, PurchaseRecord, Order, Photo, Followers, Friendship, Block, ProfilePhoto } from '../models';
+import { User, Streamer, Gift, Message, PurchaseRecord, Order, Photo, Followers, Friendship, Block, ProfilePhoto, UserIndex, UserStatus, UserLevel } from '../models';
 
 import { getUserIdFromToken, protect } from '../middleware/auth';
 
 import { standardizeUserResponse, standardizeUsersList } from '../utils/userResponse';
 
 import { findUserByAnyId, updateUserByRealId } from '../utils/idHelper';
+
+import { isRealEmail } from '../utils/emailGuard';
+
+const APP_OWNER_ID = '6771613'; // Dono do aplicativo (adrianomdk2) — id real no banco
 
 import { blockProtection } from '../middleware/appOwnerProtection';
 import { getDb } from '../config/db';
@@ -16,6 +20,33 @@ import { emitWebhook } from '../services/WebhookBroadcasterService';
 
 
 export const UserRoutes = express.Router();
+
+// 🔧 Estado REAL de follow/amizade por VISITANTE: preenche isFollowed/isFriend
+// no objeto do usuário alvo a partir da collection 'follows' (não usa o campo
+// denormalizado do documento, que era setado pelo último toggle e causava o
+// botão de seguir voltar apagando o estado de quem realmente segue).
+async function enrichUserFollowState(userObj: any, viewerId?: string | null) {
+    if (!userObj) return userObj;
+    const targetId = userObj.id || (userObj as any)._id;
+    if (!targetId || !viewerId || String(viewerId) === String(targetId)) {
+        userObj.isFollowed = false;
+        userObj.isFriend = false;
+        return userObj;
+    }
+    try {
+        const [a, b] = [String(viewerId), String(targetId)].sort();
+        const [followDoc, friendDoc] = await Promise.all([
+            Followers.findOne({ followerId: String(viewerId), followingId: String(targetId), isActive: true }).lean(),
+            Friendship.findOne({ userId1: a, userId2: b, isActive: true }).lean(),
+        ]);
+        userObj.isFollowed = !!followDoc;
+        userObj.isFriend = !!friendDoc;
+    } catch (e) {
+        userObj.isFollowed = !!userObj.isFollowed;
+        userObj.isFriend = !!userObj.isFriend;
+    }
+    return userObj;
+}
 
 
 
@@ -87,6 +118,32 @@ UserRoutes.get('/', async (req, res) => {
 
 
         const standardizedUsers = standardizeUsersList(users);
+
+        // 🔧 Estado real de follow/amizade para a lista (do ponto de vista do visitante)
+        const viewerId = getUserIdFromToken(req);
+        if (viewerId) {
+            try {
+                const [followedDocs, friendDocs] = await Promise.all([
+                    Followers.find({ followerId: viewerId, isActive: true }).select('followingId').lean(),
+                    Friendship.find({ $or: [{ userId1: viewerId }, { userId2: viewerId }], isActive: true }).select('userId1 userId2').lean(),
+                ]);
+                const followedSet = new Set(followedDocs.map((d: any) => String(d.followingId)));
+                const friendSet = new Set<string>();
+                friendDocs.forEach((d: any) => {
+                    const other = String(d.userId1) === String(viewerId) ? String(d.userId2) : String(d.userId1);
+                    friendSet.add(other);
+                });
+                standardizedUsers.forEach((u: any) => {
+                    if (String(u.id) !== String(viewerId)) {
+                        u.isFollowed = followedSet.has(String(u.id));
+                        u.isFriend = friendSet.has(String(u.id));
+                    } else {
+                        u.isFollowed = false;
+                        u.isFriend = false;
+                    }
+                });
+            } catch (e) { /* segue sem o enriquecimento em caso de erro */ }
+        }
 
         console.log(`[USERS-LIST] Retornando ${standardizedUsers.length} usuários padronizados`);
 
@@ -190,8 +247,10 @@ UserRoutes.get('/:id', async (req, res) => {
                         User.updateOne({ id: user.id }, { $set: { fans: userObj.fans } }).catch(() => {});
                     }
                 } catch { /* usa o valor do doc */ }
+                const currentUserId = getUserIdFromToken(req);
+                await enrichUserFollowState(userObj, currentUserId);
                 req.params.id = user.id;
-                return res.json(standardizeUserResponse(userObj, getUserIdFromToken(req)));
+                return res.json(standardizeUserResponse(userObj, currentUserId));
             }
             // Fallback: case-insensitive
             query = { id: { $regex: new RegExp('^' + paramId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i') } };
@@ -276,6 +335,8 @@ UserRoutes.get('/:id', async (req, res) => {
             userObj.fans = computedFans;
             userObj.following = realFollowing > 0 ? realFollowing : (userObj.followingList?.length || 0);
 
+            await enrichUserFollowState(userObj, currentUserId);
+
             return res.json(standardizeUserResponse(userObj, currentUserId));
         }
 
@@ -296,11 +357,47 @@ UserRoutes.get('/:id', async (req, res) => {
 // REMOVIDO: Rota /:id/status conflitante - agora handled por userStatusRoutes
 
 UserRoutes.delete('/:id', async (req, res) => {
+    try {
+        const target = await User.findOne({ id: req.params.id });
+        if (!target) {
+            return res.status(404).json({ error: 'Usuário não encontrado' });
+        }
 
-    await User.deleteOne({ id: req.params.id });
+        const callerId = getUserIdFromToken(req);
+        if (!callerId) {
+            return res.status(401).json({ error: 'Autenticação necessária para excluir conta' });
+        }
 
-    res.json({ success: true });
+        const isOwner = String(callerId) === String(target.id);
+        const isAppOwner = String(callerId) === APP_OWNER_ID;
+        if (!isOwner && !isAppOwner) {
+            return res.status(403).json({ error: 'Sem permissão para excluir esta conta' });
+        }
 
+        // 🔒 PROTECÃO: contas com email REAL nunca podem ser excluídas
+        if (isRealEmail(target.email)) {
+            return res.status(403).json({ error: 'Contas com email real não podem ser excluídas' });
+        }
+
+        const deleteId = String(target.id);
+        await User.deleteOne({ id: deleteId });
+
+        // Limpar referências associadas à conta
+        await Promise.allSettled([
+            UserIndex?.deleteMany?.({ userId: deleteId }),
+            UserStatus?.deleteMany?.({ userId: deleteId }),
+            UserLevel?.deleteMany?.({ userId: deleteId }),
+            Followers?.deleteMany?.({ $or: [{ followerId: deleteId }, { followingId: deleteId }] }),
+            Friendship?.deleteMany?.({ $or: [{ userId1: deleteId }, { userId2: deleteId }] }),
+            Message?.deleteMany?.({ $or: [{ senderId: deleteId }, { receiverId: deleteId }] }),
+        ]);
+
+        console.log(`[DELETE USER] Conta ${deleteId} excluída pelo usuário ${callerId}`);
+        res.json({ success: true });
+    } catch (error: any) {
+        console.error('[DELETE USER] Erro ao excluir conta:', error);
+        res.status(500).json({ error: 'Não foi possível excluir a conta' });
+    }
 });
 
 UserRoutes.patch("/:id", async (req, res) => {
@@ -752,7 +849,16 @@ UserRoutes.post('/:id/block', blockProtection(), async (req, res) => {
 
     try {
 
-        const blockerId = '10755083'; // ID fixo para demonstração - pegar do token em produção
+        // 🔑 Dono do bloqueio = QUEM ESTÁ LOGADO (token), nunca um ID fixo.
+        // Antes usava '10755083' fixo de demonstração → o bloqueio ficava
+        // gravado com dono errado e o blocklist (lido pelo token) voltava vazio.
+        const blockerId = getUserIdFromToken(req);
+
+        if (!blockerId) {
+
+            return res.status(401).json({ error: 'Autenticação necessária para bloquear' });
+
+        }
 
         const blockedId = req.params.id;
 
@@ -926,7 +1032,14 @@ UserRoutes.delete('/:id/unblock', async (req, res) => {
 
     try {
 
-        const blockerId = '10755083'; // ID fixo para demonstração - pegar do token em produção
+        // 🔑 Dono do desbloqueio = QUEM ESTÁ LOGADO (token), nunca um ID fixo.
+        const blockerId = getUserIdFromToken(req);
+
+        if (!blockerId) {
+
+            return res.status(401).json({ error: 'Autenticação necessária para desbloquear' });
+
+        }
 
         const blockedId = req.params.id;
 
@@ -2034,6 +2147,60 @@ UserRoutes.post('/:id/buy-diamonds', async (req, res) => {
         );
 
         res.json({ success: !!user, user: standardizeUserResponse(user) });
+
+    } catch (err: any) {
+
+        res.status(500).json({ error: err.message });
+
+    }
+
+});
+
+// Recarga de diamantes GRÁTIS para o DONO do aplicativo (temporada de teste/dev)
+UserRoutes.post('/add-diamonds', async (req, res) => {
+
+    try {
+
+        const { userId, amount } = req.body;
+
+        // 🔐 SOMENTE o dono do aplicativo pode usar esta rota
+        const APP_OWNER_ID = '6771613';
+
+        if (String(userId) !== APP_OWNER_ID) {
+
+            return res.status(403).json({ success: false, error: 'Acesso restrito ao dono do aplicativo' });
+
+        }
+
+        const qty = Number(amount);
+
+        if (!Number.isFinite(qty) || qty <= 0) {
+
+            return res.status(400).json({ success: false, error: 'Valor inválido' });
+
+        }
+
+        const user = await User.findOneAndUpdate(
+
+            { id: userId },
+
+            { $inc: { diamonds: qty } },
+
+            { returnDocument: 'after' }
+
+        );
+
+        if (!user) {
+
+            return res.status(404).json({ success: false, error: 'Usuário não encontrado' });
+
+        }
+
+        const diamonds = typeof user.diamonds === 'number' ? user.diamonds : qty;
+
+        res.json({ success: true, diamonds });
+
+        console.log(`👑 [ADD-DIAMONDS] Dono do aplicativo (${userId}) recebeu +${qty} diamantes. Saldo: ${diamonds}`);
 
     } catch (err: any) {
 

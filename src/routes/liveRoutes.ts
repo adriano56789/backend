@@ -3,7 +3,7 @@ import express from 'express';
 import { ObjectId } from 'mongodb';
 import { getDb } from '../config/db';
 import { v4 as uuidv4 } from 'uuid';
-import { Streamer, User, Message, Followers, Friendship, Block, UserLevel, StreamKeyAssociation, GiftTransaction, StreamLike, Battle, LiveCard, LiveMessage } from '../models/index';
+import { Streamer, User, Message, Followers, Friendship, Block, UserLevel, StreamKeyAssociation, GiftTransaction, StreamLike, Battle, LiveCard, LiveMessage, VoiceRoom } from '../models/index';
 import { getUserIdFromToken, generateJWT } from '../middleware/auth';
 import { ResponseHelper } from '../middleware/responseHelper';
 import { ENV } from '../config/env';
@@ -4353,15 +4353,21 @@ router.post('/live/end', async (req, res) => {
         const io = req.app.get('io');
         if (io) {
             try {
-                io.to(streamId).emit('stream_ended', {
+                const endedPayload = {
                     streamId: streamId,
                     hostId: userId,
                     timestamp: new Date()
-                });
-                io.emit('stream_ended', {
-                    streamId: streamId,
-                    hostId: userId
-                });
+                };
+                // Eventos para os espectadores DENTRO da sala
+                io.to(streamId).emit('stream_ended', endedPayload);
+                io.to(streamId).emit('live_stream_ended', endedPayload);
+                // Eventos GLOBAIS para remover o card da lista de lives em
+                // tempo real (trio completo, consistente com as demais rotas):
+                // card_removed remove da lista; stream_ended avisa os de dentro;
+                // stream_stopped desligá a reprodução.
+                io.emit('card_removed', endedPayload);
+                io.emit('stream_ended', endedPayload);
+                io.emit('stream_stopped', endedPayload);
                 console.log('[LIVE-END] ✅ Socket.IO emit OK');
             } catch (stepErr: any) {
                 console.error('[LIVE-END] ❌ Erro em Socket.IO emit:', stepErr.message);
@@ -6506,7 +6512,15 @@ router.post('/streams/:id/gift', async (req, res) => {
 
         // Find stream to get receiver
 
-        const stream: any = await Streamer.findOne({ id: req.params.id });
+        // 🎙️ Salas de VOZ usam o MESMO fluxo de presente da live: o receptor é o
+        // host da sala, o GiftTransaction fica com streamId = roomId (`voice_...`)
+        // para alimentar ranking/recebidos, e a moeda é a MESMA (receptores do
+        // host) — igual à sala de transmissão.
+        const isVoiceRoom = String(req.params.id || '').startsWith('voice_');
+
+        const stream: any = isVoiceRoom
+            ? await VoiceRoom.findOne({ roomId: req.params.id }).lean()
+            : await Streamer.findOne({ id: req.params.id });
 
         if (!stream) return res.status(404).json({ error: 'Stream not found' });
 
@@ -9370,6 +9384,24 @@ router.post('/streams/:id/live-message', async (req, res) => {
         const stream = await Streamer.findOne({ id }).lean();
         if (!stream) {
             return res.status(404).json({ success: false, message: 'Stream nao encontrada' });
+        }
+        // 🚫 Espectador BLOQUEADO pelo HOST da live: a mensagem NÃO é enviada.
+        // O bloqueado tenta mandar e vê: "Você foi proibido de falar".
+        try {
+            const liveHostId = (stream as any).hostId;
+            if (liveHostId && String(liveHostId) !== String(userId)) {
+                const block = await Block.findOne({ blockerId: liveHostId, blockedId: userId, isActive: true }).lean();
+                if (block) {
+                    return res.status(403).json({
+                        success: false,
+                        message: 'Você foi proibido de falar',
+                        error: 'Você foi proibido de falar',
+                        code: 'BLOCKED'
+                    });
+                }
+            }
+        } catch (blockErr) {
+            console.warn('[LIVE-BLOCK] Erro ao verificar bloqueio:', blockErr);
         }
         const liveMessage = await LiveMessage.create({
             streamId: id,

@@ -1,9 +1,19 @@
 import { User } from '../models/User';
 import { Followers } from '../models/Followers';
 import { Friendship } from '../models/Friendship';
+import { Block } from '../models';
 
-export async function canSendMessage(senderId: string, receiverId: string): Promise<{ allowed: boolean; reason?: string }> {
+export async function canSendMessage(senderId: string, receiverId: string): Promise<{ allowed: boolean; reason?: string; code?: string }> {
     try {
+        // 🚫 Se o DESTINATÁRIO bloqueou o REMETENTE, a mensagem NÃO é enviada.
+        // O bloqueado tenta mandar e vê: "Você foi proibido de falar".
+        const block = await Block.findOne({
+            blockerId: receiverId,
+            blockedId: senderId,
+            isActive: true
+        }).lean();
+        if (block) return { allowed: false, reason: 'Você foi proibido de falar', code: 'BLOCKED' };
+
         const receiver = await User.findOne({ id: receiverId }).select('chatPermission').lean();
         if (!receiver) return { allowed: false, reason: 'Usuário não encontrado' };
 

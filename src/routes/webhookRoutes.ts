@@ -521,6 +521,49 @@ router.post('/payoneer', express.raw({ type: '*/*' }), async (req, res) => {
         }
         console.log('[WEBHOOK PAYONEER] Evento recebido:', JSON.stringify(event));
 
+        // ── DEPÓSITOS / CHECKOUT (compra de diamantes) ──
+        // Reconhece sessões criadas por createDepositSession (reference=livego_ord_<orderId>).
+        const data = event?.data || event || {};
+        const reference: string = String(data?.reference || event?.reference || data?.metadata?.reference || '');
+        const orderIdFromRef = reference.startsWith('livego_ord_') ? reference.slice('livego_ord_'.length) : '';
+        const orderIdMeta: string = String(data?.metadata?.order_id || event?.metadata?.order_id || '');
+        const sessionId: string = String(data?.session_id || data?.sessionId || event?.session_id || '');
+        const payStatusRaw: string = String(
+            data?.status || data?.payment_status || data?.paymentStatus ||
+            event?.status || event?.payment_status || event?.paymentStatus || ''
+        ).toUpperCase();
+        const approvedStatuses = ['APPROVED', 'COMPLETED', 'SUCCEEDED', 'PAID', 'SUCCESS', 'CHARGE_SUCCESSFUL', 'CHECKOUT_SESSION_APPROVED'];
+        const failedStatuses = ['FAILED', 'REJECTED', 'DECLINED', 'CANCELLED', 'CANCELED', 'EXPIRED', 'REFUSED'];
+
+        const depositOrderId = orderIdFromRef || orderIdMeta;
+        if (depositOrderId) {
+            const Order = (await import('../models')).Order;
+            let order = await Order.findOne({ id: depositOrderId });
+            if (!order && sessionId) {
+                order = await Order.findOne({ paymentSessionId: sessionId });
+            }
+            if (order && order.status === 'pending') {
+                if (approvedStatuses.includes(payStatusRaw)) {
+                    try {
+                        const { completeOrderPayment } = await import('../services/purchaseCompletionService');
+                        const result = await completeOrderPayment({
+                            orderId: order.id,
+                            paymentConfirmationId: sessionId || reference || payStatusRaw,
+                        });
+                        console.log(`[WEBHOOK PAYONEER] Depósito aprovado — compra ${order.id} concluída:`, result.success);
+                    } catch (err: any) {
+                        console.error('[WEBHOOK PAYONEER] Erro ao concluir compra por depósito:', err?.message);
+                    }
+                } else if (failedStatuses.includes(payStatusRaw)) {
+                    await Order.findOneAndUpdate(
+                        { id: order.id },
+                        { $set: { status: 'failed', paymentStatus: 'rejected' } }
+                    ).catch(() => {});
+                    console.log(`[WEBHOOK PAYONEER] Depósito ${order.id} → ${payStatusRaw}`);
+                }
+            }
+        }
+
         // Estrutura típica: { payout_id, status, ... } ou { event_type, data }
         const payoutId = event?.payout_id || event?.data?.payout_id;
         const payoutStatus = String(event?.status || event?.data?.status || '').toUpperCase();

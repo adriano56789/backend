@@ -1,5 +1,5 @@
 import express from 'express';
-import { User, PurchaseAuditTrail } from '../models';
+import { User, Order, PurchaseAuditTrail } from '../models';
 import { getIO } from '../socket';
 import { protect, AuthRequest } from '../middleware/auth';
 import { paymentRateLimit } from '../middleware/rateLimit';
@@ -16,6 +16,7 @@ import {
     LIVEGO_FEES,
 } from '../services/payoneerService';
 import { SUPPORTED_CURRENCIES, SupportedCurrency, CURRENCY_SYMBOLS } from '../services/currencyService';
+import { getWithdrawable } from '../services/riskEngine';
 
 const router = express.Router();
 
@@ -142,17 +143,86 @@ router.post('/deposit/session', protect, paymentRateLimit, async (req: AuthReque
             return res.status(400).json({ error: 'amountBRL e diamonds são obrigatórios' });
         }
 
-        const session = await createDepositSession({ userId, amountBRL, diamonds });
-        res.json({ success: true, provider: 'payoneer', ...session });
+        let orderId = req.body?.orderId;
+        const method = req.body?.method || 'payoneer';
+
+        // Se vier orderId, validar que a order existe, é do usuário e está pending
+        if (orderId) {
+            const order = await Order.findOne({ id: orderId });
+            if (!order) return res.status(404).json({ error: 'Compra não encontrada' });
+            if (order.userId !== userId) return res.status(403).json({ error: 'Esta compra não pertence ao seu usuário' });
+            if (order.status !== 'pending') {
+                return res.status(400).json({ error: 'Esta compra já foi processada ou não está pendente' });
+            }
+        }
+
+        if (!isConfigured()) {
+            return res.status(503).json({
+                error: 'Pagamentos em configuração',
+                details: 'O provedor de pagamentos (Payoneer Checkout) ainda não foi conectado. Assim que as credenciais estiverem configuradas, a compra será processada.',
+                provider: 'payoneer',
+                configured: false,
+            });
+        }
+
+        // Sem orderId → criar a Order aqui (o preço/diamantes definem o crédito após pagamento)
+        if (!orderId) {
+            const created = await Order.create({
+                id: `ord_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+                userId,
+                status: 'pending',
+                amount: amountBRL,
+                diamonds,
+                paymentMethod: 'payoneer',
+                paymentStatus: 'pending',
+                timestamp: new Date(),
+            });
+            orderId = created.id;
+        }
+
+        const session = await createDepositSession({ userId, amountBRL, diamonds, orderId, method });
+
+        // Ancorar a sessão ao Order para o webhook/confirmação
+        if (orderId) {
+            await Order.findOneAndUpdate(
+                { id: orderId },
+                { $set: { paymentSessionId: session.sessionId, redirectUrl: session.redirectUrl, paymentStatus: 'pending' } }
+            ).catch(() => {});
+        }
+
+        res.json({ success: true, provider: 'payoneer', orderId, ...session });
     } catch (error: any) {
         console.error('[PAYONEER DEPOSIT ERROR]', error?.message);
-        // Credenciais ausentes → transição; endpoint/parametria a ajustar → surfaced no log
-        res.status(503).json({
-            error: 'Depósitos em transição',
-            details: 'As compras serão processadas pelo Payoneer assim que a conta da empresa for conectada.',
+        const notConfigured = String(error?.message).includes('PAYONEER_NOT_CONFIGURED');
+        res.status(notConfigured ? 503 : 500).json({
+            error: notConfigured ? 'Pagamentos em configuração' : 'Erro ao processar pagamento',
+            details: notConfigured
+                ? 'O provedor de pagamentos (Payoneer) ainda não foi conectado.'
+                : (error?.message || ''),
             provider: 'payoneer',
-            withdrawals_available: true,
+            configured: isConfigured(),
         });
+    }
+});
+
+// Status de um depósito (compra de diamantes) — consultado pelo frontend no retorno do checkout.
+// Somente confirmação do webhook credita diamantes; este endpoint apenas informa o estado atual.
+router.get('/deposit/status/:orderId', protect, async (req: AuthRequest, res) => {
+    try {
+        const order = await Order.findOne({ id: req.params.orderId });
+        if (!order) return res.status(404).json({ error: 'Compra não encontrada' });
+        if (order.userId !== req.user?.id) return res.status(403).json({ error: 'Esta compra não pertence ao seu usuário' });
+        res.json({
+            orderId: order.id,
+            status: order.status,
+            paid: order.status === 'paid',
+            diamonds: order.diamonds,
+            amount: order.amount,
+            riskStatus: order.riskStatus,
+            paymentStatus: order.paymentStatus,
+        });
+    } catch (error: any) {
+        res.status(500).json({ error: error?.message || 'Erro ao consultar status' });
     }
 });
 
@@ -181,6 +251,23 @@ router.post('/deposit/session', protect, paymentRateLimit, async (req: AuthReque
         const user = await User.findOne({ id: userId })
             .select('id earnings withdrawal_method name email country');
         if (!user) return res.status(404).json({ error: 'Usuário não encontrado' });
+
+        // ═══ ANTI-CHARGEBACK: saldo sacável descontando retenções (holds) e débitos ═══
+        const wd = await getWithdrawable(userId);
+        if (diamonds > (wd.available + 1e-9)) {
+            const reason =
+                wd.earnings_locked > 0
+                    ? 'Parte dos seus ganhos está sob análise anti-fraude por até 7 dias.'
+                    : wd.earnings_debt > 0
+                        ? 'Você possui um débito de chargeback em aberto. Novos saques serão liberados após a quitação.'
+                        : 'Saldo insuficiente';
+            return res.status(400).json({
+                error: 'Saldo insuficiente',
+                details: `${reason} · Disponível após retenções: ${Math.floor(wd.available)} diamantes`,
+                locked: wd.earnings_locked,
+                debt: wd.earnings_debt,
+            });
+        }
 
         // Débito atômico: só debita se o saldo for suficiente (evita condição de corrida)
         const debited = await User.findOneAndUpdate(

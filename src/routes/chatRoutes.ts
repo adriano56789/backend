@@ -269,7 +269,7 @@ router.post('/send', async (req, res) => {
         // Validar permissão de mensagem do destinatário
         const permCheck = await canSendMessage(from, to);
         if (!permCheck.allowed) {
-            return res.status(403).json({ error: permCheck.reason, code: 'CHAT_PERMISSION_DENIED' });
+            return res.status(403).json({ error: permCheck.reason, code: permCheck.code || 'CHAT_PERMISSION_DENIED' });
         }
 
         const conversationId = `chat_private_${[from, to].sort().join('_')}`;

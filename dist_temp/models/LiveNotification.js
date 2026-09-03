@@ -38,7 +38,7 @@ const mongoose_1 = __importStar(require("mongoose"));
 const LiveNotificationSchema = new mongoose_1.Schema({
     userId: { type: String, required: true, index: true },
     streamerId: { type: String, required: true, index: true },
-    streamId: { type: String, required: true },
+    streamId: { type: String, default: '' },
     read: { type: Boolean, default: false },
     message: { type: String }
 }, { timestamps: true });
